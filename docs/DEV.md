@@ -385,7 +385,20 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 > 插件进程内仍有 Node 能力（`require("fs")` 等），真正的 capability 沙箱需要 Node permission model 或 vm 级方案，列为后续。
 > 权限模型仍是「显式启用 + 声明式提示」，加载时会把 manifest 的 permissions 写入 permissions.json。
 
-## 22. 已知限制 / 待办
+## 22. P16 验收（已实测，2026-10-29）：整合包补全（NeoForge / Forge）
+
+| 验收项 | 结果 |
+|---|---|
+| NeoForge 整合包 | ✅ `.mrpack` deps `{minecraft:1.21.11, neoforge:21.11.48}` → 新实例 `loader=neoforge, versionId=neoforge-21.11.48`，overrides 落盘 |
+| Forge 整合包 | ✅ deps `{minecraft:1.20.1, forge:47.4.28}` → `loader=forge, versionId=1.20.1-forge-47.4.28` |
+| **整合包启动** | ✅ 两个包生成的实例都能启动（7 项启动标记全中；Forge 用 Java 17 运行时） |
+| Fabric 回归 | ✅ `fabric-loader` 依赖仍走原路径安装 |
+| 不支持列表收敛 | ✅ `inspect` 现在只对 quilt 报不支持，NeoForge/Forge 正常返回依赖 |
+| 版本覆盖 | ✅ `installForge(mc, versionOverride)` / `installNeoForge(mc, versionOverride)` 按整合包声明的加载器版本安装 |
+
+> 之前 `.mrpack` 遇到 neoforge/forge 依赖会直接报「暂不支持」，现在按依赖类型分派到对应加载器安装器。
+
+## 23. 已知限制 / 待办
 
 - **更新**：只支持便携版（解压替换）；NSIS 安装包升级未做。
 - **签名**：便携版未做代码签名，Windows SmartScreen 会提示未知发布者。
@@ -393,20 +406,20 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 - **插件市场**：feed 与签名链路已通；缺少审核、版本更新检测、分类与评分。
 - **慢网**：本机到 Mojang 单连接仅 ~50KB/s，并发 16 约 200KB/s，432MB 资源耗时 18 分钟。镜像回退待接入。
 - **加载器**：Fabric、NeoForge（1.20.2+）、Forge（1.20.1 实测）已通并可启动；更老的 Forge（1.12.2 等）未验证，Quilt 未做。Forge/NeoForge 安装需 launcher_profiles.json（缺失时自动创建）。
-- **整合包**：`.mrpack` 已通（Fabric/原版）；NeoForge/Forge 整合包会明确报错。CurseForge `.zip` 整合包不支持。
+- **整合包**：`.mrpack` 已通（Fabric / NeoForge / Forge / 原版）；Quilt 明确报错；CurseForge `.zip` 整合包不支持。
 - **AI**：真实模型调用需用户自填 Key（本机验证用 mock LLM）；已支持流式输出、会话记忆与崩溃一键修复；多会话/跨实例记忆未做。
 - **老版本**：legacy/pre-1.6 资源物化已实现但未实测；Java 8 运行时自动下载未实测。
 - **实例**：支持创建/切换/删除；实例复制、导入导出、图标未做。
 - **登录**：仅离线（正版 OAuth 未做）。
 
-## 23. 下一步（P16：补账）
+## 24. 下一步（P17：补账）
 
 1. **插件能力白名单**：在 Node permission model / vm 层限制 fs/net，把「进程隔离」升级为「capability 沙箱」。
-2. **插件沙箱**：utilityProcess + 受限 API + 权限确认，替代当前进程内加载。
+2. **CurseForge `.zip` 整合包**：解析 manifest.json + 从 edge CDN 拉取 mods。
 3. **微软正版登录**：需要 Azure 应用 id（用户提供或授权申请流程）。
-4. **体验**：多会话记忆、CurseForge zip 整合包、更多修复动作（切 Java/换加载器）。
+4. **体验**：多会话记忆、更多修复动作（切 Java/换加载器）、安装包体积优化。
 
-## 24. 测试用 mock LLM
+## 25. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

@@ -443,7 +443,7 @@ export function App() {
         <div className="brand">
           <span className="brand-mark">QDOQMC</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P15 · 插件沙箱</span>
+          <span className="brand-tag">P16 · 整合包补全</span>
         </div>
         <div className="titlebar-actions">
           <button type="button" className="ghost" onClick={() => setShowMods(true)} disabled={!instance}>

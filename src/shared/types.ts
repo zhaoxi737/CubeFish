@@ -340,7 +340,7 @@ export interface ModpackInspectResult {
   dependencies?: Record<string, string>
   fileCount?: number
   totalBytes?: number
-  /** neoforge/forge 依赖目前不支持安装 */
+  /** 已知不支持自动安装的加载器（目前只有 quilt） */
   unsupportedLoader?: string
   error?: string
 }

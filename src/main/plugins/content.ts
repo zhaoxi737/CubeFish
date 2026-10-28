@@ -433,7 +433,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
       try {
         const { index } = parseIndex(await readSource(source))
         const deps = index.dependencies ?? {}
-        const unsupportedLoader = deps.neoforge ? 'neoforge' : deps.forge ? 'forge' : deps['quilt-loader'] ? 'quilt' : undefined
+        const unsupportedLoader = deps['quilt-loader'] ? 'quilt' : undefined
         const files = index.files ?? []
         return {
           ok: true,
@@ -455,11 +455,8 @@ export function createContentPlugin(): LauncherPlugin<void> {
         const { index, zip } = parseIndex(await readSource(source))
         const deps = index.dependencies ?? {}
         const mc = deps.minecraft as string
-        if (deps.neoforge || deps.forge) {
-          return {
-            ok: false,
-            error: `暂不支持 NeoForge/Forge 整合包（当前只支持 Fabric 与原版）；检测到 ${deps.neoforge ? 'neoforge' : 'forge'}`,
-          }
+        if (deps['quilt-loader']) {
+          return { ok: false, error: '暂不支持 Quilt 整合包（支持 Fabric / NeoForge / Forge / 原版）' }
         }
 
         const instance = instances.create(opts?.name ?? index.name ?? '整合包')
@@ -468,7 +465,17 @@ export function createContentPlugin(): LauncherPlugin<void> {
 
         let loaderName = 'vanilla'
         let versionId = mc
-        if (deps['fabric-loader']) {
+        if (deps.neoforge) {
+          const neo = await loaders.installNeoForge(mc, String(deps.neoforge))
+          if (!neo.ok || !neo.versionId) throw new Error(`NeoForge 安装失败：${neo.error ?? '未知错误'}`)
+          versionId = neo.versionId
+          loaderName = 'neoforge'
+        } else if (deps.forge) {
+          const forge = await loaders.installForge(mc, String(deps.forge))
+          if (!forge.ok || !forge.versionId) throw new Error(`Forge 安装失败：${forge.error ?? '未知错误'}`)
+          versionId = forge.versionId
+          loaderName = 'forge'
+        } else if (deps['fabric-loader']) {
           if (!existsSync(path.join(paths.versions, mc, `${mc}.json`))) {
             const base = await mojang.install(mc, `mrpack-base-${Date.now()}`)
             if (!base.ok) throw new Error(`整合包依赖的原版 ${mc} 安装失败：${base.error}`)

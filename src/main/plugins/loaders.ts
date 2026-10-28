@@ -38,7 +38,7 @@ export interface LoadersService {
   installFabric(gameVersion: string): Promise<FabricInstallResult>
   neoforgeVersions(gameVersion: string): Promise<string[]>
   installNeoForge(gameVersion: string, versionOverride?: string): Promise<NeoForgeInstallResult>
-  installForge(gameVersion: string): Promise<NeoForgeInstallResult>
+  installForge(gameVersion: string, versionOverride?: string): Promise<NeoForgeInstallResult>
   setProgressSink(sink: ((progress: TaskProgress) => void) | null): void
 }
 
@@ -271,7 +271,7 @@ export function createLoadersPlugin(): LauncherPlugin<void> {
       }
     }
 
-    async function installForge(gameVersion: string): Promise<NeoForgeInstallResult> {
+    async function installForge(gameVersion: string, versionOverride?: string): Promise<NeoForgeInstallResult> {
       const started = Date.now()
       const taskId = `forge-${gameVersion}-${Date.now()}`
       const emit = (stage: string, done: number, total: number, message?: string) =>
@@ -283,7 +283,8 @@ export function createLoadersPlugin(): LauncherPlugin<void> {
         if (!res.ok) return { ok: false, gameVersion, error: `Forge 版本列表获取失败：HTTP ${res.status}` }
         const promos = (await res.json()) as { promos?: Record<string, string> }
         const table = promos.promos ?? {}
-        const forgeVersion = table[`${gameVersion}-recommended`] ?? table[`${gameVersion}-latest`]
+        const forgeVersion =
+          versionOverride ?? table[`${gameVersion}-recommended`] ?? table[`${gameVersion}-latest`]
         if (!forgeVersion) {
           return { ok: false, gameVersion, error: `Forge 没有支持 ${gameVersion} 的版本（查看 forge 官网支持列表）` }
         }

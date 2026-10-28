@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { stripBom } from '../lib/fsx'
 import type { SettingsPatch, SettingsShape } from '../../shared/types'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { LogService } from './logger'
@@ -43,7 +44,7 @@ export function createSettingsPlugin(): LauncherPlugin<void> {
     let current: SettingsShape = { ...DEFAULT_SETTINGS }
     if (existsSync(file)) {
       try {
-        const parsed = JSON.parse(readFileSync(file, 'utf8')) as Partial<SettingsShape>
+        const parsed = JSON.parse(stripBom(readFileSync(file, 'utf8'))) as Partial<SettingsShape>
         current = { ...DEFAULT_SETTINGS, ...sanitize(parsed) }
       } catch (err) {
         log.warn('settings', '配置文件损坏，已回退默认值', { error: String(err) })

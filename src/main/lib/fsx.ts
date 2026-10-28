@@ -29,10 +29,15 @@ export async function sha1File(file: string): Promise<string> {
 
 export async function readJson<T>(file: string, fallback: T): Promise<T> {
   try {
-    return JSON.parse(await readFile(file, 'utf8')) as T
+    return JSON.parse(stripBom(await readFile(file, 'utf8'))) as T
   } catch {
     return fallback
   }
+}
+
+/** 用户手改/第三方工具写出的文件可能带 UTF-8 BOM，JSON.parse 会直接失败。 */
+export function stripBom(text: string): string {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
 }
 
 export async function writeJsonAtomic(file: string, value: unknown): Promise<void> {

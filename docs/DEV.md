@@ -1,4 +1,4 @@
-# 开发手册（P0–P5）
+# 开发手册（P0–P6）
 
 ## 1. 环境
 
@@ -17,6 +17,15 @@ npm run build        # esbuild → out/{main,preload,renderer}
 npm start            # 启动 Electron
 npm run smoke        # 冒烟：截图 + 读 UI 状态 + 调一次 IPC，输出 SMOKE_RESULT JSON
 npm run typecheck    # tsc --noEmit
+npm run package      # 便携版 → dist/QDOQMC-win32-x64/QDOQMC.exe
+```
+
+打包与更新清单：
+
+```bash
+npm run package                                  # 生成便携版目录
+Compress-Archive -Path dist/QDOQMC-win32-x64 -DestinationPath dist/QDOQMC-0.1.0-win32-x64.zip
+node scripts/make-feed.mjs                       # 生成 dist/latest.json（version/sha256/size）
 ```
 
 CLI 模式（无窗口，用于自动化验证与排障）：
@@ -27,6 +36,15 @@ node_modules/.bin/electron . --install=1.21.11
 
 # 启动并观察指定秒数，输出进程状态、日志标记、退出码，然后结束游戏
 node_modules/.bin/electron . --launch=default --wait=50000
+
+# 更新检查 / 冲突 / 诊断 / 插件 / 工具 / 对话
+electron . --chat=/update
+electron . --analyze
+electron . --diag
+electron . --plugins
+electron . --enable-plugin=hello-world
+electron . --tools
+electron . --chat="帮我检查下冲突"
 ```
 
 > electron 二进制若未随 npm install 下载成功，可用本地缓存解压：
@@ -197,9 +215,23 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 
 > 本轮修掉一个真 bug：启动时在 `for (const id of manifests)` 循环里调用 `load()`，而 `load()` 内部会 `scan()` 重建同一个 Map → 迭代器被破坏、CPU 100% 卡死。改为**先快照 id 再加载**。
 
-## 12. 已知限制 / 待办
+## 12. P6 验收（已实测，2026-10-29）
 
-- **插件安全**：当前在主进程内加载（Node 全权限），权限字段是提示性的；真正沙箱（utilityProcess + RPC + fs/net 代理）未做。
+| 验收项 | 结果 |
+|---|---|
+| 便携版打包（不依赖 electron-builder / 联网） | ✅ `npm run package` → `dist/QDOQMC-win32-x64/QDOQMC.exe`（Electron 运行时 + `resources/app`，无需 node_modules） |
+| 打包产物可运行 | ✅ 打包版 `--smoke`：24 个插件全部加载，UI 正常截图 |
+| 打包版 CLI 可用 | ✅ `QDOQMC.exe --chat=/update`、`--tools`、`--analyze` 等 |
+| 分发包 | ✅ `dist/QDOQMC-0.1.0-win32-x64.zip`（138MB） |
+| 更新清单 | ✅ `scripts/make-feed.mjs` → `dist/latest.json`（version/size/sha256/url/minSupported/rollout） |
+| 更新检查走真实 HTTP | ✅ 本地静态服务 + 设置更新源 → 打包版报「发现新版本 0.2.0（当前 0.1.0）」 |
+| BOM 兼容 | ✅ 修复设置文件带 UTF-8 BOM 导致 JSON 解析失败、设置回退默认值的 bug |
+
+## 13. 已知限制 / 待办
+
+- **更新**：只做「检查」，下载与替换未做（`latest.json` 已带 sha256/size，可直接接）。
+- **签名**：便携版未做代码签名，Windows SmartScreen 会提示未知发布者。
+- **插件安全**：主进程内加载（Node 全权限），权限字段是提示性的；真正沙箱未做。
 - **插件市场**：只有本地目录安装，没有远程分发与签名校验。
 - **慢网**：本机到 Mojang 单连接仅 ~50KB/s，并发 16 约 200KB/s，432MB 资源耗时 18 分钟。镜像回退待接入。
 - **加载器**：Fabric 已通；NeoForge/Forge（processors 执行引擎）未做，Quilt 不做。
@@ -208,17 +240,16 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 - **老版本**：legacy/pre-1.6 资源物化已实现但未实测；Java 8 运行时自动下载未实测。
 - **实例**：只有默认实例。
 - **登录**：仅离线（正版 OAuth 未做）。
-- **更新/打包**：只到「检查」环节，尚未 electron-builder 打包与签名。
 
-## 13. 下一步（P6：交付）
+## 14. 下一步（P7：可分发与补账）
 
-1. **打包**：electron-builder 出 NSIS 安装包 / 便携版，锁版本、生成图标。
-2. **自动更新**：`latest.json` + sha256 + 静默下载替换 + 灰度与 `minSupported` 强制更新。
+1. **自动更新下载替换**：校验 sha256 → 解压到 `updates/` → 下次启动替换（便携版方案）。
+2. **NSIS 安装包 + 代码签名**（有证书后）。
 3. **插件沙箱化**：utilityProcess + 受限 API + 权限确认弹窗。
 4. **插件市场**：静态 feed + 签名校验。
 5. **补账**：NeoForge/Forge processors、`.mrpack`、资源包/光影 UI、多实例、正版登录。
 
-## 14. 测试用 mock LLM
+## 15. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

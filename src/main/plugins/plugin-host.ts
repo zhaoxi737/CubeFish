@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 插件宿主（P5）：运行时加载 / 卸载第三方插件。
  *
  * 插件目录：<data>/plugins/<id>/  （plugin.json + index.mjs）
@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { PluginInfo, PluginManifest, PluginPermission } from '../../shared/types'
-import { writeJsonAtomic } from '../lib/fsx'
+import { writeJsonAtomic, stripBom } from '../lib/fsx'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { ChatService, CommandSpec } from './chat'
 import type { LogService } from './logger'
@@ -22,7 +22,7 @@ import type { ToolDefinition, ToolsService } from './tools'
 
 function readSync<T>(file: string, fallback: T): T {
   try {
-    return JSON.parse(readFileSync(file, 'utf8')) as T
+    return JSON.parse(stripBom(readFileSync(file, 'utf8'))) as T
   } catch {
     return fallback
   }

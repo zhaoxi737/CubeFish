@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { definePlugin, type LauncherPlugin } from '../plugin-kit'
+import { stripBom } from '../lib/fsx'
 
 /**
  * 存储抽象（云存档的地基）。
@@ -31,7 +32,7 @@ export function createStoragePlugin(): LauncherPlugin<void> {
       readJson<T>(file: string, fallback: T): T {
         try {
           if (!existsSync(file)) return fallback
-          return JSON.parse(readFileSync(file, 'utf8')) as T
+          return JSON.parse(stripBom(readFileSync(file, 'utf8'))) as T
         } catch {
           return fallback
         }

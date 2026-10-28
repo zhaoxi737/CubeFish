@@ -2,7 +2,7 @@
 
 AI 驱动的《我的世界》启动器。一个大启动按钮 + 一个 AI 聊天框：说一句话，它把模组/光影/整合包下好、装进正确实例，然后一键开玩。
 
-> 当前状态：**P5「能长」完成**——第三方插件可在运行时加载/卸载并注册新的 AI 工具与聊天命令；配合 P4 的自然语言工具调用，AI 真的能给启动器加功能。
+> 当前状态：**P6「能发」完成**——便携版可双击运行（`dist/QDOQMC-win32-x64/QDOQMC.exe`），分发包与更新清单 `latest.json` 已生成，更新检查走真实 HTTP 验证。
 > 商业策略：先免费做口碑，但架构上把「收费的缝」全部预留好。
 
 ## 文档
@@ -13,15 +13,23 @@ AI 驱动的《我的世界》启动器。一个大启动按钮 + 一个 AI 聊�
 
 ## 运行
 
+### 打包版（推荐给普通用户）
+
+双击 `dist/QDOQMC-win32-x64/QDOQMC.exe` 即可，不需要装 Node/npm。
+分发包：`dist/QDOQMC-0.1.0-win32-x64.zip`（约 138MB）。
+
+### 开发模式
+
 ```bash
 npm install
 npm run build
 npm start          # 打开启动器
-npm run smoke      # 自动冒烟：截图 + 点击启动 + 走一次 IPC，结果打印到 stdout
+npm run smoke      # 自动冒烟：截图 + 点按钮 + 走一次 IPC，结果打印到 stdout
 npm run typecheck  # 类型检查
+npm run package    # 生成便携版
 ```
 
-要求：Node 22+，Windows 10/11。
+要求：Node 22+，Windows 10/11（开发时）。
 
 ## 目录结构
 

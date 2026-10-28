@@ -127,7 +127,7 @@ export function createChatPlugin(): LauncherPlugin<void> {
         if (state.status === 'offline') return '离线模式：还没有配置更新源（设置里可填更新清单地址）。'
         if (state.status === 'error') return `检查失败：${state.message ?? '未知错误'}`
         if (state.status === 'available') {
-          return `发现新版本 ${state.latest}（当前 ${state.current}）${state.mustUpdate ? '，必须更新' : ''}。P5 接入自动下载。`
+          return `发现新版本 ${state.latest}（当前 ${state.current}）${state.mustUpdate ? '，必须更新' : ''}。下载与替换功能将在后续版本接入。`
         }
         return `已是最新版本 ${state.current}。`
       },

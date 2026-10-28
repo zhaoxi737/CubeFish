@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   AppInfo,
   EventSummary,
+  GameStateEvent,
   InstanceSummary,
-  LaunchDryRun,
   SettingsPatch,
   SettingsShape,
+  TaskProgress,
   UpdateState,
+  VersionList,
 } from '../shared/types'
 import { ChatPanel } from './components/ChatPanel'
 import { SettingsDialog } from './components/SettingsDialog'
@@ -27,6 +29,15 @@ const FALLBACK_INFO: AppInfo = {
   logsDir: '',
   plugins: [],
   failedPlugins: [],
+}
+
+const STAGE_LABEL: Record<string, string> = {
+  version: '解析版本 JSON',
+  libraries: '下载库文件',
+  assets: '下载游戏资源',
+  legacy: '物化旧版资源',
+  logging: '日志配置',
+  done: '安装完成',
 }
 
 function updateLabel(state: UpdateState): string {
@@ -52,20 +63,37 @@ export function App() {
   const [info, setInfo] = useState<AppInfo>(FALLBACK_INFO)
   const [settings, setSettings] = useState<SettingsShape | null>(null)
   const [instance, setInstance] = useState<InstanceSummary | null>(null)
+  const [versions, setVersions] = useState<VersionList | null>(null)
+  const [installed, setInstalled] = useState<string[]>([])
+  const [selected, setSelected] = useState('')
+  const [installing, setInstalling] = useState(false)
+  const [progress, setProgress] = useState<TaskProgress | null>(null)
+  const [running, setRunning] = useState<{ pid?: number } | null>(null)
+  const [exited, setExited] = useState<GameStateEvent | null>(null)
   const [update, setUpdate] = useState<UpdateState>({ status: 'idle', current: FALLBACK_INFO.version })
   const [events, setEvents] = useState<EventSummary | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [launch, setLaunch] = useState<LaunchDryRun | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [showLogs, setShowLogs] = useState(false)
+  const listening = useRef(false)
 
   const hasApi = typeof window !== 'undefined' && typeof window.qdo !== 'undefined'
 
   const notify = useCallback((text: string) => {
     setToast(text)
-    window.setTimeout(() => setToast((current) => (current === text ? null : current)), 5200)
+    window.setTimeout(() => setToast((current) => (current === text ? null : current)), 7000)
   }, [])
+
+  const refreshInstalled = useCallback(async () => {
+    if (!hasApi) return
+    try {
+      const [list, instances] = await Promise.all([window.qdo.versions.installed(), window.qdo.instances.list()])
+      setInstalled(list)
+      setInstance(instances[0] ?? null)
+    } catch (err) {
+      notify(`读取实例失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [hasApi, notify])
 
   const checkUpdate = useCallback(async () => {
     if (!hasApi) return
@@ -80,6 +108,23 @@ export function App() {
 
   useEffect(() => {
     if (!hasApi) return
+    if (!listening.current) {
+      listening.current = true
+      window.qdo.onProgress((p) => setProgress(p))
+      window.qdo.onGameState((state) => {
+        if (state.state === 'running') {
+          setRunning({ pid: state.pid })
+          setExited(null)
+          notify(`游戏已启动：${state.versionId ?? ''}${state.pid ? `（PID ${state.pid}）` : ''}`)
+        } else {
+          setRunning(null)
+          setExited(state)
+          notify(`游戏已退出：${state.hint ?? ''}${state.crashReport ? '（已生成崩溃报告）' : ''}`)
+          void refreshInstalled()
+        }
+      })
+    }
+
     let cancelled = false
     void (async () => {
       try {
@@ -94,6 +139,20 @@ export function App() {
         setInstance(instances[0] ?? null)
         setUpdate((prev) => ({ ...prev, current: appInfo.version }))
         if (appSettings.autoCheckUpdate) void checkUpdate()
+
+        try {
+          const [list, installedList] = await Promise.all([window.qdo.versions.list(), window.qdo.versions.installed()])
+          if (cancelled) return
+          setVersions(list)
+          setInstalled(installedList)
+          const preferred = instances[0]?.versionId && list.versions.some((v) => v.id === instances[0]?.versionId)
+            ? instances[0].versionId
+            : list.latest.release
+          setSelected(preferred)
+        } catch (err) {
+          if (!cancelled) notify(`版本清单获取失败：${err instanceof Error ? err.message : String(err)}`)
+        }
+
         try {
           const summary = await window.qdo.events.summary()
           if (!cancelled) setEvents(summary)
@@ -101,28 +160,60 @@ export function App() {
           /* 统计失败不影响主流程 */
         }
       } catch (err) {
-        notify(`初始化失败：${err instanceof Error ? err.message : String(err)}`)
+        if (!cancelled) notify(`初始化失败：${err instanceof Error ? err.message : String(err)}`)
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [hasApi, checkUpdate, notify])
+  }, [checkUpdate, hasApi, notify, refreshInstalled])
 
-  const onLaunch = useCallback(async () => {
-    if (!hasApi || busy) return
-    setBusy(true)
+  const install = useCallback(async () => {
+    if (!hasApi || !selected || installing) return
+    setInstalling(true)
+    setExited(null)
+    setProgress({ taskId: 'local', kind: 'install', stage: 'version', done: 0, total: 1, bytes: 0, message: '开始' })
     try {
-      const result = await window.qdo.launch.dryRun(instance?.id)
-      setLaunch(result)
-      setInstance(result.instance)
-      notify(result.hint)
+      const result = await window.qdo.versions.install(selected)
+      if (!result.ok) {
+        notify(`安装失败：${result.error ?? '未知错误'}`)
+      } else {
+        notify(`安装完成：${result.versionId}（Java ${result.javaMajor}，${Math.round(result.ms / 1000)}s）`)
+      }
+      await refreshInstalled()
+      setSelected(selected)
     } catch (err) {
-      notify(`启动预检失败：${err instanceof Error ? err.message : String(err)}`)
+      notify(`安装失败：${err instanceof Error ? err.message : String(err)}`)
     } finally {
-      setBusy(false)
+      setInstalling(false)
+      setProgress(null)
     }
-  }, [busy, hasApi, instance?.id, notify])
+  }, [hasApi, installing, notify, refreshInstalled, selected])
+
+  const launch = useCallback(async () => {
+    if (!hasApi || running || installing) return
+    if (!instance?.installed) {
+      notify('还没有安装游戏版本，请先在上方选择并安装。')
+      return
+    }
+    setExited(null)
+    try {
+      const result = await window.qdo.launch.start(instance.id)
+      if (!result.ok) notify(`启动失败：${result.error ?? '未知错误'}`)
+      else {
+        setRunning({ pid: result.pid })
+        notify(`已启动 ${result.versionId} · 玩家 ${result.playerName} · Java ${result.javaPath ? '已匹配' : ''}`)
+      }
+    } catch (err) {
+      notify(`启动失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [hasApi, installing, instance?.id, instance?.installed, notify, running])
+
+  const stop = useCallback(async () => {
+    if (!hasApi) return
+    const result = await window.qdo.launch.stop()
+    notify(result.forced ? '已强制结束游戏进程' : '已请求结束游戏')
+  }, [hasApi, notify])
 
   const onSaveSettings = useCallback(
     async (patch: SettingsPatch) => {
@@ -130,11 +221,14 @@ export function App() {
       const next = await window.qdo.settings.patch(patch)
       setSettings(next)
       setShowSettings(false)
+      await refreshInstalled()
       notify('设置已保存')
     },
-    [hasApi, notify],
+    [hasApi, notify, refreshInstalled],
   )
 
+  const canLaunch = Boolean(instance?.installed) && !running && !installing
+  const progressPct = progress && progress.total > 0 ? Math.min(100, Math.round((progress.done / progress.total) * 100)) : 0
   const failed = info.failedPlugins
 
   return (
@@ -143,9 +237,12 @@ export function App() {
         <div className="brand">
           <span className="brand-mark">QDOQMC</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P0 骨架</span>
+          <span className="brand-tag">P1 · 能玩</span>
         </div>
         <div className="titlebar-actions">
+          <button type="button" className="ghost" onClick={() => void checkUpdate()}>
+            检查更新
+          </button>
           <button type="button" className="ghost" onClick={() => setShowLogs(true)}>
             日志
           </button>
@@ -159,32 +256,80 @@ export function App() {
         <section className="stage">
           <div className="instances-line">
             <span className="instance-name">{instance?.name ?? '默认实例'}</span>
-            <span className="chip">{instance?.mcVersion || '未安装版本'}</span>
-            <span className="chip">{instance?.loader ?? 'vanilla'}</span>
+            <span className="chip">{instance?.versionId || '未选版本'}</span>
             <span className="chip">{instance?.memoryMb ?? 0} MB</span>
+            <span className="chip">{instance?.playerName ?? 'Player'}</span>
             <span className="chip subtle">版本隔离</span>
           </div>
 
-          <button type="button" className="launch" onClick={onLaunch} disabled={busy || !hasApi}>
-            <span className="launch-main">{busy ? '预检中…' : '启动游戏'}</span>
-            <span className="launch-sub">P0 · 启动链路预检（真实启动在 P1 接入）</span>
+          <div className="version-row">
+            <select
+              value={selected}
+              onChange={(event) => setSelected(event.target.value)}
+              disabled={installing || Boolean(running) || !versions}
+            >
+              {(versions?.versions ?? []).map((v) => (
+                <option key={v.id} value={v.id}>
+                  {installed.includes(v.id) ? '✓ ' : ''}
+                  {v.id}
+                  {v.id === versions?.latest.release ? '（最新正式版）' : ''}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => void install()}
+              disabled={installing || !selected || installed.includes(selected)}
+            >
+              {installing ? '安装中…' : installed.includes(selected) ? '已安装' : '安装选定版本'}
+            </button>
+          </div>
+
+          {progress && (installing || progress.stage !== 'done') ? (
+            <div className="progress-card">
+              <div className="progress-head">
+                <span>{STAGE_LABEL[progress.stage] ?? progress.stage}</span>
+                <span>
+                  {progress.total > 0 ? `${progress.done}/${progress.total} · ` : ''}
+                  {progressPct}%
+                </span>
+              </div>
+              <div className="progress-bar">
+                <div className="progress-fill" style={{ width: `${Math.max(2, progressPct)}%` }} />
+              </div>
+              <div className="progress-detail">
+                {(progress.bytes / 1048576).toFixed(1)} MB {progress.message ? `· ${progress.message}` : ''}
+              </div>
+            </div>
+          ) : null}
+
+          <button type="button" className="launch" onClick={() => void launch()} disabled={!canLaunch}>
+            <span className="launch-main">{running ? '游戏运行中' : installing ? '安装中…' : '启动游戏'}</span>
+            <span className="launch-sub">
+              {running
+                ? `PID ${running.pid ?? '?'} · 点击右侧按钮结束`
+                : canLaunch
+                  ? `${instance?.versionId} · 离线登录 · ${instance?.playerName}`
+                  : '先安装一个游戏版本'}
+            </span>
           </button>
 
-          {launch ? (
-            <ul className="steps">
-              {launch.steps.map((step) => (
-                <li key={step.step} className={`step step-${step.status}`}>
-                  <span className="step-dot" />
-                  <span className="step-name">{step.step}</span>
-                  <span className="step-detail">{step.detail}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="stage-hint">
-              说一句话让它干活：右侧输入 <code>/help</code> 查看当前可用命令。
-            </p>
-          )}
+          {running ? (
+            <button type="button" className="ghost stop-btn" onClick={() => void stop()}>
+              结束游戏
+            </button>
+          ) : null}
+
+          {exited ? (
+            <div className={`exit-card ${exited.crashReport ? 'exit-bad' : ''}`}>
+              <div>
+                退出码 {exited.exitCode ?? '—'} · {exited.hint ?? '已退出'}
+                {exited.uptimeMs ? ` · 运行 ${Math.round(exited.uptimeMs / 1000)}s` : ''}
+              </div>
+              {exited.crashReport ? <code>{exited.crashReport}</code> : null}
+            </div>
+          ) : null}
 
           {failed.length > 0 ? (
             <div className="warn-box">

@@ -5,7 +5,7 @@ const WELCOME: ChatMessage = {
   role: 'assistant',
   ts: Date.now(),
   text:
-    '我是 QDOQMC 的助手。P0 阶段先跑通本地命令：/help 看命令，/status 看状态，/update 检查更新，/instance 看隔离目录。\nP4 起这里接入真正的 AI 工具调用（下载模组、解冲突、读日志）。',
+    '我是 QDOQMC 的助手。现在能做的事：/help 看命令，/status 看状态，/java 看本机 Java，/update 检查更新，/instance 看隔离目录。\n安装版本→启动游戏已经打通；P4 起这里接入真正的 AI 工具调用（下载模组、解冲突、读日志）。',
 }
 
 export function ChatPanel() {

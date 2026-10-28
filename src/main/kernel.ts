@@ -7,7 +7,10 @@ import { createEntitlementPlugin } from './plugins/entitlement'
 import { createIdentityPlugin } from './plugins/identity'
 import { createInstancesPlugin } from './plugins/instances'
 import { createIpcPlugin, type WindowProvider } from './plugins/ipc'
+import { createJavaPlugin } from './plugins/java'
+import { createLaunchPlugin } from './plugins/launch'
 import { createLoggerPlugin, type LogService } from './plugins/logger'
+import { createMojangPlugin } from './plugins/mojang'
 import { createPathsPlugin } from './plugins/paths'
 import { createSettingsPlugin } from './plugins/settings'
 import { createStoragePlugin } from './plugins/storage'
@@ -38,7 +41,7 @@ export interface Kernel {
 /**
  * 内核：Cordis 容器 + 启动器插件装配。
  *
- * 顺序即依赖顺序（P0 用显式顺序保证确定性；P4 的插件宿主会换成注入式按需激活）。
+ * 顺序即依赖顺序（P0/P1 用显式顺序保证确定性；插件宿主在 P4 换成注入式按需激活）。
  * 任何插件加载失败都不会阻塞其它插件，失败项通过 AppInfo 暴露给 UI 与日志。
  */
 export async function bootKernel(options: KernelOptions): Promise<Kernel> {
@@ -64,7 +67,10 @@ export async function bootKernel(options: KernelOptions): Promise<Kernel> {
     createCloudPlugin(),
     createTelemetryPlugin(),
     createUpdaterPlugin(),
+    createMojangPlugin(),
+    createJavaPlugin(),
     createInstancesPlugin(),
+    createLaunchPlugin(),
     createChatPlugin(),
     createIpcPlugin({ getWindow: options.getWindow, summary }),
   ]

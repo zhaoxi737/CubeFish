@@ -21,6 +21,8 @@ async function main() {
   await mkdir(path.join(out, 'renderer'), { recursive: true })
 
   // Main process: ESM bundle (Electron >= 28 supports ESM main).
+  // banner：把 CJS 依赖（如 adm-zip）里的 require("fs") 映射到 createRequire，
+  // 否则 esbuild 生成的动态 require 在 ESM 下会抛 "Dynamic require ... not supported"。
   await build({
     ...common,
     entryPoints: ['src/main/index.ts'],
@@ -29,6 +31,9 @@ async function main() {
     format: 'esm',
     target: 'node22',
     external: ['electron'],
+    banner: {
+      js: "import { createRequire as __qdoCreateRequire } from 'node:module';\nconst require = __qdoCreateRequire(import.meta.url);",
+    },
   })
 
   // Preload: CJS bundle (sandboxed preload cannot be ESM).

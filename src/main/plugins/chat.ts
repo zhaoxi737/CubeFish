@@ -3,6 +3,7 @@ import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { EntitlementService } from './entitlement'
 import type { IdentityService } from './identity'
 import type { InstancesService } from './instances'
+import type { JavaService } from './java'
 import type { LogService } from './logger'
 import type { SettingsService } from './settings'
 import type { TelemetryService } from './telemetry'
@@ -32,6 +33,7 @@ export function createChatPlugin(): LauncherPlugin<void> {
     const log = use<LogService>(ctx, 'log')
     const updater = use<UpdaterService>(ctx, 'updater')
     const instances = use<InstancesService>(ctx, 'instances')
+    const java = use<JavaService>(ctx, 'java')
     const settings = use<SettingsService>(ctx, 'settings')
     const identity = use<IdentityService>(ctx, 'identity')
     const entitlement = use<EntitlementService>(ctx, 'entitlement')
@@ -128,8 +130,22 @@ export function createChatPlugin(): LauncherPlugin<void> {
         return [
           `实例：${inst.name}（${inst.id}）`,
           `目录：${inst.path}`,
+          `游戏目录：${inst.gameDir}`,
           '隔离目录：mods / resourcepacks / shaderpacks / saves / config / logs / crash-reports',
-          '全局共享（P1 接入）：assets / libraries / java / 下载缓存',
+          '全局共享：assets / libraries / versions / runtimes / 下载缓存',
+        ].join('\n')
+      },
+    })
+
+    register({
+      name: 'java',
+      description: '列出本机探测到的 Java 运行时',
+      run: async () => {
+        const runtimes = await java.detect()
+        if (runtimes.length === 0) return '没有探测到可用 Java。安装 JDK 或让启动器自动下载运行时。'
+        return [
+          `本机 Java（${runtimes.length} 个）：`,
+          ...runtimes.map((r) => `- Java ${r.major} · ${r.version} · ${r.path}`),
         ].join('\n')
       },
     })

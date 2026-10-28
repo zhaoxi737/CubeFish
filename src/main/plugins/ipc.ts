@@ -1,24 +1,32 @@
 import electron from 'electron'
 import type { BrowserWindow } from 'electron'
-import { CH } from '../../shared/channels'
+import { CH, EVT } from '../../shared/channels'
 import type {
   AppInfo,
   AppMeta,
   ChatReply,
   EventSummary,
   InstanceSummary,
+  JavaRuntimeInfo,
   LaunchDryRun,
+  LaunchResult,
   LogRecord,
   SettingsPatch,
   SettingsShape,
+  TaskProgress,
   UpdateState,
+  VersionList,
+  InstallResult,
 } from '../../shared/types'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { ChatService } from './chat'
 import type { EntitlementService } from './entitlement'
 import type { IdentityService } from './identity'
 import type { InstancesService } from './instances'
+import type { JavaService } from './java'
+import type { LaunchService } from './launch'
 import type { LogService } from './logger'
+import type { MojangService } from './mojang'
 import type { PathsService } from './paths'
 import type { SettingsService } from './settings'
 import type { TelemetryService } from './telemetry'
@@ -45,6 +53,18 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     const chat = use<ChatService>(ctx, 'chat')
     const entitlement = use<EntitlementService>(ctx, 'entitlement')
     const telemetry = use<TelemetryService>(ctx, 'telemetry')
+    const mojang = use<MojangService>(ctx, 'mojang')
+    const java = use<JavaService>(ctx, 'java')
+    const launch = use<LaunchService>(ctx, 'launch')
+
+    const push = (channel: string, payload: unknown): void => {
+      const win = config.getWindow()
+      if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
+    }
+
+    mojang.setProgressSink((progress: TaskProgress) => push(EVT.progress, progress))
+    java.setProgressSink((progress: TaskProgress) => push(EVT.progress, progress))
+    launch.setGameStateSink((state) => push(EVT.gameState, state))
 
     const handle = <T>(channel: string, handler: (...args: any[]) => T | Promise<T>): void => {
       ipcMain.removeHandler(channel)
@@ -77,7 +97,19 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle(CH.entitlements, () => entitlement.list())
     handle<EventSummary>(CH.eventsSummary, () => telemetry.summary())
 
+    handle<VersionList>(CH.versionsList, () => mojang.list('release'))
+    handle<InstallResult>(CH.versionInstall, async (versionId: string) => {
+      const result = await mojang.install(versionId, `install-${versionId}-${Date.now()}`)
+      if (result.ok) {
+        instances.setVersion('default', versionId, versionId)
+      }
+      return result
+    })
+    handle<string[]>(CH.versionsInstalled, () => mojang.installed())
+    handle<JavaRuntimeInfo[]>(CH.javaList, () => java.detect())
+    handle<LaunchResult>(CH.launchStart, (instanceId?: string) => launch.start(instanceId ?? 'default'))
+    handle(CH.launchStop, () => launch.stop())
+
     log.info('ipc', 'IPC 通道已注册', { count: Object.keys(CH).length })
-    void config.getWindow
   })
 }

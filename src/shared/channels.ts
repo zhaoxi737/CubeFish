@@ -10,6 +10,18 @@ export const CH = {
   chatSend: 'chat:send',
   entitlements: 'entitlement:list',
   eventsSummary: 'events:summary',
+  versionsList: 'versions:list',
+  versionInstall: 'version:install',
+  versionsInstalled: 'versions:installed',
+  javaList: 'java:list',
+  launchStart: 'launch:start',
+  launchStop: 'launch:stop',
+} as const
+
+/** 主进程 → 渲染进程的推送通道 */
+export const EVT = {
+  progress: 'evt:progress',
+  gameState: 'evt:game-state',
 } as const
 
 export type ChannelName = (typeof CH)[keyof typeof CH]

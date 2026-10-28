@@ -4,10 +4,21 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { bootKernel, type Kernel } from './kernel'
+import { runInstallCli, runLaunchTest } from './cli'
 
 const { app, BrowserWindow, shell } = electron
 const here = path.dirname(fileURLToPath(import.meta.url))
 const isSmoke = process.argv.includes('--smoke')
+
+function argValue(name: string): string | undefined {
+  const prefix = `--${name}=`
+  const hit = process.argv.find((arg) => arg.startsWith(prefix))
+  return hit ? hit.slice(prefix.length) : undefined
+}
+
+const installTarget = argValue('install')
+const launchTarget = argValue('launch')
+const waitMs = Number(argValue('wait') ?? 60000)
 
 let mainWindow: BrowserWindowType | null = null
 let kernel: Kernel | null = null
@@ -57,17 +68,16 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
     const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
     try {
-      await wait(1400)
+      await wait(2400)
       const firstShot = await shot('smoke.png')
-
-      // 点击「启动游戏」，验证 UI → IPC → 实例预检 → 回填 的完整链路
-      await win.webContents.executeJavaScript(`document.querySelector('.launch')?.click(); 'clicked'`)
-      await wait(900)
-      const launchShot = await shot('smoke-launch.png')
 
       const uiText = (await win.webContents.executeJavaScript(
         `JSON.stringify({
-          steps: [...document.querySelectorAll('.step')].map((el) => el.textContent?.replace(/\\s+/g, ' ').trim()),
+          versionSelect: document.querySelector('.version-row select')?.value ?? '',
+          optionCount: document.querySelectorAll('.version-row select option').length,
+          chips: [...document.querySelectorAll('.chip')].map((el) => el.textContent),
+          launchLabel: document.querySelector('.launch-main')?.textContent ?? '',
+          launchDisabled: Boolean(document.querySelector('.launch')?.disabled),
           status: document.querySelector('.statusbar')?.textContent ?? '',
           toast: document.querySelector('.toast')?.textContent ?? ''
         })`,
@@ -85,7 +95,7 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           version: info?.version ?? app.getVersion(),
           plugins: k.summary.plugins,
           failed: k.summary.failed,
-          screenshots: [firstShot, launchShot],
+          screenshots: [firstShot],
           ui: JSON.parse(uiText),
           chatStatus: chat,
         })}`,
@@ -122,6 +132,17 @@ if (!gotLock) {
         isSmoke,
         getWindow: () => mainWindow,
       })
+
+      if (installTarget) {
+        const code = await runInstallCli(kernel, installTarget)
+        app.exit(code)
+        return
+      }
+      if (launchTarget) {
+        const code = await runLaunchTest(kernel, launchTarget, Number.isFinite(waitMs) ? waitMs : 60000)
+        app.exit(code)
+        return
+      }
 
       mainWindow = createWindow()
       mainWindow.on('closed', () => {

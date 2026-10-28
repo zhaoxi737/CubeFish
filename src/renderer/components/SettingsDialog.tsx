@@ -23,6 +23,7 @@ export function SettingsDialog({ settings, onClose, onSave }: Props) {
         autoCheckUpdate: draft.autoCheckUpdate,
         telemetry: draft.telemetry,
         memoryMb: draft.memoryMb,
+        playerName: draft.playerName,
         apiKey: draft.apiKey,
       })
     } finally {
@@ -72,6 +73,17 @@ export function SettingsDialog({ settings, onClose, onSave }: Props) {
               onChange={(event) => update('memoryMb', Number(event.target.value) || 4096)}
             />
             <span className="field-hint">P1 起按实例生效；P3 会按整合包规模自动建议。</span>
+          </label>
+
+          <label className="field">
+            <span className="field-label">离线登录玩家名</span>
+            <input
+              value={draft.playerName}
+              onChange={(event) => update('playerName', event.target.value)}
+              placeholder="Player"
+              spellCheck={false}
+            />
+            <span className="field-hint">离线模式使用（正版登录在 P2 接入）。</span>
           </label>
 
           <label className="field">

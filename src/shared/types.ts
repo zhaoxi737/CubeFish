@@ -57,13 +57,18 @@ export interface UpdateState {
 export interface InstanceSummary {
   id: string
   name: string
+  /** 已选定的游戏版本（Mojang 版本 id） */
+  versionId?: string
   mcVersion: string
   loader: string
   loaderVersion?: string
   memoryMb: number
+  playerName: string
   createdAt: number
   installed: boolean
   path: string
+  /** 游戏目录（= 进程 cwd，版本隔离的真正根） */
+  gameDir: string
 }
 
 export interface LaunchStep {
@@ -100,6 +105,8 @@ export interface SettingsShape {
   apiKey: string
   /** 默认内存分配（MB） */
   memoryMb: number
+  /** 离线登录玩家名 */
+  playerName: string
   /** 启动时自动检查更新 */
   autoCheckUpdate: boolean
 }
@@ -132,3 +139,73 @@ export interface ServiceStatus {
   loaded: boolean
   detail?: string
 }
+
+/* ---------- P1：下载 / 安装 / Java / 启动 ---------- */
+
+export type VersionType = 'release' | 'snapshot' | 'old_beta' | 'old_alpha'
+
+export interface VersionSummary {
+  id: string
+  type: VersionType
+  releaseTime: string
+}
+
+export interface VersionList {
+  latest: { release: string; snapshot: string }
+  versions: VersionSummary[]
+  installed: string[]
+}
+
+export type InstallStage = 'version' | 'libraries' | 'assets' | 'logging' | 'legacy' | 'done'
+
+export interface TaskProgress {
+  taskId: string
+  kind: 'install'
+  stage: InstallStage | string
+  done: number
+  total: number
+  bytes: number
+  message?: string
+}
+
+export interface InstallResult {
+  ok: boolean
+  versionId: string
+  ms: number
+  javaMajor?: number
+  assetIndex?: string
+  files?: number
+  error?: string
+}
+
+export interface JavaRuntimeInfo {
+  /** java.exe / javaw.exe 绝对路径 */
+  path: string
+  home: string
+  version: string
+  major: number
+  source: 'env' | 'path' | 'common' | 'mojang' | 'manual'
+}
+
+export interface LaunchResult {
+  ok: boolean
+  pid?: number
+  versionId?: string
+  javaPath?: string
+  playerName?: string
+  ms?: number
+  error?: string
+}
+
+export interface GameStateEvent {
+  state: 'running' | 'exited'
+  pid?: number
+  versionId?: string
+  instanceId?: string
+  exitCode?: number | null
+  signal?: string | null
+  uptimeMs?: number
+  crashReport?: string
+  hint?: string
+}
+

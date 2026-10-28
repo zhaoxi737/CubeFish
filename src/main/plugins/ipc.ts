@@ -186,6 +186,14 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
       return result
     })
 
+    handle(CH.loaderNeoForge, async (gameVersion: string) => {
+      const result = await loaders.installNeoForge(gameVersion)
+      if (result.ok && result.versionId) {
+        instances.setVersion(instances.active().id, result.versionId, gameVersion, gameVersion, 'neoforge')
+      }
+      return result
+    })
+
     log.info('ipc', 'IPC 通道已注册', { count: Object.keys(CH).length })
   })
 }

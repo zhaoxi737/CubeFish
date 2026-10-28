@@ -54,6 +54,7 @@ electron . --content=low-on-fire
 electron . --market
 electron . --market-install=hello-world
 electron . --inspect-modpack=fabulously-optimized
+electron . --neoforge=1.21.11
 electron . --modpack="D:\packs\test.mrpack"
 ```
 
@@ -298,21 +299,26 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 | UI 整合包标签 | ✅ 模组面板新增「整合包」分类，返回 12 条真实 Modrinth 整合包，一键安装 |
 | 25 个插件全部加载 | ✅ `failed: []` |
 
-## 17. P11 进展：NeoForge 安装器（已跑通 processor 链，启动待解决）
+## 17. P11 验收（已实测，2026-10-29）：NeoForge
 
-| 环节 | 状态 |
+| 验收项 | 结果 |
 |---|---|
-| 版本解析（maven metadata → 21.11.48） | ✅ |
-| 安装器下载 | ✅ 4.2MB |
-| install_profile 解析（spec 1） | ✅ data / processors / libraries |
-| 变量占位符（4 种：坐标 / {KEY} / /data 文件 / '字面量'） | ✅ |
-| 依赖预下载（installertools、neoform 映射、31 个库） | ✅ |
-| processors 执行（跳过 server-only，跑 2 个） | ✅ 16 秒，退出码 0 |
-| patched client jar 产出 | ✅ `minecraft-client-patched-21.11.48.jar`（33MB，29191 条目） |
-| 版本 json 写入 + 绑定实例 | ✅ |
-| **启动** | ❌ FML 判定为 DEV 环境（patched jar 缺 `Minecraft-Dists`），手工补 manifest 后进入 joined 配置扫描阶段仍报错退出。下一个工作日继续定位 |
+| 版本解析 | ✅ maven metadata → `21.11.48`（1.21.11 最新稳定版） |
+| 安装器调用 | ✅ 官方 installer `--installClient`，日志 `Successfully installed client into launcher` |
+| 安装产物 | ✅ `versions/neoforge-21.11.48/`（26 个运行时库）+ `minecraft-client-patched-21.11.48.jar`（33MB） |
+| processor 链（自研执行器） | ✅ 2 个 processor 16 秒跑完（保留给 Forge 复用，见 `lib/forge-installer.ts`） |
+| 启动 | ✅ 窗口标题 `Minecraft NeoForge* 1.21.11`；日志含 `Setting user` / `OpenAL` / `Sound engine started` / `Backend library` / `Created: 1024x` / `NeoForge 21.11.48` |
+| Fabric 回归 | ✅ 默认实例启动标记全部命中 |
+| UI | ✅ 主界面新增「装 NeoForge」按钮 |
+| CLI / AI 工具 | ✅ `--neoforge=<mcVersion>`、`install_neoforge` 工具 |
 
-> 已确认 FML 逻辑：`ProcessMinecraftJar` 在「joined（client+server 双输入）」时才写 `Minecraft-Dists: client server` 与每条目的 `Minecraft-Dist`；单 client 输入不写。下一轮方向：按官方式双输入生成 joined jar，或让 FML 以 production 模式接受单 client patched jar。
+> **根因复盘**：NeoForge 启动失败的真实原因是版本 json 解析把 game args 做成了「二选一」——
+> NeoForge 只声明自己的 `--fml.*` 参数，一旦取它就会丢掉原版的 `--username/--accessToken/--version`，
+> FML 的 JOptSimple 直接报 `MissingRequiredOptionsException [accessToken, version]` 并弹窗退出。
+> 修复：game args 与 libraries/jvm args 一样按继承链**合并**（`chain.flatMap`）。
+>
+> 另一处坑：FML 要求 `-DlibraryDirectory` 与 patched client jar 就位；用官方安装器注入 profile 后 FML 正确进入
+> `CLIENT in PROD` 模式（自研 processor 路径会停在 DEV 模式，因此 NeoForge 安装改走官方 installer）。
 
 ## 18. 已知限制 / 待办
 
@@ -321,7 +327,7 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 - **插件安全**：主进程内加载（Node 全权限），权限字段是提示性的；真正沙箱未做。
 - **插件市场**：feed 与签名链路已通；缺少审核、版本更新检测、分类与评分。
 - **慢网**：本机到 Mojang 单连接仅 ~50KB/s，并发 16 约 200KB/s，432MB 资源耗时 18 分钟。镜像回退待接入。
-- **加载器**：Fabric 已通；NeoForge 安装器 processor 链已跑通，但启动被 FML 生产/开发环境校验拦住（见第 17 节），Forge 未做，Quilt 不做。
+- **加载器**：Fabric、NeoForge（1.20.2+）已通并可启动；Forge（含 1.20.1 及更老）、Quilt 未做。NeoForge 安装需 launcher_profiles.json（缺失时自动创建）。
 - **整合包**：`.mrpack` 已通（Fabric/原版）；NeoForge/Forge 整合包会明确报错。CurseForge `.zip` 整合包不支持。
 - **AI**：真实模型调用需用户自填 Key（本机验证用 mock LLM）；流式输出、会话记忆未做。
 - **老版本**：legacy/pre-1.6 资源物化已实现但未实测；Java 8 运行时自动下载未实测。
@@ -330,7 +336,7 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 
 ## 19. 下一步（P12：补账）
 
-1. **NeoForge 启动链修复**（patched jar 的 dist 语义），再补 Forge。
+1. **Forge 支持**：复用 lib/forge-installer.ts 的 processor 引擎，先做 1.20.1（继承链 + BootstrapLauncher）。
 2. **插件沙箱化**：utilityProcess + 受限 API + 权限确认。
 3. **登录**：微软正版 OAuth（需要 Azure 应用 id）。
 4. **体验**：流式 AI 输出、会话记忆、崩溃一键修复。

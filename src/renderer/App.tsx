@@ -83,6 +83,7 @@ export function App() {
   const [showMods, setShowMods] = useState(false)
   const [showPlugins, setShowPlugins] = useState(false)
   const [fabricBusy, setFabricBusy] = useState(false)
+  const [neoforgeBusy, setNeoforgeBusy] = useState(false)
   const [instances, setInstances] = useState<InstanceSummary[]>([])
   const [newInstanceOpen, setNewInstanceOpen] = useState(false)
   const [newInstanceName, setNewInstanceName] = useState('')
@@ -345,6 +346,27 @@ export function App() {
     }
   }, [fabricBusy, hasApi, instance?.gameVersion, installed, notify, refreshInstalled, selected])
 
+  const installNeoForge = useCallback(async () => {
+    if (!hasApi || neoforgeBusy) return
+    const gameVersion = instance?.gameVersion ?? selected
+    if (!gameVersion || !installed.includes(gameVersion)) {
+      notify('先安装对应的原版版本，再装 NeoForge')
+      return
+    }
+    setNeoforgeBusy(true)
+    try {
+      const result = await window.qdo.loaders.neoforge(gameVersion)
+      if (!result.ok) notify(`NeoForge 安装失败：${result.error ?? '未知错误'}`)
+      else notify(`NeoForge ${result.loaderVersion} 已安装`)
+      await refreshInstalled()
+    } catch (err) {
+      notify(`NeoForge 安装失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setNeoforgeBusy(false)
+      setProgress(null)
+    }
+  }, [hasApi, instance?.gameVersion, installed, neoforgeBusy, notify, refreshInstalled, selected])
+
   const onSaveSettings = useCallback(
     async (patch: SettingsPatch) => {
       if (!hasApi) return
@@ -367,7 +389,7 @@ export function App() {
         <div className="brand">
           <span className="brand-mark">QDOQMC</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P8 · 多实例</span>
+          <span className="brand-tag">P11 · NeoForge</span>
         </div>
         <div className="titlebar-actions">
           <button type="button" className="ghost" onClick={() => setShowMods(true)} disabled={!instance}>
@@ -474,6 +496,14 @@ export function App() {
               disabled={fabricBusy || installing || !selected || !installed.includes(selected)}
             >
               {fabricBusy ? '装 Fabric…' : instance?.loader === 'fabric' ? 'Fabric 已装' : '装 Fabric'}
+            </button>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => void installNeoForge()}
+              disabled={neoforgeBusy || installing || !selected || !installed.includes(selected)}
+            >
+              {neoforgeBusy ? '装 NeoForge…' : instance?.loader === 'neoforge' ? 'NeoForge 已装' : '装 NeoForge'}
             </button>
           </div>
 

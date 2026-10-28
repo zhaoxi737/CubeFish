@@ -262,4 +262,51 @@ export function fileExists(file: string | undefined): boolean {
   return Boolean(file && existsSync(file))
 }
 
+/**
+ * 调用官方安装器的 --installClient（NeoForge/Forge 通用）。
+ * 官方安装器除了跑 processors，还会做 FML 生产模式所需的 profile 注入与 manifest 处理，
+ * 比手工执行 processors 更稳。
+ */
+export async function runOfficialInstaller(options: {
+  installerPath: string
+  dataRoot: string
+  javaPath: string
+  log: (message: string) => void
+}): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn(options.javaPath, ['-jar', options.installerPath, '--installClient', options.dataRoot], {
+      cwd: options.dataRoot,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let tail = ''
+    const onData = (chunk: Buffer) => {
+      tail = (tail + chunk.toString('utf8')).slice(-4000)
+    }
+    child.stdout?.on('data', onData)
+    child.stderr?.on('data', onData)
+    const timer = setTimeout(() => {
+      child.kill()
+      options.log('官方安装器超时（15 分钟）')
+      resolve(false)
+    }, 15 * 60 * 1000)
+    child.on('error', (err) => {
+      clearTimeout(timer)
+      options.log(`官方安装器启动失败：${err.message}`)
+      resolve(false)
+    })
+    child.on('exit', (code) => {
+      clearTimeout(timer)
+      const lines = tail.split(/\r?\n/).filter(Boolean)
+      for (const line of lines.slice(-6)) options.log(`[installer] ${line}`)
+      if (code !== 0) {
+        options.log(`官方安装器退出码 ${code}`)
+        resolve(false)
+        return
+      }
+      resolve(tail.includes('Successfully installed'))
+    })
+  })
+}
+
 export { sha1File }

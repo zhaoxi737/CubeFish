@@ -2,12 +2,11 @@
  * 加载器服务（P2）：Fabric。
  * 参照 docs/RESEARCH-P1-P2.md §3.1：meta API 纯合并，不跑安装器进程。
  */
-import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import type { FabricInstallResult, NeoForgeInstallResult, TaskProgress } from '../../shared/types'
 import { Downloader, type DownloadSpec } from '../lib/downloader'
-import { installForgeProfile } from '../lib/forge-installer'
+import { runOfficialInstaller } from '../lib/forge-installer'
 import { ensureDir, readJson, writeJsonAtomic } from '../lib/fsx'
 import { parseMaven } from '../lib/maven'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
@@ -221,69 +220,46 @@ export function createLoadersPlugin(): LauncherPlugin<void> {
           ? await java.ensure(component, major, taskId)
           : (await java.select(major)) ?? (await java.ensure('java-runtime-delta', major, taskId))
 
-        emit('legacy', 0, 1, 0, '执行安装器 processors（可能需要几分钟）')
-        const result = await installForgeProfile({
-          installerPath,
-          librariesDir: paths.libraries,
-          dataRoot: paths.data,
-          minecraftJar: vanillaJar,
-          mcVersion: gameVersion,
-          javaPath: javaInfo.path,
-          tmpDir: path.join(paths.tmp, `neoforge-${loaderVersion}`),
-          log: (message, data) => log.info('loaders', message, data),
-        })
-
-        const versionId = result.profileVersionId
-        const versionDir = path.join(paths.versions, versionId)
-        await ensureDir(versionDir)
-
-        // 关键：把 patched client jar 作为「合成库」写进版本 json，
-        // 否则 FML 在 classpath 上找不到 net/minecraft/*，原版混淆 jar 又会被标记为不可用。
-        const versionJson = result.versionJson as { libraries?: unknown[] }
-        if (result.patchedJarPath && existsSync(result.patchedJarPath)) {
-          const relative = path.relative(paths.libraries, result.patchedJarPath).split(path.sep).join('/')
-          const buffer = readFileSync(result.patchedJarPath)
-          const sha1 = createHash('sha1').update(buffer).digest('hex')
-          versionJson.libraries = [
-            ...(versionJson.libraries ?? []),
-            {
-              name: `net.minecraft:client:${gameVersion}:patched`,
-              downloads: {
-                artifact: { path: relative, sha1, size: buffer.byteLength },
-              },
-            },
-          ]
-        } else {
-          log.warn('loaders', 'NeoForge 安装后未找到 patched client jar，启动可能失败', { versionId })
+        // 官方安装器要求目标目录有 launcher_profiles.json（原版启动器文件），缺了就补一个
+        const profilesFile = path.join(paths.data, 'launcher_profiles.json')
+        if (!existsSync(profilesFile)) {
+          await writeJsonAtomic(profilesFile, {
+            profiles: {},
+            settings: { enableSnapshots: false, keepLauncherOpen: false },
+            version: 3,
+          })
         }
 
-        await writeJsonAtomic(path.join(versionDir, `${versionId}.json`), versionJson)
+        // 直接调用官方安装器：它会跑 processors 并注入版本 profile（FML 的生产模式校验依赖它）
+        emit('legacy', 0, 1, 0, '执行 NeoForge 官方安装器（可能需要几分钟）')
+        const installed = await runOfficialInstaller({
+          installerPath,
+          dataRoot: paths.data,
+          javaPath: javaInfo.path,
+          log: (message) => log.info('loaders', message),
+        })
+        if (!installed) {
+          return { ok: false, gameVersion, error: 'NeoForge 官方安装器执行失败（详见日志）' }
+        }
+        const versionId = `neoforge-${loaderVersion}`
+        const installedJson = path.join(paths.versions, versionId, `${versionId}.json`)
+        if (!existsSync(installedJson)) {
+          return { ok: false, gameVersion, error: `安装器未写入版本文件：${installedJson}` }
+        }
         emit('done', 1, 1, 0, `NeoForge ${loaderVersion} 安装完成`)
 
         telemetry.record('loader:neoforge', {
           gameVersion,
           loaderVersion,
           versionId,
-          libraries: result.libraries,
-          processors: result.processorsRun,
           ms: Date.now() - started,
         })
         log.info('loaders', 'NeoForge 安装完成', {
           versionId,
           loaderVersion,
-          libraries: result.libraries,
-          processors: result.processorsRun,
           ms: Date.now() - started,
-          patched: result.patchedJarPath,
         })
-        return {
-          ok: true,
-          gameVersion,
-          versionId,
-          loaderVersion,
-          libraries: result.libraries,
-          processors: result.processorsRun,
-        }
+        return { ok: true, gameVersion, versionId, loaderVersion }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         log.error('loaders', 'NeoForge 安装失败', { gameVersion, error: message })

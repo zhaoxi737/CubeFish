@@ -19,6 +19,7 @@ import type {
   MarketListResult,
   ModpackInspectResult,
   ModpackInstallResult,
+  NeoForgeInstallResult,
   PluginInfo,
   SearchHit,
   SettingsPatch,
@@ -83,6 +84,7 @@ export interface QdoApi {
   }
   loaders: {
     fabric(gameVersion: string): Promise<FabricInstallResult>
+    neoforge(gameVersion: string): Promise<NeoForgeInstallResult>
   }
   plugins: {
     list(): Promise<PluginInfo[]>

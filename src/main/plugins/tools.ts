@@ -264,6 +264,21 @@ export function createToolsPlugin(): LauncherPlugin<void> {
     })
 
     register({
+      name: 'install_neoforge',
+      description: '给当前原版版本安装 NeoForge 加载器（支持 1.20.2 及以上，需 Java 17/21）。',
+      parameters: EMPTY_PARAMS,
+      async handler() {
+        const inst = instance()
+        const gameVersion = inst?.gameVersion
+        if (!gameVersion) return { ok: false, summary: '实例还没有绑定游戏版本，先装原版' }
+        const result = await loaders.installNeoForge(gameVersion)
+        if (!result.ok) return { ok: false, summary: `NeoForge 安装失败：${result.error}` }
+        instances.setVersion(activeId(), result.versionId!, gameVersion, gameVersion, 'neoforge')
+        return { ok: true, summary: `已安装 NeoForge ${result.loaderVersion}` }
+      },
+    })
+
+    register({
       name: 'install_fabric',
       description: '给当前原版版本安装 Fabric 加载器（装完就能装模组）。',
       parameters: EMPTY_PARAMS,

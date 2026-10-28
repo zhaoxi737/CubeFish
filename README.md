@@ -2,7 +2,7 @@
 
 AI 驱动的《我的世界》启动器。一个大启动按钮 + 一个 AI 聊天框：说一句话，它把模组/光影/整合包下好、装进正确实例，然后一键开玩。
 
-> 当前状态：**P11 进行中**——NeoForge 安装器（processor 链、patched client jar）已跑通，启动仍被 FML 的 DEV/PRODUCTION 校验拦住，下一轮继续。
+> 当前状态：**P11「NeoForge」完成**——NeoForge 21.11.48 一键安装并成功启动到主菜单（窗口标题 `Minecraft NeoForge* 1.21.11`），Fabric 回归正常。
 > 商业策略：先免费做口碑，但架构上把「收费的缝」全部预留好。
 
 ## 文档

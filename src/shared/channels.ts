@@ -32,6 +32,7 @@ export const CH = {
   conflictAnalyze: 'conflict:analyze',
   diagnoseRun: 'diagnose:run',
   loaderFabric: 'loader:fabric',
+  loaderNeoForge: 'loader:neoforge',
   pluginsList: 'plugins:list',
   pluginsToggle: 'plugins:toggle',
   pluginsReload: 'plugins:reload',

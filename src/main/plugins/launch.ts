@@ -137,7 +137,9 @@ export function createLaunchPlugin(): LauncherPlugin<void> {
         javaComponent: top.javaVersion?.component ?? base.javaVersion?.component,
         logging: top.logging ?? base.logging,
         libraries: [...merged.values()],
-        gameArgs: topGameArgs.length > 0 ? topGameArgs : baseGameArgs,
+        // NeoForge/Forge 的版本 json 只带自己的 --fml.* 参数，必须和原版的
+        // --username/--accessToken/--version 等合并，而不是二选一
+        gameArgs: chain.flatMap((v) => v.arguments?.game ?? []),
         jvmArgs: chain.flatMap((v) => v.arguments?.jvm ?? []),
         minecraftArguments: top.minecraftArguments ?? base.minecraftArguments,
       }

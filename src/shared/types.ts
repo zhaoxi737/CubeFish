@@ -138,6 +138,10 @@ export interface SettingsShape {
   playerName: string
   /** 当前实例 id */
   activeInstance: string
+  /** 插件市场 feed 地址；留空 = 不启用市场 */
+  marketUrl: string
+  /** 市场 feed 签名公钥（PEM，Ed25519）。留空 = 不校验签名（开发模式） */
+  marketPublicKey: string
   /** 启动时自动检查更新 */
   autoCheckUpdate: boolean
 }
@@ -384,6 +388,30 @@ export interface PluginInfo {
   dir: string
   tools: string[]
   commands: string[]
+}
+
+/* ---------- P9：插件市场 ---------- */
+
+export interface MarketPlugin {
+  id: string
+  name: string
+  version: string
+  description?: string
+  author?: string
+  permissions: PluginPermission[]
+  download: {
+    url: string
+    sha256: string
+    size: number
+  }
+}
+
+export interface MarketListResult {
+  ok: boolean
+  plugins: MarketPlugin[]
+  /** 'none' = 未配置市场；'unsigned' = 开发模式未校验 */
+  source: 'verified' | 'unsigned' | 'none' | 'error'
+  error?: string
 }
 
 

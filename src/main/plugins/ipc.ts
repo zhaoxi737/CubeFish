@@ -17,6 +17,7 @@ import type {
   LaunchDryRun,
   LaunchResult,
   LogRecord,
+  MarketListResult,
   PluginInfo,
   SearchHit,
   SettingsPatch,
@@ -38,6 +39,7 @@ import type { JavaService } from './java'
 import type { LaunchService } from './launch'
 import type { LoadersService } from './loaders'
 import type { LogService } from './logger'
+import type { MarketService } from './market'
 import type { MojangService } from './mojang'
 import type { PathsService } from './paths'
 import type { PluginHostService } from './plugin-host'
@@ -74,6 +76,7 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     const conflict = use<ConflictService>(ctx, 'conflict')
     const diagnose = use<DiagnoseService>(ctx, 'diagnose')
     const pluginHost = use<PluginHostService>(ctx, 'pluginHost')
+    const market = use<MarketService>(ctx, 'market')
 
     const push = (channel: string, payload: unknown): void => {
       const win = config.getWindow()
@@ -168,6 +171,8 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle<PluginInfo[]>(CH.pluginsList, () => pluginHost.list())
     handle<PluginInfo>(CH.pluginsToggle, (id: string, granted: boolean) => pluginHost.setGranted(id, granted))
     handle<PluginInfo>(CH.pluginsReload, (id: string) => pluginHost.reload(id))
+    handle<MarketListResult>(CH.marketList, (force?: boolean) => market.list(Boolean(force)))
+    handle(CH.marketInstall, (id: string) => market.install(id))
     handle<FabricInstallResult>(CH.loaderFabric, async (gameVersion: string) => {
       const result = await loaders.installFabric(gameVersion)
       if (result.ok && result.versionId) {

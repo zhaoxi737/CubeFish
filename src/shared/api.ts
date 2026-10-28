@@ -16,6 +16,7 @@ import type {
   LaunchDryRun,
   LaunchResult,
   LogRecord,
+  MarketListResult,
   PluginInfo,
   SearchHit,
   SettingsPatch,
@@ -83,6 +84,10 @@ export interface QdoApi {
     list(): Promise<PluginInfo[]>
     setGranted(id: string, granted: boolean): Promise<PluginInfo>
     reload(id: string): Promise<PluginInfo>
+  }
+  market: {
+    list(force?: boolean): Promise<MarketListResult>
+    install(id: string): Promise<{ ok: boolean; pluginId?: string; error?: string }>
   }
   chat: {
     send(text: string): Promise<ChatReply>

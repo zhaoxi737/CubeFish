@@ -101,3 +101,62 @@ electron . --tools                      # 查看当前所有可被模型调用�
 仓库里自带：`samples/plugins/hello-world/`（注册 `/hello` 命令 + `plugin_hello` 工具 + 存储计数）。
 
 复制到 `%APPDATA%\QDOQMC\plugins\hello-world` 后刷新「插件」面板即可看到。
+
+## 7. 插件市场（P9）
+
+启动器内置一个**静态 feed** 市场：你在自己的 CDN 放 `market.json`，客户端配置地址后即可看到插件列表并一键安装。
+
+### 7.1 feed 格式
+
+```json
+{
+  "format": "qdoqmc-market/1",
+  "payload": "<base64(JSON)>",
+  "signature": "<base64(Ed25519(payload bytes))>"
+}
+```
+
+`payload` 解码后：
+
+```json
+{
+  "generatedAt": "2026-10-29T00:00:00.000Z",
+  "plugins": [
+    {
+      "id": "hello-world",
+      "name": "示例：你好世界",
+      "version": "1.0.0",
+      "description": "…",
+      "author": "QDOQMC",
+      "permissions": [],
+      "download": {
+        "url": "https://cdn.example.com/qdoqmc/market/hello-world-1.0.0.zip",
+        "sha256": "…",
+        "size": 1182
+      }
+    }
+  ]
+}
+```
+
+### 7.2 生成与签名
+
+```bash
+# 开发：自动生成密钥对，产物在 dist/market/
+node scripts/make-market.mjs samples/plugins/hello-world http://127.0.0.1:18083
+# → dist/market.json、dist/market/hello-world-1.0.0.zip、dist/market/dev-{public,private}.pem
+
+# 生产：用你自己的私钥（只把公钥给用户）
+$env:QDOQMC_MARKET_PRIVKEY='C:\keys\market-key.pem'
+$env:QDOQMC_MARKET_PUBKEY_PEM='C:\keys\market-key.pub.pem'
+node scripts/make-market.mjs <插件目录> https://cdn.example.com/qdoqmc
+```
+
+把 `dev-public.pem` 填到启动器「设置 → 市场公钥」，把 `market.json` 和插件 zip 上传到 CDN 即可。
+
+### 7.3 安全模型
+
+- 配置了公钥 → **强制验签**，签名不符直接拒绝；
+- 每个插件包还校验 **sha256 + 大小**，不一致拒绝安装；
+- 解压防路径穿越；缺少 `plugin.json` 会回滚；
+- 安装后仍需在「本地插件」里**手动启用**（启用 = 授权执行代码）。

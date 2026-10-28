@@ -1,4 +1,4 @@
-# 开发手册（P0–P8）
+# 开发手册（P0–P9）
 
 ## 1. 环境
 
@@ -51,6 +51,8 @@ electron . --instances
 electron . --create-instance="资源包测试"
 electron . --activate-instance=default
 electron . --content=low-on-fire
+electron . --market
+electron . --market-install=hello-world
 ```
 
 > electron 二进制若未随 npm install 下载成功，可用本地缓存解压：
@@ -265,12 +267,28 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 | UI 内容类型切换 | ✅ 模组对话框新增「模组 / 资源包 / 光影」标签，资源包标签返回 12 条真实 Modrinth 结果 |
 | 24 个插件全部加载 | ✅ `failed: []` |
 
-## 15. 已知限制 / 待办
+## 15. P9 验收（已实测，2026-10-29）
+
+| 验收项 | 结果 |
+|---|---|
+| 市场 feed 加载 | ✅ `--market` 从本地静态服务加载，`source=verified` |
+| Ed25519 签名校验 | ✅ 篡改 payload 不重签 → 「市场签名校验失败：feed 可能被篡改」 |
+| 插件包 sha256 校验 | ✅ 用私钥签了错误 sha256 的 feed → 「插件包 sha256 校验失败，已拒绝安装」 |
+| 一键安装到本地插件目录 | ✅ `--market-install=hello-world` → `plugins/hello-world/{plugin.json,index.mjs}` |
+| 安装后立即可见 | ✅ 插件宿主列表中出现该插件，可直接启用 |
+| UI 市场页 | ✅ 插件面板新增「本地插件 / 插件市场」标签，显示签名状态与一键安装 |
+| 25 个插件全部加载 | ✅ `failed: []` |
+
+> 签名方案：feed = `{format, payload(base64 JSON), signature(base64 Ed25519(payload))}`。
+> 设置里配置公钥后**强制验签**（失败即拒绝）；未配置 = 开发模式并标注 `unsigned`。
+> 生成工具：`scripts/make-market.mjs`（含开发用密钥对生成，生产请用环境变量指定私钥）。
+
+## 16. 已知限制 / 待办
 
 - **更新**：只支持便携版（解压替换）；NSIS 安装包升级未做。
 - **签名**：便携版未做代码签名，Windows SmartScreen 会提示未知发布者。
 - **插件安全**：主进程内加载（Node 全权限），权限字段是提示性的；真正沙箱未做。
-- **插件市场**：只有本地目录安装，没有远程分发与签名校验。
+- **插件市场**：feed 与签名链路已通；缺少审核、版本更新检测、分类与评分。
 - **慢网**：本机到 Mojang 单连接仅 ~50KB/s，并发 16 约 200KB/s，432MB 资源耗时 18 分钟。镜像回退待接入。
 - **加载器**：Fabric 已通；NeoForge/Forge（processors 执行引擎）未做，Quilt 不做。
 - **内容**：mod/资源包/光影的搜索安装已通；`.mrpack` 整包、完整依赖图求解未完成。
@@ -279,16 +297,15 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 - **实例**：支持创建/切换/删除；实例复制、导入导出、图标未做。
 - **登录**：仅离线（正版 OAuth 未做）。
 
-## 16. 下一步（P9：补账）
+## 17. 下一步（P10：补账）
 
 1. **NeoForge/Forge processors 引擎**（最大功能缺口）。
 2. **`.mrpack` 整合包一键安装**。
 3. **插件沙箱化**：utilityProcess + 受限 API + 权限确认。
-4. **插件市场**：静态 feed + 签名校验。
-5. **登录**：微软正版 OAuth（需要 Azure 应用 id）。
-6. **体验**：流式 AI 输出、会话记忆、崩溃一键修复。
+4. **登录**：微软正版 OAuth（需要 Azure 应用 id）。
+5. **体验**：流式 AI 输出、会话记忆、崩溃一键修复。
 
-## 17. 测试用 mock LLM
+## 18. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

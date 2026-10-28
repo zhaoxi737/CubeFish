@@ -14,6 +14,7 @@ import type { InstancesService } from './plugins/instances'
 import type { LaunchService } from './plugins/launch'
 import type { LlmService } from './plugins/llm'
 import type { LoadersService } from './plugins/loaders'
+import type { MarketService } from './plugins/market'
 import type { MojangService } from './plugins/mojang'
 import type { PluginHostService } from './plugins/plugin-host'
 import type { ToolsService } from './plugins/tools'
@@ -145,6 +146,22 @@ export async function runToolsCli(kernel: Kernel): Promise<number> {
   const tools = kernel.ctx.get('tools') as ToolsService
   console.log(`TOOLS_RESULT ${JSON.stringify({ count: tools.names().length, names: tools.names() })}`)
   return 0
+}
+
+export async function runMarketCli(kernel: Kernel): Promise<number> {
+  const market = kernel.ctx.get('market') as MarketService
+  const result = await market.list(true)
+  console.log(`MARKET_RESULT ${JSON.stringify(result)}`)
+  return result.ok ? 0 : 1
+}
+
+export async function runMarketInstallCli(kernel: Kernel, id: string): Promise<number> {
+  const market = kernel.ctx.get('market') as MarketService
+  const result = await market.install(id)
+  console.log(`MARKET_INSTALL ${JSON.stringify(result)}`)
+  const host = kernel.ctx.get('pluginHost') as PluginHostService
+  console.log(`PLUGINS_AFTER ${JSON.stringify(host.list().map((p) => ({ id: p.id, granted: p.granted })))}`)
+  return result.ok ? 0 : 1
 }
 
 export async function runUpdateDownloadCli(kernel: Kernel): Promise<number> {

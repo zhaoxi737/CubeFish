@@ -33,6 +33,8 @@ export const CH = {
   pluginsList: 'plugins:list',
   pluginsToggle: 'plugins:toggle',
   pluginsReload: 'plugins:reload',
+  marketList: 'market:list',
+  marketInstall: 'market:install',
 } as const
 
 /** 主进程 → 渲染进程的推送通道 */

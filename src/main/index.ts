@@ -18,6 +18,8 @@ import {
   runModCli,
   runPluginToggleCli,
   runPluginsCli,
+  runMarketCli,
+  runMarketInstallCli,
   runToolsCli,
   runUpdateApplyCli,
   runUpdateDownloadCli,
@@ -47,6 +49,8 @@ const toolsMode = process.argv.includes('--tools')
 const updateDownloadMode = process.argv.includes('--update-download')
 const updateApplyMode = process.argv.includes('--update-apply')
 const instancesMode = process.argv.includes('--instances')
+const marketMode = process.argv.includes('--market')
+const marketInstallTarget = argValue('market-install')
 const createInstanceTarget = argValue('create-instance')
 const activateInstanceTarget = argValue('activate-instance')
 const contentTarget = argValue('content')
@@ -158,6 +162,16 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           states: [...document.querySelectorAll('.plugin-state')].map((el) => el.textContent ?? '')
         })`,
       )) as string
+
+      // 切到插件市场页，验证 feed 加载（签名校验结果在 source 字段）
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.kind-tab')].find((b) => b.textContent?.trim() === '插件市场'); btn?.click(); return 'market' })()`,
+      )
+      await wait(2200)
+      const marketShot = await shot('smoke-market.png')
+      const marketInfo = (await win.webContents.executeJavaScript(
+        `JSON.stringify({ rows: document.querySelectorAll('.plugin-row').length, hint: document.querySelector('.plugins-hint')?.textContent ?? '' })`,
+      )) as string
       // 关闭插件面板：可能需要点一次 + 等 React 更新
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const remaining = (await win.webContents.executeJavaScript(
@@ -217,10 +231,11 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           version: info?.version ?? app.getVersion(),
           plugins: k.summary.plugins,
           failed: k.summary.failed,
-          screenshots: [firstShot, aiShot, pluginsShot, modsShot, rpShot, conflictShot],
+          screenshots: [firstShot, aiShot, pluginsShot, marketShot, modsShot, rpShot, conflictShot],
           ui: JSON.parse(uiText),
           ai: JSON.parse(aiInfo),
           pluginPanel: JSON.parse(pluginsInfo),
+          market: JSON.parse(marketInfo),
           mods: JSON.parse(modsInfo),
           resourcepack: JSON.parse(rpInfo),
           conflict: JSON.parse(conflictInfo),
@@ -323,6 +338,16 @@ if (!gotLock) {
       }
       if (instancesMode) {
         const code = await runInstancesCli(kernel)
+        app.exit(code)
+        return
+      }
+      if (marketMode) {
+        const code = await runMarketCli(kernel)
+        app.exit(code)
+        return
+      }
+      if (marketInstallTarget) {
+        const code = await runMarketInstallCli(kernel, marketInstallTarget)
         app.exit(code)
         return
       }

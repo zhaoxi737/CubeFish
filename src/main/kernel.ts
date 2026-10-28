@@ -16,6 +16,7 @@ import { createLaunchPlugin } from './plugins/launch'
 import { createLlmPlugin } from './plugins/llm'
 import { createLoadersPlugin } from './plugins/loaders'
 import { createLoggerPlugin, type LogService } from './plugins/logger'
+import { createMarketPlugin } from './plugins/market'
 import { createMojangPlugin } from './plugins/mojang'
 import { createPathsPlugin } from './plugins/paths'
 import { createPluginHostPlugin } from './plugins/plugin-host'
@@ -88,6 +89,7 @@ export async function bootKernel(options: KernelOptions): Promise<Kernel> {
     createAgentPlugin(),
     createChatPlugin(),
     createPluginHostPlugin(),
+    createMarketPlugin(),
     createIpcPlugin({ getWindow: options.getWindow, summary }),
   ]
 

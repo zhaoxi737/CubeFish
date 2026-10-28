@@ -23,6 +23,8 @@ export const DEFAULT_SETTINGS: SettingsShape = {
   memoryMb: 4096,
   playerName: 'Player',
   activeInstance: 'default',
+  marketUrl: '',
+  marketPublicKey: '',
   autoCheckUpdate: true,
 }
 
@@ -99,6 +101,8 @@ function sanitize(input: Partial<SettingsShape>): Partial<SettingsShape> {
   if (typeof input.llmModel === 'string') out.llmModel = input.llmModel.trim() || DEFAULT_SETTINGS.llmModel
   if (typeof input.playerName === 'string') out.playerName = input.playerName.trim().slice(0, 16) || 'Player'
   if (typeof input.activeInstance === 'string' && input.activeInstance.trim()) out.activeInstance = input.activeInstance.trim()
+  if (typeof input.marketUrl === 'string') out.marketUrl = input.marketUrl.trim()
+  if (typeof input.marketPublicKey === 'string') out.marketPublicKey = input.marketPublicKey
   if (typeof input.memoryMb === 'number' && Number.isFinite(input.memoryMb)) {
     out.memoryMb = Math.min(32768, Math.max(512, Math.round(input.memoryMb)))
   }

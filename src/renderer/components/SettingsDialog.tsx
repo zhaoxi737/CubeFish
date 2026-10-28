@@ -27,6 +27,8 @@ export function SettingsDialog({ settings, onClose, onSave }: Props) {
         apiKey: draft.apiKey,
         llmBaseUrl: draft.llmBaseUrl,
         llmModel: draft.llmModel,
+        marketUrl: draft.marketUrl,
+        marketPublicKey: draft.marketPublicKey,
       })
     } finally {
       setSaving(false)
@@ -130,6 +132,29 @@ export function SettingsDialog({ settings, onClose, onSave }: Props) {
             <span>发送匿名使用统计（设备随机 ID，不含账号与文件路径）</span>
           </label>
           <p className="field-hint">关掉后本地事件仍记录，但不会上传。</p>
+
+          <label className="field">
+            <span className="field-label">插件市场 feed 地址</span>
+            <input
+              value={draft.marketUrl}
+              onChange={(event) => update('marketUrl', event.target.value)}
+              placeholder="https://cdn.example.com/qdoqmc/market.json"
+              spellCheck={false}
+            />
+            <span className="field-hint">留空 = 不启用市场。只建议使用你信任的 feed。</span>
+          </label>
+
+          <label className="field">
+            <span className="field-label">市场公钥（Ed25519 PEM）</span>
+            <textarea
+              className="field-textarea"
+              value={draft.marketPublicKey}
+              onChange={(event) => update('marketPublicKey', event.target.value)}
+              placeholder="-----BEGIN PUBLIC KEY----- ..."
+              spellCheck={false}
+            />
+            <span className="field-hint">配置后强制验签；留空 = 开发模式（不校验签名）。</span>
+          </label>
         </div>
 
         <div className="dialog-foot">

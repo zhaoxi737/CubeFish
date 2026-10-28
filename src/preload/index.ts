@@ -58,6 +58,10 @@ const api: QdoApi = {
     setGranted: (id, granted) => ipcRenderer.invoke(CH.pluginsToggle, id, granted),
     reload: (id) => ipcRenderer.invoke(CH.pluginsReload, id),
   },
+  market: {
+    list: (force) => ipcRenderer.invoke(CH.marketList, force),
+    install: (id) => ipcRenderer.invoke(CH.marketInstall, id),
+  },
   chat: {
     send: (text) => ipcRenderer.invoke(CH.chatSend, text),
   },

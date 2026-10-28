@@ -1,4 +1,4 @@
-# 开发手册（P0–P7）
+# 开发手册（P0–P8）
 
 ## 1. 环境
 
@@ -47,6 +47,10 @@ electron . --tools
 electron . --chat="帮我检查下冲突"
 electron . --update-download
 electron . --update-apply
+electron . --instances
+electron . --create-instance="资源包测试"
+electron . --activate-instance=default
+electron . --content=low-on-fire
 ```
 
 > electron 二进制若未随 npm install 下载成功，可用本地缓存解压：
@@ -110,10 +114,12 @@ assets/indexes/<id>.json    资源索引
 assets/virtual/<id>/        旧版资源物化（legacy / pre-1.6）
 cache/objects/xx/<sha1>     全局下载缓存（多实例/多版本复用，硬链接落盘）
 
-instances/default/instance.json
-instances/default/.minecraft/   ← 游戏进程 cwd（版本隔离）
+instances/<id>/instance.json      ← 多实例：每实例独立元数据（id/name/versionId/loader/memory）
+instances/<id>/.minecraft/        ← 游戏进程 cwd（版本隔离）
   mods/ resourcepacks/ shaderpacks/ saves/ config/ logs/ crash-reports/ screenshots/
 ```
+`<id>` 由实例名生成（中文/特殊字符会生成 `inst-xxxx`），默认实例 id 固定为 `default`；
+「当前实例」记录在 `settings.json` 的 `activeInstance`，AI 工具与本地命令默认作用于它。
 
 日志每条一行 JSON：`{ ts, level, scope, message, data? }`，可直接 `jq` 或喂给 P3 的崩溃诊断。
 游戏 stdout/stderr 原始字节另存 `instances/<id>/.minecraft/logs/game-<ts>.log`（便于换编码重解）。
@@ -244,9 +250,24 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 > 1. `spawn` 的子进程会被 Electron 的 Windows Job 在父进程退出时连带杀掉 → 改用 `explorer.exe` 打开 `.cmd`，把更新脚本放到 explorer 进程树下。
 > 2. `detached: true` + 无控制台时 `powershell.exe` 会立即退出（exit 0）→ 放弃 detached，改由 explorer 启动。
 
-## 14. 已知限制 / 待办
+## 14. P8 验收（已实测，2026-10-29）
 
-- **更新**：只支持便捷版（解压替换）；NSIS 安装包升级未做。
+| 验收项 | 结果 |
+|---|---|
+| 多实例创建 | ✅ `--create-instance="资源包测试"` → `instances/inst-xxxx/`，自动建好 mods/saves/resourcepacks 等目录 |
+| 实例列表与当前实例 | ✅ `--instances` 返回 active + 全部实例；`settings.activeInstance` 持久化 |
+| 实例切换 | ✅ `--activate-instance=default`；UI 下拉框切换后启动/模组/冲突检查都作用到该实例 |
+| 实例删除 | ✅ 非默认实例可删（含目录）；默认实例拒绝删除 |
+| 工具作用域 | ✅ AI 工具、`/mod` 等命令改为作用于「当前实例」（不再写死 default） |
+| 资源包一键安装 | ✅ `--content=low-on-fire` → `instances/<id>/.minecraft/resourcepacks/LowOnFire v26.2§8.zip` |
+| 光影一键安装 | ✅ `--content=bsl-shaders` → `instances/<id>/.minecraft/shaderpacks/BSL_v10.1.8.zip` |
+| 实例隔离 | ✅ 资源包/光影只落在测试实例，默认实例目录保持干净 |
+| UI 内容类型切换 | ✅ 模组对话框新增「模组 / 资源包 / 光影」标签，资源包标签返回 12 条真实 Modrinth 结果 |
+| 24 个插件全部加载 | ✅ `failed: []` |
+
+## 15. 已知限制 / 待办
+
+- **更新**：只支持便携版（解压替换）；NSIS 安装包升级未做。
 - **签名**：便携版未做代码签名，Windows SmartScreen 会提示未知发布者。
 - **插件安全**：主进程内加载（Node 全权限），权限字段是提示性的；真正沙箱未做。
 - **插件市场**：只有本地目录安装，没有远程分发与签名校验。
@@ -255,18 +276,19 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 - **内容**：mod/资源包/光影的搜索安装已通；`.mrpack` 整包、完整依赖图求解未完成。
 - **AI**：真实模型调用需用户自填 Key（本机验证用 mock LLM）；流式输出、会话记忆未做。
 - **老版本**：legacy/pre-1.6 资源物化已实现但未实测；Java 8 运行时自动下载未实测。
-- **实例**：只有默认实例。
+- **实例**：支持创建/切换/删除；实例复制、导入导出、图标未做。
 - **登录**：仅离线（正版 OAuth 未做）。
 
-## 15. 下一步（P8：补账与打磨）
+## 16. 下一步（P9：补账）
 
-1. **NSIS 安装包 + 代码签名**（有证书后）。
-2. **插件沙箱化**：utilityProcess + 受限 API + 权限确认弹窗。
-3. **插件市场**：静态 feed + 签名校验。
-4. **补账**：NeoForge/Forge processors、`.mrpack`、资源包/光影 UI、多实例、正版登录。
-5. **体验**：流式 AI 输出、会话记忆、崩溃一键修复动作。
+1. **NeoForge/Forge processors 引擎**（最大功能缺口）。
+2. **`.mrpack` 整合包一键安装**。
+3. **插件沙箱化**：utilityProcess + 受限 API + 权限确认。
+4. **插件市场**：静态 feed + 签名校验。
+5. **登录**：微软正版 OAuth（需要 Azure 应用 id）。
+6. **体验**：流式 AI 输出、会话记忆、崩溃一键修复。
 
-## 16. 测试用 mock LLM
+## 17. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

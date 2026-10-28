@@ -57,15 +57,36 @@ export async function runFabricCli(kernel: Kernel, gameVersion: string): Promise
 export async function runModCli(kernel: Kernel, slug: string): Promise<number> {
   const content = kernel.ctx.get('content') as ContentService
   const instances = kernel.ctx.get('instances') as InstancesService
-  const instance = instances.get('default')
-  const result = await content.install('default', slug, {
-    mcVersion: instance?.gameVersion ?? undefined,
-    loader: instance?.loader === 'fabric' ? 'fabric' : undefined,
+  const instance = instances.active()
+  const result = await content.install(instance.id, slug, {
+    mcVersion: instance.gameVersion ?? undefined,
+    loader: instance.loader === 'fabric' ? 'fabric' : undefined,
   })
   console.log(`MOD_RESULT ${JSON.stringify(result)}`)
-  const list = await content.installed('default')
+  const list = await content.installed(instance.id)
   console.log(`MOD_LIST ${JSON.stringify(list)}`)
   return result.ok ? 0 : 1
+}
+
+export async function runContentCli(kernel: Kernel, slug: string): Promise<number> {
+  const content = kernel.ctx.get('content') as ContentService
+  const instances = kernel.ctx.get('instances') as InstancesService
+  const instance = instances.active()
+  const result = await content.install(instance.id, slug, {
+    mcVersion: instance.gameVersion ?? undefined,
+    loader: instance.loader === 'fabric' ? 'fabric' : undefined,
+  })
+  console.log(`CONTENT_RESULT ${JSON.stringify({ instance: instance.id, ...result })}`)
+  const list = await content.installed(instance.id)
+  console.log(`CONTENT_LIST ${JSON.stringify(list)}`)
+  return result.ok ? 0 : 1
+}
+
+export async function runActivateInstanceCli(kernel: Kernel, id: string): Promise<number> {
+  const instances = kernel.ctx.get('instances') as InstancesService
+  const active = instances.setActive(id)
+  console.log(`INSTANCE_ACTIVE ${JSON.stringify(active)}`)
+  return 0
 }
 
 export async function runAnalyzeCli(kernel: Kernel): Promise<number> {
@@ -96,6 +117,20 @@ export async function runChatCli(kernel: Kernel, text: string): Promise<number> 
 export async function runPluginsCli(kernel: Kernel): Promise<number> {
   const host = kernel.ctx.get('pluginHost') as PluginHostService
   console.log(`PLUGINS_RESULT ${JSON.stringify({ dir: host.dir(), plugins: host.list() })}`)
+  return 0
+}
+
+export async function runInstancesCli(kernel: Kernel): Promise<number> {
+  const instances = kernel.ctx.get('instances') as InstancesService
+  console.log(`INSTANCES_RESULT ${JSON.stringify({ active: instances.active().id, instances: instances.list() })}`)
+  return 0
+}
+
+export async function runCreateInstanceCli(kernel: Kernel, name: string): Promise<number> {
+  const instances = kernel.ctx.get('instances') as InstancesService
+  const created = instances.create(name)
+  instances.setActive(created.id)
+  console.log(`INSTANCE_CREATE ${JSON.stringify(created)}`)
   return 0
 }
 

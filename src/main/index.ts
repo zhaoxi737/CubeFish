@@ -7,9 +7,13 @@ import { bootKernel, type Kernel } from './kernel'
 import {
   runAnalyzeCli,
   runChatCli,
+  runContentCli,
   runDiagnoseCli,
   runFabricCli,
   runInstallCli,
+  runInstancesCli,
+  runCreateInstanceCli,
+  runActivateInstanceCli,
   runLaunchTest,
   runModCli,
   runPluginToggleCli,
@@ -42,6 +46,10 @@ const pluginsMode = process.argv.includes('--plugins')
 const toolsMode = process.argv.includes('--tools')
 const updateDownloadMode = process.argv.includes('--update-download')
 const updateApplyMode = process.argv.includes('--update-apply')
+const instancesMode = process.argv.includes('--instances')
+const createInstanceTarget = argValue('create-instance')
+const activateInstanceTarget = argValue('activate-instance')
+const contentTarget = argValue('content')
 const waitMs = Number(argValue('wait') ?? 60000)
 
 let mainWindow: BrowserWindowType | null = null
@@ -150,9 +158,20 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           states: [...document.querySelectorAll('.plugin-state')].map((el) => el.textContent ?? '')
         })`,
       )) as string
-      await win.webContents.executeJavaScript(
-        `(() => { const btn = [...document.querySelectorAll('.dialog-head button')].find((b) => b.textContent?.trim() === '关闭'); btn?.click(); return 'closed' })()`,
-      )
+      // 关闭插件面板：可能需要点一次 + 等 React 更新
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const remaining = (await win.webContents.executeJavaScript(
+          `(() => {
+            const overlay = [...document.querySelectorAll('.overlay')].pop()
+            if (!overlay) return 0
+            const btn = [...overlay.querySelectorAll('button')].find((b) => b.textContent?.trim() === '关闭')
+            btn?.click()
+            return document.querySelectorAll('.overlay').length
+          })()`,
+        )) as number
+        if (remaining === 0) break
+        await wait(400)
+      }
       await wait(300)
 
       // 点「冲突检查」前的模组面板
@@ -164,6 +183,21 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
       const modsInfo = (await win.webContents.executeJavaScript(
         `JSON.stringify({ rows: document.querySelectorAll('.mod-row').length, first: document.querySelector('.mod-title')?.textContent ?? '' })`,
       )) as string
+
+      // 切到「资源包」标签，验证内容类型切换 + 资源包搜索
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.kind-tab')].find((b) => b.textContent?.trim() === '资源包'); btn?.click(); return 'rp' })()`,
+      )
+      await wait(2800)
+      const rpShot = await shot('smoke-resourcepack.png')
+      const rpInfo = (await win.webContents.executeJavaScript(
+        `JSON.stringify({ rows: document.querySelectorAll('.mod-row').length, activeTab: document.querySelector('.kind-tab.is-active')?.textContent ?? '' })`,
+      )) as string
+      // 切回模组，再做冲突检查
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.kind-tab')].find((b) => b.textContent?.trim() === '模组'); btn?.click(); return 'mod' })()`,
+      )
+      await wait(900)
 
       // 点「冲突检查」，截一张冲突报告
       await win.webContents.executeJavaScript(
@@ -183,11 +217,12 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           version: info?.version ?? app.getVersion(),
           plugins: k.summary.plugins,
           failed: k.summary.failed,
-          screenshots: [firstShot, aiShot, pluginsShot, modsShot, conflictShot],
+          screenshots: [firstShot, aiShot, pluginsShot, modsShot, rpShot, conflictShot],
           ui: JSON.parse(uiText),
           ai: JSON.parse(aiInfo),
           pluginPanel: JSON.parse(pluginsInfo),
           mods: JSON.parse(modsInfo),
+          resourcepack: JSON.parse(rpInfo),
           conflict: JSON.parse(conflictInfo),
           chatStatus: chat,
         })}`,
@@ -284,6 +319,26 @@ if (!gotLock) {
         const code = await runUpdateApplyCli(kernel)
         // 给更新脚本留出启动时间，再退出进程（脚本会等本进程退出后替换文件）
         setTimeout(() => app.exit(code), 2000)
+        return
+      }
+      if (instancesMode) {
+        const code = await runInstancesCli(kernel)
+        app.exit(code)
+        return
+      }
+      if (createInstanceTarget) {
+        const code = await runCreateInstanceCli(kernel, createInstanceTarget)
+        app.exit(code)
+        return
+      }
+      if (activateInstanceTarget) {
+        const code = await runActivateInstanceCli(kernel, activateInstanceTarget)
+        app.exit(code)
+        return
+      }
+      if (contentTarget) {
+        const code = await runContentCli(kernel, contentTarget)
+        app.exit(code)
         return
       }
       if (launchTarget) {

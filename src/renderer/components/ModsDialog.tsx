@@ -7,8 +7,15 @@ interface Props {
   onNotify: (text: string) => void
 }
 
+const KIND_LABEL: Record<string, string> = {
+  mod: '模组',
+  resourcepack: '资源包',
+  shader: '光影',
+}
+
 export function ModsDialog({ instance, onClose, onNotify }: Props) {
   const [query, setQuery] = useState('')
+  const [kind, setKind] = useState<'mod' | 'resourcepack' | 'shader'>('mod')
   const [hits, setHits] = useState<SearchHit[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -19,6 +26,8 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
 
   const loader = instance.loader === 'fabric' ? 'fabric' : undefined
   const mcVersion = instance.gameVersion
+  // 资源包/光影的版本没有 loader 维度，传 loader 反而会把结果过滤没
+  const loaderFilter = kind === 'mod' ? loader : undefined
 
   const loadInstalled = useCallback(async () => {
     try {
@@ -33,16 +42,16 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
       setLoading(true)
       setError(null)
       try {
-        const result = await window.qdo.content.search(text, { type: 'mod', mcVersion, loader, limit: 12 })
+        const result = await window.qdo.content.search(text, { type: kind, mcVersion, loader: loaderFilter, limit: 12 })
         setHits(result)
-        if (result.length === 0) setError('没有找到匹配的模组（先确认实例已绑定游戏版本 / 已装 Fabric）')
+        if (result.length === 0) setError(`没有找到匹配的${KIND_LABEL[kind]}（先确认实例已绑定游戏版本）`)
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
       } finally {
         setLoading(false)
       }
     },
-    [loader, mcVersion],
+    [kind, loaderFilter, mcVersion],
   )
 
   useEffect(() => {
@@ -54,7 +63,7 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
     async (hit: SearchHit) => {
       setBusy(hit.projectId)
       try {
-        const result = await window.qdo.content.install(instance.id, hit.projectId, { mcVersion, loader })
+        const result = await window.qdo.content.install(instance.id, hit.projectId, { mcVersion, loader: loaderFilter })
         if (!result.ok) onNotify(`安装失败：${result.error ?? '未知错误'}`)
         else onNotify(`已安装 ${result.title ?? hit.title} ${result.versionNumber ?? ''}`)
         await loadInstalled()
@@ -65,7 +74,7 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
         setBusy(null)
       }
     },
-    [instance.id, loader, mcVersion, onNotify, loadInstalled],
+    [instance.id, loaderFilter, mcVersion, onNotify, loadInstalled],
   )
 
   const toggle = useCallback(
@@ -109,7 +118,7 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
       <div className="dialog dialog-wide" role="dialog" aria-modal="true">
         <div className="dialog-head">
           <h2>
-            模组 · {mcVersion ?? '未绑定版本'} · {loader ?? 'vanilla'}
+            {KIND_LABEL[kind]} · {mcVersion ?? '未绑定版本'} · {loader ?? 'vanilla'}
           </h2>
           <div className="drawer-actions">
             <button type="button" className="ghost" onClick={() => void checkConflicts()} disabled={checking}>
@@ -121,6 +130,19 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
           </div>
         </div>
 
+        <div className="kind-tabs">
+          {(['mod', 'resourcepack', 'shader'] as const).map((item) => (
+            <button
+              key={item}
+              type="button"
+              className={`kind-tab ${kind === item ? 'is-active' : ''}`}
+              onClick={() => setKind(item)}
+            >
+              {KIND_LABEL[item]}
+            </button>
+          ))}
+        </div>
+
         <div className="mods-search">
           <input
             value={query}
@@ -128,7 +150,7 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
             onKeyDown={(event) => {
               if (event.key === 'Enter') void search(query)
             }}
-            placeholder="搜索模组，例如 sodium、fabric api、jei"
+            placeholder={`搜索${KIND_LABEL[kind]}，例如 ${kind === 'mod' ? 'sodium' : kind === 'resourcepack' ? 'faithful' : 'bsl'}`}
             spellCheck={false}
           />
           <button type="button" className="primary" onClick={() => void search(query)} disabled={loading}>
@@ -156,20 +178,22 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
           </div>
         ) : null}
 
-        {installed.length > 0 ? (
+        {installed.filter((item) => item.kind === kind).length > 0 ? (
           <div className="installed-list">
-            {installed.map((item) => (
-              <div className="installed-row" key={item.fileName}>
-                <span className={`installed-name ${item.enabled === false ? 'is-disabled' : ''}`}>{item.fileName}</span>
-                <span className="installed-meta">{item.versionNumber}</span>
-                <button type="button" className="ghost tiny" onClick={() => void toggle(item)}>
-                  {item.enabled === false ? '启用' : '禁用'}
-                </button>
-                <button type="button" className="ghost tiny danger" onClick={() => void remove(item)}>
-                  删除
-                </button>
-              </div>
-            ))}
+            {installed
+              .filter((item) => item.kind === kind)
+              .map((item) => (
+                <div className="installed-row" key={item.fileName}>
+                  <span className={`installed-name ${item.enabled === false ? 'is-disabled' : ''}`}>{item.fileName}</span>
+                  <span className="installed-meta">{item.versionNumber}</span>
+                  <button type="button" className="ghost tiny" onClick={() => void toggle(item)}>
+                    {item.enabled === false ? '启用' : '禁用'}
+                  </button>
+                  <button type="button" className="ghost tiny danger" onClick={() => void remove(item)}>
+                    删除
+                  </button>
+                </div>
+              ))}
           </div>
         ) : null}
 
@@ -203,7 +227,7 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
 
         <div className="dialog-foot">
           <span className="field-hint">
-            只显示与当前实例（{mcVersion ?? '未知版本'} / {loader ?? 'vanilla'}）匹配的最新版本
+            只显示与当前实例（{mcVersion ?? '未知版本'} / {kind === 'mod' ? loader ?? 'vanilla' : KIND_LABEL[kind]}）匹配的最新版本
           </span>
         </div>
       </div>

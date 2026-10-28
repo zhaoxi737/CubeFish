@@ -83,6 +83,10 @@ export function App() {
   const [showMods, setShowMods] = useState(false)
   const [showPlugins, setShowPlugins] = useState(false)
   const [fabricBusy, setFabricBusy] = useState(false)
+  const [instances, setInstances] = useState<InstanceSummary[]>([])
+  const [newInstanceOpen, setNewInstanceOpen] = useState(false)
+  const [newInstanceName, setNewInstanceName] = useState('')
+  const activeIdRef = useRef('default')
   const listening = useRef(false)
 
   const hasApi = typeof window !== 'undefined' && typeof window.qdo !== 'undefined'
@@ -95,9 +99,20 @@ export function App() {
   const refreshInstalled = useCallback(async () => {
     if (!hasApi) return
     try {
-      const [list, instances] = await Promise.all([window.qdo.versions.installed(), window.qdo.instances.list()])
+      const [list, all] = await Promise.all([window.qdo.versions.installed(), window.qdo.instances.list()])
       setInstalled(list)
-      setInstance(instances[0] ?? null)
+      setInstances(all)
+      const next =
+        all.find((item) => item.id === activeIdRef.current) ??
+        all.find((item) => item.id === 'default') ??
+        all[0] ??
+        null
+      if (next) {
+        activeIdRef.current = next.id
+        setInstance(next)
+      } else {
+        setInstance(null)
+      }
     } catch (err) {
       notify(`读取实例失败：${err instanceof Error ? err.message : String(err)}`)
     }
@@ -148,7 +163,10 @@ export function App() {
         if (cancelled) return
         setInfo(appInfo)
         setSettings(appSettings)
-        setInstance(instances[0] ?? null)
+        setInstances(instances)
+        activeIdRef.current = appSettings.activeInstance || 'default'
+        const active = instances.find((item) => item.id === activeIdRef.current) ?? instances[0] ?? null
+        setInstance(active)
         setUpdate((prev) => ({ ...prev, current: appInfo.version }))
         if (appSettings.autoCheckUpdate) void checkUpdate()
 
@@ -157,7 +175,7 @@ export function App() {
           if (cancelled) return
           setVersions(list)
           setInstalled(installedList)
-          const bound = instances[0]?.gameVersion ?? instances[0]?.versionId
+          const bound = active?.gameVersion ?? active?.versionId
           const preferred = bound && list.versions.some((v) => v.id === bound) ? bound : list.latest.release
           setSelected(preferred)
         } catch (err) {
@@ -178,6 +196,60 @@ export function App() {
       cancelled = true
     }
   }, [checkUpdate, hasApi, notify, refreshInstalled])
+
+  const switchInstance = useCallback(
+    async (id: string) => {
+      if (!hasApi || !id || id === activeIdRef.current) return
+      try {
+        const summary = await window.qdo.instances.activate(id)
+        activeIdRef.current = summary.id
+        setInstance(summary)
+        await refreshInstalled()
+        const bound = summary.gameVersion ?? summary.versionId
+        if (bound) setSelected(bound)
+        notify(`已切换到「${summary.name}」`)
+      } catch (err) {
+        notify(`切换实例失败：${err instanceof Error ? err.message : String(err)}`)
+      }
+    },
+    [hasApi, notify, refreshInstalled],
+  )
+
+  const createInstance = useCallback(async () => {
+    const name = newInstanceName.trim()
+    if (!hasApi || !name) return
+    try {
+      const created = await window.qdo.instances.create(name)
+      await window.qdo.instances.activate(created.id)
+      activeIdRef.current = created.id
+      setNewInstanceOpen(false)
+      setNewInstanceName('')
+      await refreshInstalled()
+      notify(`已创建实例「${created.name}」，先选个版本安装吧`)
+    } catch (err) {
+      notify(`创建实例失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [hasApi, newInstanceName, notify, refreshInstalled])
+
+  const deleteInstance = useCallback(
+    async (id: string) => {
+      if (!hasApi) return
+      if (!window.confirm('删除这个实例？里面的存档、模组、配置会一起删除，不可恢复。')) return
+      try {
+        const result = await window.qdo.instances.remove(id)
+        if (!result.ok) {
+          notify(`删除失败：${result.error ?? '未知错误'}`)
+          return
+        }
+        activeIdRef.current = 'default'
+        await refreshInstalled()
+        notify('已删除实例')
+      } catch (err) {
+        notify(`删除失败：${err instanceof Error ? err.message : String(err)}`)
+      }
+    },
+    [hasApi, notify, refreshInstalled],
+  )
 
   const install = useCallback(async () => {
     if (!hasApi || !selected || installing) return
@@ -295,7 +367,7 @@ export function App() {
         <div className="brand">
           <span className="brand-mark">QDOQMC</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P5 · 能长</span>
+          <span className="brand-tag">P8 · 多实例</span>
         </div>
         <div className="titlebar-actions">
           <button type="button" className="ghost" onClick={() => setShowMods(true)} disabled={!instance}>
@@ -319,7 +391,33 @@ export function App() {
       <main className="main">
         <section className="stage">
           <div className="instances-line">
-            <span className="instance-name">{instance?.name ?? '默认实例'}</span>            <span className="chip">{instance?.gameVersion ?? instance?.versionId ?? '未选版本'}</span>
+            <select
+              className="instance-select"
+              value={instance?.id ?? ''}
+              onChange={(event) => void switchInstance(event.target.value)}
+              disabled={Boolean(running)}
+            >
+              {instances.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                  {item.versionId ? ` · ${item.gameVersion ?? item.versionId}` : ' · 未装版本'}
+                </option>
+              ))}
+            </select>
+            <button type="button" className="ghost tiny" onClick={() => setNewInstanceOpen(true)} disabled={Boolean(running)}>
+              + 新建
+            </button>
+            {instance && instance.id !== 'default' ? (
+              <button
+                type="button"
+                className="ghost tiny danger"
+                onClick={() => void deleteInstance(instance.id)}
+                disabled={Boolean(running)}
+              >
+                删除
+              </button>
+            ) : null}
+            <span className="chip">{instance?.gameVersion ?? instance?.versionId ?? '未选版本'}</span>
             <span className="chip">{instance?.loader ?? 'vanilla'}</span>
             <span className="chip">{instance?.memoryMb ?? 0} MB</span>
             <span className="chip">{instance?.playerName ?? 'Player'}</span>
@@ -460,6 +558,43 @@ export function App() {
       </footer>
 
       {toast ? <div className="toast">{toast}</div> : null}
+      {newInstanceOpen ? (
+        <div className="overlay" onMouseDown={(event) => event.target === event.currentTarget && setNewInstanceOpen(false)}>
+          <div className="dialog dialog-narrow" role="dialog" aria-modal="true">
+            <div className="dialog-head">
+              <h2>新建实例</h2>
+              <button type="button" className="ghost" onClick={() => setNewInstanceOpen(false)}>
+                关闭
+              </button>
+            </div>
+            <div className="dialog-body">
+              <label className="field">
+                <span className="field-label">实例名称</span>
+                <input
+                  value={newInstanceName}
+                  onChange={(event) => setNewInstanceName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') void createInstance()
+                  }}
+                  placeholder="例如：1.21 生存 / 整合包测试"
+                  maxLength={32}
+                  spellCheck={false}
+                  autoFocus
+                />
+                <span className="field-hint">每个实例有独立的 mods / 存档 / 配置，但共享游戏资源与 Java。</span>
+              </label>
+            </div>
+            <div className="dialog-foot">
+              <button type="button" className="ghost" onClick={() => setNewInstanceOpen(false)}>
+                取消
+              </button>
+              <button type="button" className="primary" onClick={() => void createInstance()} disabled={!newInstanceName.trim()}>
+                创建
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {showMods && instance ? (
         <ModsDialog instance={instance} onClose={() => setShowMods(false)} onNotify={notify} />
       ) : null}

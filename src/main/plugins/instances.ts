@@ -1,8 +1,7 @@
-import { existsSync } from 'node:fs'
-import { readdir, rename } from 'node:fs/promises'
+import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import path from 'node:path'
 import type { InstanceSummary, LaunchDryRun, LaunchStep } from '../../shared/types'
-import { ensureDir, readJson, safeName, writeJsonAtomic } from '../lib/fsx'
+import { ensureDir, safeName } from '../lib/fsx'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { LogService } from './logger'
 import type { MojangService } from './mojang'
@@ -12,16 +11,22 @@ import type { StorageService } from './storage'
 import type { TelemetryService } from './telemetry'
 
 /**
- * 实例服务（版本隔离）。
+ * 实例服务（版本隔离 + 多实例）。
  *
  * 布局（Prism 式：根共享 + 实例独立 .minecraft）：
  *   <data>/instances/<id>/instance.json
  *   <data>/instances/<id>/.minecraft/{mods,resourcepacks,shaderpacks,saves,config,logs,crash-reports}
  * 游戏进程的 cwd = .minecraft；assets/libraries/versions/java 全局共享。
+ *
+ * 「当前实例」存在 settings.activeInstance，AI 工具 / 命令默认作用于它。
  */
 export interface InstancesService {
   list(): InstanceSummary[]
   get(id: string): InstanceSummary | undefined
+  create(name: string): InstanceSummary
+  remove(id: string): { ok: boolean; error?: string }
+  active(): InstanceSummary
+  setActive(id: string): InstanceSummary
   ensureDefault(): InstanceSummary
   gameDir(id: string): string
   setVersion(id: string, versionId: string, mcVersion: string, gameVersion?: string, loader?: string): InstanceSummary
@@ -44,6 +49,7 @@ interface InstanceFile {
 }
 
 const INSTANCE_SUBDIRS = ['mods', 'resourcepacks', 'shaderpacks', 'saves', 'config', 'logs', 'crash-reports', 'screenshots']
+const DEFAULT_ID = 'default'
 
 export function createInstancesPlugin(): LauncherPlugin<void> {
   return definePlugin('instances', () => (ctx) => {
@@ -61,6 +67,10 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
     const read = (id: string): InstanceFile | undefined => {
       if (!storage.exists(fileOf(id))) return undefined
       return storage.readJson<InstanceFile | undefined>(fileOf(id), undefined) ?? undefined
+    }
+
+    const write = (file: InstanceFile): void => {
+      storage.writeJson(fileOf(file.id), file)
     }
 
     const toSummary = (file: InstanceFile): InstanceSummary => {
@@ -82,8 +92,9 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
       }
     }
 
-    const write = (file: InstanceFile): void => {
-      storage.writeJson(fileOf(file.id), file)
+    const ensureDirs = (id: string): void => {
+      mkdirSync(gameDir(id), { recursive: true })
+      for (const sub of INSTANCE_SUBDIRS) mkdirSync(path.join(gameDir(id), sub), { recursive: true })
     }
 
     /** 老布局（mods 等直接在实例根）迁移到 .minecraft 下。 */
@@ -96,6 +107,7 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
         const to = path.join(mcDir, sub)
         if (existsSync(from) && !existsSync(to)) {
           try {
+            const { rename } = await import('node:fs/promises')
             await rename(from, to)
             log.info('instances', '迁移实例目录到 .minecraft', { id, sub })
           } catch {
@@ -107,14 +119,13 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
     }
 
     const ensureDefault = (): InstanceSummary => {
-      const id = 'default'
-      const existing = read(id)
+      const existing = read(DEFAULT_ID)
       if (existing) {
-        void migrateLayout(id)
+        ensureDirs(DEFAULT_ID)
         return toSummary(existing)
       }
       const file: InstanceFile = {
-        id,
+        id: DEFAULT_ID,
         name: '默认实例',
         mcVersion: '',
         loader: 'vanilla',
@@ -123,24 +134,96 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
         createdAt: Date.now(),
       }
       write(file)
-      void migrateLayout(id)
-      log.info('instances', '已创建默认实例', { id, gameDir: gameDir(id) })
-      telemetry.record('instance:create', { id, loader: file.loader })
+      ensureDirs(DEFAULT_ID)
+      void migrateLayout(DEFAULT_ID)
+      log.info('instances', '已创建默认实例', { id: DEFAULT_ID })
+      telemetry.record('instance:create', { id: DEFAULT_ID, loader: file.loader })
       return toSummary(file)
     }
 
     const list = (): InstanceSummary[] => {
       ensureDefault()
-      // P0/P1 只管理默认实例；多实例管理在后续阶段扩展。
-      return ['default']
-        .map((id) => read(id))
-        .filter((x): x is InstanceFile => Boolean(x))
-        .map(toSummary)
+      const items: InstanceSummary[] = []
+      let entries: string[] = []
+      try {
+        entries = readdirSync(paths.instances, { withFileTypes: true })
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => entry.name)
+      } catch {
+        entries = []
+      }
+      for (const id of entries) {
+        const file = read(id)
+        if (file) items.push(toSummary(file))
+      }
+      if (!items.some((item) => item.id === DEFAULT_ID)) items.push(ensureDefault())
+      return items.sort((a, b) => (a.id === DEFAULT_ID ? -1 : b.id === DEFAULT_ID ? 1 : a.createdAt - b.createdAt))
     }
 
     const get = (id: string): InstanceSummary | undefined => {
       const file = read(id)
       return file ? toSummary(file) : undefined
+    }
+
+    const active = (): InstanceSummary => {
+      const activeId = settings.get('activeInstance')
+      return (activeId && get(activeId)) || list()[0] || ensureDefault()
+    }
+
+    const setActive = (id: string): InstanceSummary => {
+      const instance = get(id)
+      if (!instance) throw new Error(`实例不存在: ${id}`)
+      settings.patch({ activeInstance: id })
+      telemetry.record('instance:activate', { id })
+      return instance
+    }
+
+    const uniqueId = (name: string): string => {
+      const base = safeName(name, 'instance')
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 24)
+      const seed = base || `inst-${Date.now().toString(36)}`
+      if (!existsSync(dirOf(seed))) return seed
+      for (let i = 2; i < 100; i += 1) {
+        const candidate = `${seed}-${i}`
+        if (!existsSync(dirOf(candidate))) return candidate
+      }
+      return `${seed}-${Date.now().toString(36)}`
+    }
+
+    const create = (name: string): InstanceSummary => {
+      ensureDefault()
+      const id = uniqueId(name)
+      const file: InstanceFile = {
+        id,
+        name: safeName(name, '新实例').slice(0, 32),
+        mcVersion: '',
+        loader: 'vanilla',
+        memoryMb: settings.get('memoryMb'),
+        playerName: settings.get('playerName'),
+        createdAt: Date.now(),
+      }
+      write(file)
+      ensureDirs(id)
+      telemetry.record('instance:create', { id, loader: file.loader })
+      log.info('instances', '已创建实例', { id, name: file.name })
+      return toSummary(file)
+    }
+
+    const remove = (id: string): { ok: boolean; error?: string } => {
+      if (id === DEFAULT_ID) return { ok: false, error: '默认实例不能删除' }
+      if (!get(id)) return { ok: false, error: `实例不存在: ${id}` }
+      try {
+        rmSync(dirOf(id), { recursive: true, force: true })
+        if (settings.get('activeInstance') === id) settings.patch({ activeInstance: DEFAULT_ID })
+        telemetry.record('instance:remove', { id })
+        log.info('instances', '已删除实例', { id })
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
     }
 
     const setVersion = (
@@ -177,10 +260,9 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
       write(file)
     }
 
-    const dryRun = async (id = 'default'): Promise<LaunchDryRun> => {
-      const instance = get(id) ?? ensureDefault()
-      const steps: LaunchStep[] = []
-      steps.push({ step: '实例目录', status: 'ok', detail: instance.gameDir })
+    const dryRun = async (id?: string): Promise<LaunchDryRun> => {
+      const instance = (id && get(id)) || active()
+      const steps: LaunchStep[] = [{ step: '实例目录', status: 'ok', detail: instance.gameDir }]
       if (!instance.versionId) {
         steps.push({ step: '游戏版本', status: 'pending', detail: '尚未下载任何版本（上方选择版本并安装）' })
       } else {
@@ -200,6 +282,10 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
     ctx.provide('instances', {
       list,
       get,
+      create,
+      remove,
+      active,
+      setActive,
       ensureDefault,
       gameDir,
       setVersion,
@@ -209,6 +295,5 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
     } satisfies InstancesService)
 
     ensureDefault()
-    void readdir(paths.instances).catch(() => undefined)
   })
 }

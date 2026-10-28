@@ -136,6 +136,8 @@ export interface SettingsShape {
   memoryMb: number
   /** 离线登录玩家名 */
   playerName: string
+  /** 当前实例 id */
+  activeInstance: string
   /** 启动时自动检查更新 */
   autoCheckUpdate: boolean
 }

@@ -47,6 +47,9 @@ export interface QdoApi {
   }
   instances: {
     list(): Promise<InstanceSummary[]>
+    create(name: string): Promise<InstanceSummary>
+    remove(id: string): Promise<{ ok: boolean; error?: string }>
+    activate(id: string): Promise<InstanceSummary>
   }
   versions: {
     list(): Promise<VersionList>

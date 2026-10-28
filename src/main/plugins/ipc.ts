@@ -121,6 +121,9 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     })
     handle<LaunchDryRun>(CH.launchDryRun, (id?: string) => instances.dryRun(id))
     handle<InstanceSummary[]>(CH.instancesList, () => instances.list())
+    handle<InstanceSummary>(CH.instancesCreate, (name: string) => instances.create(name))
+    handle(CH.instancesRemove, (id: string) => instances.remove(id))
+    handle<InstanceSummary>(CH.instancesActivate, (id: string) => instances.setActive(id))
     handle<ChatReply>(CH.chatSend, (text: string) => chat.send(text))
     handle(CH.entitlements, () => entitlement.list())
     handle<EventSummary>(CH.eventsSummary, () => telemetry.summary())
@@ -129,7 +132,7 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle<InstallResult>(CH.versionInstall, async (versionId: string) => {
       const result = await mojang.install(versionId, `install-${versionId}-${Date.now()}`)
       if (result.ok) {
-        instances.setVersion('default', versionId, versionId)
+        instances.setVersion(instances.active().id, versionId, versionId)
       }
       return result
     })
@@ -168,7 +171,7 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle<FabricInstallResult>(CH.loaderFabric, async (gameVersion: string) => {
       const result = await loaders.installFabric(gameVersion)
       if (result.ok && result.versionId) {
-        instances.setVersion('default', result.versionId, gameVersion, gameVersion, 'fabric')
+        instances.setVersion(instances.active().id, result.versionId, gameVersion, gameVersion, 'fabric')
       }
       return result
     })

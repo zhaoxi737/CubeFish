@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS: SettingsShape = {
   llmModel: 'deepseek-chat',
   memoryMb: 4096,
   playerName: 'Player',
+  activeInstance: 'default',
   autoCheckUpdate: true,
 }
 
@@ -97,6 +98,7 @@ function sanitize(input: Partial<SettingsShape>): Partial<SettingsShape> {
   if (typeof input.llmBaseUrl === 'string') out.llmBaseUrl = input.llmBaseUrl.trim() || DEFAULT_SETTINGS.llmBaseUrl
   if (typeof input.llmModel === 'string') out.llmModel = input.llmModel.trim() || DEFAULT_SETTINGS.llmModel
   if (typeof input.playerName === 'string') out.playerName = input.playerName.trim().slice(0, 16) || 'Player'
+  if (typeof input.activeInstance === 'string' && input.activeInstance.trim()) out.activeInstance = input.activeInstance.trim()
   if (typeof input.memoryMb === 'number' && Number.isFinite(input.memoryMb)) {
     out.memoryMb = Math.min(32768, Math.max(512, Math.round(input.memoryMb)))
   }

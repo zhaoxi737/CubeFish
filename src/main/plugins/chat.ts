@@ -105,7 +105,7 @@ export function createChatPlugin(): LauncherPlugin<void> {
       description: '查看启动器、实例与授权状态',
       run: () => {
         const info = ctx.get('appMeta') as { version: string } | undefined
-        const inst = instances.list()[0]
+        const inst = instances.active()
         const free = entitlement.freeMode
         const lines = [
           `启动器版本：${info?.version ?? '?'}`,
@@ -137,7 +137,7 @@ export function createChatPlugin(): LauncherPlugin<void> {
       name: 'instance',
       description: '查看实例目录结构（版本隔离）',
       run: () => {
-        const inst = instances.list()[0]
+        const inst = instances.active()
         if (!inst) return '还没有实例。'
         return [
           `实例：${inst.name}（${inst.id}）`,
@@ -169,7 +169,7 @@ export function createChatPlugin(): LauncherPlugin<void> {
         const sub = (args[0] ?? '').toLowerCase()
         const text = args.slice(1).join(' ').trim()
         if (!sub || !text) return '用法：/mod search sodium 或 /mod install sodium'
-        const instance = instances.list()[0]
+        const instance = instances.active()
         if (!instance) return '没有可用实例。'
         const opts = {
           mcVersion: instance.gameVersion ?? undefined,
@@ -197,7 +197,7 @@ export function createChatPlugin(): LauncherPlugin<void> {
       name: 'conflict',
       description: '静态冲突检查（前置 / 版本 / 加载器 / 重复 modid）',
       run: () => {
-        const report = conflict.analyze('default')
+        const report = conflict.analyze(instances.active().id)
         if (report.issues.length === 0) return `检查了 ${report.mods.length} 个模组，没有发现冲突。`
         const lines = [
           `检查了 ${report.mods.length} 个模组，发现 ${report.issues.length} 个问题：`,
@@ -211,7 +211,7 @@ export function createChatPlugin(): LauncherPlugin<void> {
       name: 'diag',
       description: '崩溃归因（读取 crash-report / latest.log）',
       run: async () => {
-        const result = await diagnose.run('default')
+        const result = await diagnose.run(instances.active().id)
         if (!result.found) return result.summary
         return [`归因：${result.summary}（${result.category}）`, ...result.suggestions.map((s) => `- ${s}`)].join('\n')
       },

@@ -24,6 +24,9 @@ const api: QdoApi = {
   },
   instances: {
     list: () => ipcRenderer.invoke(CH.instancesList),
+    create: (name) => ipcRenderer.invoke(CH.instancesCreate, name),
+    remove: (id) => ipcRenderer.invoke(CH.instancesRemove, id),
+    activate: (id) => ipcRenderer.invoke(CH.instancesActivate, id),
   },
   versions: {
     list: () => ipcRenderer.invoke(CH.versionsList),

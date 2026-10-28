@@ -1246,3 +1246,54 @@ code {
   border-color: rgba(74, 222, 128, 0.4);
   background: rgba(74, 222, 128, 0.08);
 }
+
+/* ---------- P8：多实例 ---------- */
+.instance-select {
+  background: #0b1017;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 9px;
+  padding: 5px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+  max-width: 260px;
+}
+
+.instance-select:focus {
+  border-color: rgba(74, 222, 128, 0.45);
+}
+
+.dialog-narrow {
+  width: 460px;
+}
+
+/* ---------- P8：内容类型切换 ---------- */
+.kind-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 10px 18px 0;
+}
+
+.kind-tab {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 5px 16px;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.kind-tab:hover {
+  color: var(--text);
+  border-color: #2d3f52;
+}
+
+.kind-tab.is-active {
+  color: #04120a;
+  background: linear-gradient(180deg, #4ade80, #22c55e);
+  border-color: transparent;
+  font-weight: 700;
+}

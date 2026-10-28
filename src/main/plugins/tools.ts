@@ -72,7 +72,8 @@ export function createToolsPlugin(): LauncherPlugin<void> {
       registry.set(definition.name, definition)
     }
 
-    const instance = () => instances.list()[0]
+    const instance = () => instances.active()
+    const activeId = () => instance().id
 
     register({
       name: 'get_status',
@@ -80,7 +81,7 @@ export function createToolsPlugin(): LauncherPlugin<void> {
       parameters: EMPTY_PARAMS,
       async handler() {
         const inst = instance()
-        const mods = await content.installed('default')
+        const mods = await content.installed(activeId())
         const runtimes = await java.detect()
         const running = launch.current()
         const lines = [
@@ -138,7 +139,7 @@ export function createToolsPlugin(): LauncherPlugin<void> {
       },
       async handler(args) {
         const inst = instance()
-        const result = await content.install('default', str(args.slug), {
+        const result = await content.install(activeId(), str(args.slug), {
           mcVersion: inst?.gameVersion,
           loader: inst?.loader === 'fabric' ? 'fabric' : undefined,
         })
@@ -156,7 +157,7 @@ export function createToolsPlugin(): LauncherPlugin<void> {
       description: '列出当前实例已安装的模组文件与启用状态。',
       parameters: EMPTY_PARAMS,
       async handler() {
-        const mods = await content.installed('default')
+        const mods = await content.installed(activeId())
         if (mods.length === 0) return { ok: true, summary: '当前实例还没有安装任何模组' }
         const summary = mods
           .map((mod) => `${mod.fileName}${mod.enabled === false ? '（已禁用）' : ''}`)
@@ -170,7 +171,7 @@ export function createToolsPlugin(): LauncherPlugin<void> {
       description: '静态冲突检查：重复 modid、缺少前置、加载器不匹配、模组互斥（breaks）。',
       parameters: EMPTY_PARAMS,
       async handler() {
-        const report = conflict.analyze('default')
+        const report = conflict.analyze(activeId())
         if (report.issues.length === 0) {
           return { ok: true, summary: `检查了 ${report.mods.length} 个模组，没有发现冲突`, data: report }
         }
@@ -186,7 +187,7 @@ export function createToolsPlugin(): LauncherPlugin<void> {
       description: '崩溃归因：读取最近一次 crash-report / latest.log，判断原因（缺前置、Mixin、OOM、Java 版本等）并给建议。',
       parameters: EMPTY_PARAMS,
       async handler() {
-        const result = await diagnose.run('default')
+        const result = await diagnose.run(activeId())
         if (!result.found) return { ok: true, summary: result.summary, data: result }
         return {
           ok: true,
@@ -223,7 +224,7 @@ export function createToolsPlugin(): LauncherPlugin<void> {
       description: '启动当前实例的游戏。用户说“开玩/启动/进游戏”时调用。',
       parameters: EMPTY_PARAMS,
       async handler() {
-        const result = await launch.start('default')
+        const result = await launch.start(activeId())
         if (!result.ok) return { ok: false, summary: `启动失败：${result.error ?? '未知错误'}` }
         return { ok: true, summary: `已启动 ${result.versionId}（PID ${result.pid ?? '?'}，玩家 ${result.playerName}）` }
       },
@@ -257,7 +258,7 @@ export function createToolsPlugin(): LauncherPlugin<void> {
         const versionId = str(args.versionId)
         const result = await mojang.install(versionId, `tool-install-${Date.now()}`)
         if (!result.ok) return { ok: false, summary: `安装失败：${result.error}` }
-        instances.setVersion('default', versionId, versionId)
+        instances.setVersion(activeId(), versionId, versionId)
         return { ok: true, summary: `已安装 ${versionId}（Java ${result.javaMajor}，用时 ${Math.round(result.ms / 1000)}s）` }
       },
     })
@@ -272,7 +273,7 @@ export function createToolsPlugin(): LauncherPlugin<void> {
         if (!gameVersion) return { ok: false, summary: '实例还没有绑定游戏版本，先装原版' }
         const result = await loaders.installFabric(gameVersion)
         if (!result.ok) return { ok: false, summary: `Fabric 安装失败：${result.error}` }
-        instances.setVersion('default', result.versionId!, gameVersion, gameVersion, 'fabric')
+        instances.setVersion(activeId(), result.versionId!, gameVersion, gameVersion, 'fabric')
         return { ok: true, summary: `已安装 Fabric ${result.loaderVersion}（${result.libraries} 个库）` }
       },
     })
@@ -290,7 +291,7 @@ export function createToolsPlugin(): LauncherPlugin<void> {
       },
       async handler(args) {
         const mb = Math.min(32768, Math.max(512, Math.round(num(args.mb, 4096))))
-        instances.setMemory('default', mb)
+        instances.setMemory(activeId(), mb)
         return { ok: true, summary: `内存已设为 ${mb} MB` }
       },
     })

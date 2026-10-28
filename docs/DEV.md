@@ -1,4 +1,4 @@
-# 开发手册（P0–P9）
+# 开发手册（P0–P10）
 
 ## 1. 环境
 
@@ -53,6 +53,8 @@ electron . --activate-instance=default
 electron . --content=low-on-fire
 electron . --market
 electron . --market-install=hello-world
+electron . --inspect-modpack=fabulously-optimized
+electron . --modpack="D:\packs\test.mrpack"
 ```
 
 > electron 二进制若未随 npm install 下载成功，可用本地缓存解压：
@@ -283,7 +285,20 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 > 设置里配置公钥后**强制验签**（失败即拒绝）；未配置 = 开发模式并标注 `unsigned`。
 > 生成工具：`scripts/make-market.mjs`（含开发用密钥对生成，生产请用环境变量指定私钥）。
 
-## 16. 已知限制 / 待办
+## 16. P10 验收（已实测，2026-10-29）
+
+| 验收项 | 结果 |
+|---|---|
+| `.mrpack` 索引解析 | ✅ 本地测试包 + 真实包 `fabulously-optimized`（51 个文件 / 44.9MB / mc 26.2 + fabric 0.19.5） |
+| 一键安装整合包 | ✅ 新建实例「QDOQMC 测试整合包」，自动装 Fabric 0.20.1 + 绑定 1.21.11 |
+| 模组文件落盘 | ✅ `mods/fabric-api…jar`、`mods/sodium-…jar`，sha1 校验通过（命中缓存） |
+| `overrides/` 覆盖 | ✅ `config/qdoqmc-test.txt` 写入实例；`client-overrides/` 同支持，`server-overrides/` 跳过 |
+| 安装清单 | ✅ `content.json` 记录 2 个文件（kind=mod） |
+| 不支持的加载器 | ✅ 检测到 neoforge/forge 依赖时直接返回明确错误，不会装一半 |
+| UI 整合包标签 | ✅ 模组面板新增「整合包」分类，返回 12 条真实 Modrinth 整合包，一键安装 |
+| 25 个插件全部加载 | ✅ `failed: []` |
+
+## 17. 已知限制 / 待办
 
 - **更新**：只支持便携版（解压替换）；NSIS 安装包升级未做。
 - **签名**：便携版未做代码签名，Windows SmartScreen 会提示未知发布者。
@@ -291,21 +306,21 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 - **插件市场**：feed 与签名链路已通；缺少审核、版本更新检测、分类与评分。
 - **慢网**：本机到 Mojang 单连接仅 ~50KB/s，并发 16 约 200KB/s，432MB 资源耗时 18 分钟。镜像回退待接入。
 - **加载器**：Fabric 已通；NeoForge/Forge（processors 执行引擎）未做，Quilt 不做。
-- **内容**：mod/资源包/光影的搜索安装已通；`.mrpack` 整包、完整依赖图求解未完成。
+- **整合包**：`.mrpack` 已通（Fabric/原版）；NeoForge/Forge 整合包会明确报错。CurseForge `.zip` 整合包不支持。
 - **AI**：真实模型调用需用户自填 Key（本机验证用 mock LLM）；流式输出、会话记忆未做。
 - **老版本**：legacy/pre-1.6 资源物化已实现但未实测；Java 8 运行时自动下载未实测。
 - **实例**：支持创建/切换/删除；实例复制、导入导出、图标未做。
 - **登录**：仅离线（正版 OAuth 未做）。
 
-## 17. 下一步（P10：补账）
+## 18. 下一步（P11：补账）
 
-1. **NeoForge/Forge processors 引擎**（最大功能缺口）。
-2. **`.mrpack` 整合包一键安装**。
-3. **插件沙箱化**：utilityProcess + 受限 API + 权限确认。
-4. **登录**：微软正版 OAuth（需要 Azure 应用 id）。
-5. **体验**：流式 AI 输出、会话记忆、崩溃一键修复。
+1. **NeoForge/Forge processors 引擎**（最大功能缺口，也解锁对应整合包）。
+2. **插件沙箱化**：utilityProcess + 受限 API + 权限确认。
+3. **登录**：微软正版 OAuth（需要 Azure 应用 id）。
+4. **体验**：流式 AI 输出、会话记忆、崩溃一键修复。
+5. **整合包补全**：CurseForge zip、安装前预览清单与体积。
 
-## 18. 测试用 mock LLM
+## 19. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

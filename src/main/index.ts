@@ -20,6 +20,8 @@ import {
   runPluginsCli,
   runMarketCli,
   runMarketInstallCli,
+  runModpackCli,
+  runInspectModpackCli,
   runToolsCli,
   runUpdateApplyCli,
   runUpdateDownloadCli,
@@ -51,6 +53,8 @@ const updateApplyMode = process.argv.includes('--update-apply')
 const instancesMode = process.argv.includes('--instances')
 const marketMode = process.argv.includes('--market')
 const marketInstallTarget = argValue('market-install')
+const modpackTarget = argValue('modpack')
+const inspectModpackTarget = argValue('inspect-modpack')
 const createInstanceTarget = argValue('create-instance')
 const activateInstanceTarget = argValue('activate-instance')
 const contentTarget = argValue('content')
@@ -207,6 +211,15 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
       const rpInfo = (await win.webContents.executeJavaScript(
         `JSON.stringify({ rows: document.querySelectorAll('.mod-row').length, activeTab: document.querySelector('.kind-tab.is-active')?.textContent ?? '' })`,
       )) as string
+      // 切到「整合包」标签，验证整合包搜索与一键安装入口
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.kind-tab')].find((b) => b.textContent?.trim() === '整合包'); btn?.click(); return 'modpack' })()`,
+      )
+      await wait(2800)
+      const modpackShot = await shot('smoke-modpack.png')
+      const modpackInfo = (await win.webContents.executeJavaScript(
+        `JSON.stringify({ rows: document.querySelectorAll('.mod-row').length, activeTab: document.querySelector('.kind-tab.is-active')?.textContent ?? '' })`,
+      )) as string
       // 切回模组，再做冲突检查
       await win.webContents.executeJavaScript(
         `(() => { const btn = [...document.querySelectorAll('.kind-tab')].find((b) => b.textContent?.trim() === '模组'); btn?.click(); return 'mod' })()`,
@@ -231,13 +244,14 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           version: info?.version ?? app.getVersion(),
           plugins: k.summary.plugins,
           failed: k.summary.failed,
-          screenshots: [firstShot, aiShot, pluginsShot, marketShot, modsShot, rpShot, conflictShot],
+          screenshots: [firstShot, aiShot, pluginsShot, marketShot, modsShot, rpShot, modpackShot, conflictShot],
           ui: JSON.parse(uiText),
           ai: JSON.parse(aiInfo),
           pluginPanel: JSON.parse(pluginsInfo),
           market: JSON.parse(marketInfo),
           mods: JSON.parse(modsInfo),
           resourcepack: JSON.parse(rpInfo),
+          modpack: JSON.parse(modpackInfo),
           conflict: JSON.parse(conflictInfo),
           chatStatus: chat,
         })}`,
@@ -348,6 +362,16 @@ if (!gotLock) {
       }
       if (marketInstallTarget) {
         const code = await runMarketInstallCli(kernel, marketInstallTarget)
+        app.exit(code)
+        return
+      }
+      if (modpackTarget) {
+        const code = await runModpackCli(kernel, modpackTarget)
+        app.exit(code)
+        return
+      }
+      if (inspectModpackTarget) {
+        const code = await runInspectModpackCli(kernel, inspectModpackTarget)
         app.exit(code)
         return
       }

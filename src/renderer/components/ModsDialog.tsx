@@ -5,17 +5,27 @@ interface Props {
   instance: InstanceSummary
   onClose: () => void
   onNotify: (text: string) => void
+  /** 整合包安装会新建实例，通知外层刷新 */
+  onRefresh?: () => void
 }
 
 const KIND_LABEL: Record<string, string> = {
   mod: '模组',
   resourcepack: '资源包',
   shader: '光影',
+  modpack: '整合包',
 }
 
-export function ModsDialog({ instance, onClose, onNotify }: Props) {
+const KIND_PLACEHOLDER: Record<string, string> = {
+  mod: 'sodium',
+  resourcepack: 'faithful',
+  shader: 'bsl',
+  modpack: 'adrenaline',
+}
+
+export function ModsDialog({ instance, onClose, onNotify, onRefresh }: Props) {
   const [query, setQuery] = useState('')
-  const [kind, setKind] = useState<'mod' | 'resourcepack' | 'shader'>('mod')
+  const [kind, setKind] = useState<'mod' | 'resourcepack' | 'shader' | 'modpack'>('mod')
   const [hits, setHits] = useState<SearchHit[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -26,7 +36,7 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
 
   const loader = instance.loader === 'fabric' ? 'fabric' : undefined
   const mcVersion = instance.gameVersion
-  // 资源包/光影的版本没有 loader 维度，传 loader 反而会把结果过滤没
+  // 资源包/光影/整合包的版本没有 loader 维度，传 loader 反而会把结果过滤没
   const loaderFilter = kind === 'mod' ? loader : undefined
 
   const loadInstalled = useCallback(async () => {
@@ -63,10 +73,19 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
     async (hit: SearchHit) => {
       setBusy(hit.projectId)
       try {
-        const result = await window.qdo.content.install(instance.id, hit.projectId, { mcVersion, loader: loaderFilter })
-        if (!result.ok) onNotify(`安装失败：${result.error ?? '未知错误'}`)
-        else onNotify(`已安装 ${result.title ?? hit.title} ${result.versionNumber ?? ''}`)
-        await loadInstalled()
+        if (kind === 'modpack') {
+          const result = await window.qdo.content.installModpack(hit.projectId)
+          if (!result.ok) onNotify(`整合包安装失败：${result.error ?? '未知错误'}`)
+          else {
+            onNotify(`整合包「${result.packName}」已装到新实例（${result.files} 个文件，${result.loader} ${result.mcVersion}）`)
+            onRefresh?.()
+          }
+        } else {
+          const result = await window.qdo.content.install(instance.id, hit.projectId, { mcVersion, loader: loaderFilter })
+          if (!result.ok) onNotify(`安装失败：${result.error ?? '未知错误'}`)
+          else onNotify(`已安装 ${result.title ?? hit.title} ${result.versionNumber ?? ''}`)
+          await loadInstalled()
+        }
         setReport(null)
       } catch (err) {
         onNotify(`安装失败：${err instanceof Error ? err.message : String(err)}`)
@@ -74,7 +93,7 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
         setBusy(null)
       }
     },
-    [instance.id, loaderFilter, mcVersion, onNotify, loadInstalled],
+    [instance.id, kind, loaderFilter, mcVersion, onNotify, loadInstalled, onRefresh],
   )
 
   const toggle = useCallback(
@@ -131,7 +150,7 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
         </div>
 
         <div className="kind-tabs">
-          {(['mod', 'resourcepack', 'shader'] as const).map((item) => (
+          {(['mod', 'resourcepack', 'shader', 'modpack'] as const).map((item) => (
             <button
               key={item}
               type="button"
@@ -150,7 +169,7 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
             onKeyDown={(event) => {
               if (event.key === 'Enter') void search(query)
             }}
-            placeholder={`搜索${KIND_LABEL[kind]}，例如 ${kind === 'mod' ? 'sodium' : kind === 'resourcepack' ? 'faithful' : 'bsl'}`}
+            placeholder={`搜索${KIND_LABEL[kind]}，例如 ${KIND_PLACEHOLDER[kind]}`}
             spellCheck={false}
           />
           <button type="button" className="primary" onClick={() => void search(query)} disabled={loading}>
@@ -227,7 +246,9 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
 
         <div className="dialog-foot">
           <span className="field-hint">
-            只显示与当前实例（{mcVersion ?? '未知版本'} / {kind === 'mod' ? loader ?? 'vanilla' : KIND_LABEL[kind]}）匹配的最新版本
+            {kind === 'modpack'
+              ? '安装整合包会自动新建实例，并装好对应版本的 Fabric 与全部模组/配置'
+              : `只显示与当前实例（${mcVersion ?? '未知版本'} / ${kind === 'mod' ? loader ?? 'vanilla' : KIND_LABEL[kind]}）匹配的最新版本`}
           </span>
         </div>
       </div>

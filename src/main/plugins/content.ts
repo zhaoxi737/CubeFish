@@ -2,19 +2,25 @@
  * 内容服务（P2）：Modrinth 搜索 / 版本匹配 / 依赖求解 / 一键装 mod・资源包・光影。
  * API 参考 docs/RESEARCH-P1-P2.md §4。
  */
-import { existsSync } from 'node:fs'
+import AdmZip from 'adm-zip'
+import { existsSync, writeFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type {
   ContentInstallResult,
   ContentVersionInfo,
   InstalledContent,
+  ModpackInspectResult,
+  ModpackInstallResult,
   SearchHit,
 } from '../../shared/types'
-import { Downloader } from '../lib/downloader'
-import { readJson, safeName, writeJsonAtomic } from '../lib/fsx'
+import { Downloader, type DownloadSpec } from '../lib/downloader'
+import { ensureDir, readJson, safeName, writeJsonAtomic } from '../lib/fsx'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { InstancesService } from './instances'
+import type { LoadersService } from './loaders'
 import type { LogService } from './logger'
+import type { MojangService } from './mojang'
 import type { PathsService } from './paths'
 import type { SettingsService } from './settings'
 import type { TelemetryService } from './telemetry'
@@ -70,6 +76,12 @@ export interface ContentService {
   installed(instanceId: string): Promise<InstalledContent[]>
   toggle(instanceId: string, fileName: string): Promise<{ ok: boolean; enabled?: boolean; error?: string }>
   remove(instanceId: string, fileName: string): Promise<{ ok: boolean; error?: string }>
+  /** 安装 .mrpack 整合包：本地路径或 http(s) URL；会新建实例 */
+  installModpack(source: string, opts?: { name?: string }): Promise<ModpackInstallResult>
+  /** 按 Modrinth 项目安装整合包（内部选最新版本并下载 .mrpack） */
+  installModpackProject(projectId: string, name?: string): Promise<ModpackInstallResult>
+  /** 只解析 .mrpack 的索引，不安装（用于预览/测试） */
+  inspectModpack(source: string): Promise<ModpackInspectResult>
   /** 下载任意已解析的版本文件到实例对应目录（含依赖递归） */
   installVersion(instanceId: string, version: ContentVersionInfo, kind: ContentKind, depth?: number): Promise<string[]>
 }
@@ -93,6 +105,8 @@ export function createContentPlugin(): LauncherPlugin<void> {
     const log = use<LogService>(ctx, 'log')
     const instances = use<InstancesService>(ctx, 'instances')
     const settings = use<SettingsService>(ctx, 'settings')
+    const mojang = use<MojangService>(ctx, 'mojang')
+    const loaders = use<LoadersService>(ctx, 'loaders')
     const telemetry = use<TelemetryService>(ctx, 'telemetry')
 
     let lastRequest = 0
@@ -375,6 +389,207 @@ export function createContentPlugin(): LauncherPlugin<void> {
       }
     }
 
+    /* ---------- .mrpack 整合包 ---------- */
+
+    interface MrpackFile {
+      path?: string
+      hashes?: { sha1?: string; sha512?: string }
+      env?: { client?: string; server?: string }
+      downloads?: string[]
+      fileSize?: number
+    }
+
+    interface MrpackIndex {
+      formatVersion?: number
+      game?: string
+      name?: string
+      versionId?: string
+      files?: MrpackFile[]
+      dependencies?: Record<string, string>
+    }
+
+    async function readSource(source: string): Promise<Buffer> {
+      if (/^https?:\/\//i.test(source)) {
+        const res = await fetch(source, {
+          headers: { 'user-agent': UA },
+          signal: AbortSignal.timeout(120_000),
+        })
+        if (!res.ok) throw new Error(`下载整合包失败：HTTP ${res.status}`)
+        return Buffer.from(await res.arrayBuffer())
+      }
+      return readFile(source)
+    }
+
+    function parseIndex(buffer: Buffer): { index: MrpackIndex; zip: AdmZip } {
+      const zip = new AdmZip(buffer)
+      const entry = zip.getEntry('modrinth.index.json')
+      if (!entry) throw new Error('不是合法的 .mrpack（缺 modrinth.index.json）')
+      const index = JSON.parse(entry.getData().toString('utf8')) as MrpackIndex
+      if (!index.dependencies?.minecraft) throw new Error('整合包没有声明 minecraft 版本')
+      return { index, zip }
+    }
+
+    async function inspectModpack(source: string): Promise<ModpackInspectResult> {
+      try {
+        const { index } = parseIndex(await readSource(source))
+        const deps = index.dependencies ?? {}
+        const unsupportedLoader = deps.neoforge ? 'neoforge' : deps.forge ? 'forge' : deps['quilt-loader'] ? 'quilt' : undefined
+        const files = index.files ?? []
+        return {
+          ok: true,
+          name: index.name,
+          versionId: index.versionId,
+          game: index.game,
+          dependencies: deps,
+          fileCount: files.length,
+          totalBytes: files.reduce((sum, file) => sum + (file.fileSize ?? 0), 0),
+          unsupportedLoader,
+        }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+
+    async function installModpack(source: string, opts?: { name?: string }): Promise<ModpackInstallResult> {
+      try {
+        const { index, zip } = parseIndex(await readSource(source))
+        const deps = index.dependencies ?? {}
+        const mc = deps.minecraft as string
+        if (deps.neoforge || deps.forge) {
+          return {
+            ok: false,
+            error: `暂不支持 NeoForge/Forge 整合包（当前只支持 Fabric 与原版）；检测到 ${deps.neoforge ? 'neoforge' : 'forge'}`,
+          }
+        }
+
+        const instance = instances.create(opts?.name ?? index.name ?? '整合包')
+        instances.setActive(instance.id)
+        const packVersion = index.versionId ?? ''
+
+        let loaderName = 'vanilla'
+        let versionId = mc
+        if (deps['fabric-loader']) {
+          if (!existsSync(path.join(paths.versions, mc, `${mc}.json`))) {
+            const base = await mojang.install(mc, `mrpack-base-${Date.now()}`)
+            if (!base.ok) throw new Error(`整合包依赖的原版 ${mc} 安装失败：${base.error}`)
+          }
+          const fabric = await loaders.installFabric(mc)
+          if (!fabric.ok || !fabric.versionId) throw new Error(`Fabric 安装失败：${fabric.error ?? '未知错误'}`)
+          versionId = fabric.versionId
+          loaderName = 'fabric'
+        } else {
+          const base = await mojang.install(mc, `mrpack-base-${Date.now()}`)
+          if (!base.ok) throw new Error(`原版 ${mc} 安装失败：${base.error}`)
+        }
+        instances.setVersion(instance.id, versionId, mc, mc, loaderName)
+
+        // 模组文件
+        const specs: DownloadSpec[] = []
+        const filePaths: { rel: string; sha1: string }[] = []
+        for (const file of index.files ?? []) {
+          if (file.env?.client === 'unsupported') continue
+          const rel = String(file.path ?? '').replace(/\\/g, '/')
+          if (!rel || rel.includes('..') || path.isAbsolute(rel)) continue
+          const url = file.downloads?.[0]
+          if (!url) continue
+          specs.push({
+            url,
+            dest: path.join(instance.gameDir, ...rel.split('/')),
+            sha1: file.hashes?.sha1,
+            size: file.fileSize,
+            label: rel,
+          })
+          filePaths.push({ rel, sha1: file.hashes?.sha1 ?? '' })
+        }
+
+        const downloader = new Downloader({
+          cacheDir: paths.downloads,
+          concurrency: 8,
+          onVerbose: (message, data) => log.warn('content', message, data),
+        })
+        const stats = await downloader.downloadAll(specs)
+        if (stats.failed.length > 0) {
+          throw new Error(`${stats.failed.length} 个整合包文件下载失败（首个：${stats.failed[0].label}）`)
+        }
+
+        // overrides / client-overrides 覆盖到实例目录
+        let overrides = 0
+        for (const entry of zip.getEntries()) {
+          if (entry.isDirectory) continue
+          const name = entry.entryName.replace(/\\/g, '/')
+          const matched = /^(?:overrides|client-overrides)\/(.+)$/.exec(name)
+          if (!matched) continue
+          const rel = matched[1]
+          if (rel.includes('..')) continue
+          const dest = path.join(instance.gameDir, ...rel.split('/'))
+          await ensureDir(path.dirname(dest))
+          writeFileSync(dest, entry.getData())
+          overrides += 1
+        }
+
+        // 记录 manifest（回滚/冲突分析用）
+        const list = await installed(instance.id)
+        for (const item of filePaths) {
+          const kind = item.rel.startsWith('mods/')
+            ? 'mod'
+            : item.rel.startsWith('resourcepacks/')
+              ? 'resourcepack'
+              : item.rel.startsWith('shaderpacks/')
+                ? 'shader'
+                : 'file'
+          list.push({
+            projectId: `mrpack:${instance.id}`,
+            versionId: packVersion,
+            versionNumber: packVersion,
+            fileName: item.rel,
+            kind,
+            sha1: item.sha1,
+            installedAt: Date.now(),
+          })
+        }
+        await saveInstalled(instance.id, list)
+
+        telemetry.record('content:modpack', {
+          instanceId: instance.id,
+          mc,
+          loader: loaderName,
+          files: specs.length,
+          overrides,
+        })
+        log.info('content', '整合包安装完成', {
+          pack: index.name,
+          instanceId: instance.id,
+          files: specs.length,
+          overrides,
+        })
+        return {
+          ok: true,
+          packName: index.name ?? instance.name,
+          instanceId: instance.id,
+          mcVersion: mc,
+          loader: loaderName,
+          files: specs.length,
+          bytes: stats.bytes,
+          overrides,
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        log.error('content', '整合包安装失败', { error: message })
+        telemetry.record('content:modpack:error', { error: message })
+        return { ok: false, error: message }
+      }
+    }
+
+    async function installModpackProject(projectId: string, name?: string): Promise<ModpackInstallResult> {
+      try {
+        const version = await pickVersion(projectId)
+        if (!version?.fileUrl) return { ok: false, error: '这个整合包没有可下载的 .mrpack 文件' }
+        return installModpack(version.fileUrl, { name })
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+
     ctx.provide('content', {
       search,
       versions,
@@ -383,6 +598,9 @@ export function createContentPlugin(): LauncherPlugin<void> {
       installed,
       toggle,
       remove,
+      installModpack,
+      installModpackProject,
+      inspectModpack,
       installVersion,
     } satisfies ContentService)
 

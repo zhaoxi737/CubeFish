@@ -596,7 +596,7 @@ export function App() {
         </div>
       ) : null}
       {showMods && instance ? (
-        <ModsDialog instance={instance} onClose={() => setShowMods(false)} onNotify={notify} />
+        <ModsDialog instance={instance} onClose={() => setShowMods(false)} onNotify={notify} onRefresh={() => void refreshInstalled()} />
       ) : null}
       {showPlugins ? <PluginsDialog onClose={() => setShowPlugins(false)} onNotify={notify} /> : null}
       {showSettings && settings ? (

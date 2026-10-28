@@ -166,6 +166,11 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle<InstalledContent[]>(CH.contentInstalled, (instanceId: string) => content.installed(instanceId))
     handle(CH.contentToggle, (instanceId: string, fileName: string) => content.toggle(instanceId, fileName))
     handle(CH.contentRemove, (instanceId: string, fileName: string) => content.remove(instanceId, fileName))
+    handle(CH.contentModpack, async (source: string) => {
+      const looksLikeLocation = /^https?:\/\//i.test(source) || source.endsWith('.mrpack')
+      return looksLikeLocation ? content.installModpack(source) : content.installModpackProject(source)
+    })
+    handle(CH.contentInspect, (source: string) => content.inspectModpack(source))
     handle<ConflictReport>(CH.conflictAnalyze, (instanceId?: string) => conflict.analyze(instanceId ?? 'default'))
     handle<Diagnosis>(CH.diagnoseRun, (instanceId?: string) => diagnose.run(instanceId ?? 'default'))
     handle<PluginInfo[]>(CH.pluginsList, () => pluginHost.list())

@@ -27,6 +27,8 @@ export const CH = {
   contentInstalled: 'content:installed',
   contentToggle: 'content:toggle',
   contentRemove: 'content:remove',
+  contentModpack: 'content:modpack',
+  contentInspect: 'content:inspect',
   conflictAnalyze: 'conflict:analyze',
   diagnoseRun: 'diagnose:run',
   loaderFabric: 'loader:fabric',

@@ -43,6 +43,8 @@ const api: QdoApi = {
     installed: (instanceId) => ipcRenderer.invoke(CH.contentInstalled, instanceId),
     toggle: (instanceId, fileName) => ipcRenderer.invoke(CH.contentToggle, instanceId, fileName),
     remove: (instanceId, fileName) => ipcRenderer.invoke(CH.contentRemove, instanceId, fileName),
+    installModpack: (source) => ipcRenderer.invoke(CH.contentModpack, source),
+    inspectModpack: (source) => ipcRenderer.invoke(CH.contentInspect, source),
   },
   conflict: {
     analyze: (instanceId) => ipcRenderer.invoke(CH.conflictAnalyze, instanceId),

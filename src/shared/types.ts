@@ -306,6 +306,33 @@ export interface FabricInstallResult {
   error?: string
 }
 
+/* ---------- P10：整合包（.mrpack） ---------- */
+
+export interface ModpackInstallResult {
+  ok: boolean
+  packName?: string
+  instanceId?: string
+  mcVersion?: string
+  loader?: string
+  files?: number
+  bytes?: number
+  overrides?: number
+  error?: string
+}
+
+export interface ModpackInspectResult {
+  ok: boolean
+  name?: string
+  versionId?: string
+  game?: string
+  dependencies?: Record<string, string>
+  fileCount?: number
+  totalBytes?: number
+  /** neoforge/forge 依赖目前不支持安装 */
+  unsupportedLoader?: string
+  error?: string
+}
+
 /* ---------- P3：冲突分析 / 崩溃归因 / 模组管理 ---------- */
 
 export type ConflictSeverity = 'error' | 'warn' | 'info'

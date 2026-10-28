@@ -17,6 +17,8 @@ import type {
   LaunchResult,
   LogRecord,
   MarketListResult,
+  ModpackInspectResult,
+  ModpackInstallResult,
   PluginInfo,
   SearchHit,
   SettingsPatch,
@@ -70,6 +72,8 @@ export interface QdoApi {
     installed(instanceId: string): Promise<InstalledContent[]>
     toggle(instanceId: string, fileName: string): Promise<{ ok: boolean; enabled?: boolean; error?: string }>
     remove(instanceId: string, fileName: string): Promise<{ ok: boolean; error?: string }>
+    installModpack(source: string): Promise<ModpackInstallResult>
+    inspectModpack(source: string): Promise<ModpackInspectResult>
   }
   conflict: {
     analyze(instanceId?: string): Promise<ConflictReport>

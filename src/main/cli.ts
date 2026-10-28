@@ -164,6 +164,31 @@ export async function runMarketInstallCli(kernel: Kernel, id: string): Promise<n
   return result.ok ? 0 : 1
 }
 
+export async function runModpackCli(kernel: Kernel, source: string): Promise<number> {
+  const content = kernel.ctx.get('content') as ContentService
+  const inspect = await content.inspectModpack(source)
+  if (!inspect.ok && !/^https?:\/\//i.test(source) && !source.endsWith('.mrpack')) {
+    // 当作 Modrinth slug
+    const result = await content.installModpackProject(source)
+    console.log(`MODPACK_RESULT ${JSON.stringify({ source, ...result })}`)
+    return result.ok ? 0 : 1
+  }
+  const result = await content.installModpack(source)
+  console.log(`MODPACK_RESULT ${JSON.stringify({ source, ...result })}`)
+  return result.ok ? 0 : 1
+}
+
+export async function runInspectModpackCli(kernel: Kernel, source: string): Promise<number> {
+  const content = kernel.ctx.get('content') as ContentService
+  let result = await content.inspectModpack(source)
+  if (!result.ok && !/^https?:\/\//i.test(source)) {
+    const version = await content.pickVersion(source)
+    if (version?.fileUrl) result = await content.inspectModpack(version.fileUrl)
+  }
+  console.log(`INSPECT_RESULT ${JSON.stringify(result)}`)
+  return result.ok ? 0 : 1
+}
+
 export async function runUpdateDownloadCli(kernel: Kernel): Promise<number> {
   const updater = kernel.ctx.get('updater') as UpdaterService
   let lastPct = -1

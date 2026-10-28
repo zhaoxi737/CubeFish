@@ -26,6 +26,7 @@ import {
   runForgeCli,
   runFixesCli,
   runApplyFixCli,
+  runCallToolCli,
   runToolsCli,
   runUpdateApplyCli,
   runUpdateDownloadCli,
@@ -33,6 +34,8 @@ import {
 
 const { app, BrowserWindow, shell } = electron
 const here = path.dirname(fileURLToPath(import.meta.url))
+// 插件沙箱 worker 与主进程 bundle 同级（out/plugin-worker.mjs）
+process.env.QDOQMC_PLUGIN_WORKER = path.join(here, '..', 'plugin-worker.mjs')
 const isSmoke = process.argv.includes('--smoke')
 const isCrashSmoke = process.argv.includes('--smoke-crash')
 
@@ -64,6 +67,7 @@ const neoforgeTarget = argValue('neoforge')
 const forgeTarget = argValue('forge')
 const fixesMode = process.argv.includes('--fixes')
 const applyFixTarget = argValue('apply-fix')
+const callToolTarget = argValue('call-tool')
 const createInstanceTarget = argValue('create-instance')
 const activateInstanceTarget = argValue('activate-instance')
 const contentTarget = argValue('content')
@@ -465,6 +469,11 @@ if (!gotLock) {
         app.exit(code)
         return
       }
+      if (callToolTarget) {
+        const code = await runCallToolCli(kernel, callToolTarget)
+        app.exit(code)
+        return
+      }
       if (createInstanceTarget) {
         const code = await runCreateInstanceCli(kernel, createInstanceTarget)
         app.exit(code)
@@ -489,6 +498,15 @@ if (!gotLock) {
       mainWindow = createWindow()
       mainWindow.on('closed', () => {
         mainWindow = null
+      })
+
+      app.on('before-quit', () => {
+        try {
+          const host = kernel?.ctx.get('pluginHost') as { beginShutdown?: () => void } | undefined
+          host?.beginShutdown?.()
+        } catch {
+          /* 忽略 */
+        }
       })
 
       if (isSmoke) await runSmoke(mainWindow, kernel, startedAt)

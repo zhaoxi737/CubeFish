@@ -1,4 +1,4 @@
-import { build } from 'esbuild'
+﻿import { build } from 'esbuild'
 import { cp, mkdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -34,6 +34,16 @@ async function main() {
     banner: {
       js: "import { createRequire as __qdoCreateRequire } from 'node:module';\nconst require = __qdoCreateRequire(import.meta.url);",
     },
+  })
+
+  // 插件沙箱 worker：跑在 utilityProcess 里，ESM + node 平台。
+  await build({
+    ...common,
+    entryPoints: ['src/main/plugin-worker.ts'],
+    outfile: 'out/plugin-worker.mjs',
+    platform: 'node',
+    format: 'esm',
+    target: 'node22',
   })
 
   // Preload: CJS bundle (sandboxed preload cannot be ESM).

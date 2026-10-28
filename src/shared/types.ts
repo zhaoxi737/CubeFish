@@ -1,4 +1,4 @@
-/** Renderer 与主进程共用的类型定义。纯类型，无运行时代码。 */
+﻿/** Renderer 与主进程共用的类型定义。纯类型，无运行时代码。 */
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
@@ -445,6 +445,10 @@ export interface PluginInfo {
   dir: string
   tools: string[]
   commands: string[]
+  /** 是否运行在 utilityProcess 沙箱里 */
+  sandbox?: boolean
+  /** 沙箱进程 PID（运行时） */
+  workerPid?: number
 }
 
 /* ---------- P9：插件市场 ---------- */

@@ -369,11 +369,27 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 > 原因是我们把原版客户端 jar 放进了 classpath，JDK 把它当成自动模块 `_1._20_1`，与 Forge 的 `minecraft` 模块抢包。
 > 修复：`mainClass` 命中 `bootstraplauncher` / `fml.startup` 时不加原版 jar。
 
-## 21. 已知限制 / 待办
+## 21. P15 验收（已实测，2026-10-29）：插件沙箱（utilityProcess）
+
+| 验收项 | 结果 |
+|---|---|
+| 插件在独立进程运行 | ✅ 日志 `插件沙箱进程已启动 { id, pid }`；`--plugins` 返回 `sandbox: true, workerPid: 13024` |
+| 工具经 RPC 执行 | ✅ `TOOL_RESULT {"ok":true,"summary":"你好，世界！…"}` |
+| 命令经 RPC 执行 | ✅ `/hello` 返回「第 2 次问候」，插件存储跨进程/跨启动持久化 |
+| 崩溃隔离 | ✅ 测试插件 `process.exit(3)` → `/boom` 返回「插件进程已退出（code 3），已隔离」，宿主继续工作 |
+| 退出不误报 | ✅ `before-quit` 标记 disposing，正常退出不再记为崩溃 |
+| UI | ✅ 插件卡片显示「沙箱 · PID」标记；提示文案改为「独立 utilityProcess 沙箱」 |
+| 构建产物 | ✅ `out/plugin-worker.mjs`（沙箱 worker 独立 bundle） |
+
+> 边界说明：这是**进程隔离 + 受限桥接**（插件拿不到宿主对象，只能 log/storage/callTool/register*）。
+> 插件进程内仍有 Node 能力（`require("fs")` 等），真正的 capability 沙箱需要 Node permission model 或 vm 级方案，列为后续。
+> 权限模型仍是「显式启用 + 声明式提示」，加载时会把 manifest 的 permissions 写入 permissions.json。
+
+## 22. 已知限制 / 待办
 
 - **更新**：只支持便携版（解压替换）；NSIS 安装包升级未做。
 - **签名**：便携版未做代码签名，Windows SmartScreen 会提示未知发布者。
-- **插件安全**：主进程内加载（Node 全权限），权限字段是提示性的；真正沙箱未做。
+- **插件安全**：已改为 utilityProcess 进程隔离 + 受限桥接 API（P15）；进程内仍具备 Node 能力，capability 级沙箱（fs/net 白名单）未做。
 - **插件市场**：feed 与签名链路已通；缺少审核、版本更新检测、分类与评分。
 - **慢网**：本机到 Mojang 单连接仅 ~50KB/s，并发 16 约 200KB/s，432MB 资源耗时 18 分钟。镜像回退待接入。
 - **加载器**：Fabric、NeoForge（1.20.2+）、Forge（1.20.1 实测）已通并可启动；更老的 Forge（1.12.2 等）未验证，Quilt 未做。Forge/NeoForge 安装需 launcher_profiles.json（缺失时自动创建）。
@@ -383,14 +399,14 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 - **实例**：支持创建/切换/删除；实例复制、导入导出、图标未做。
 - **登录**：仅离线（正版 OAuth 未做）。
 
-## 22. 下一步（P15：补账）
+## 23. 下一步（P16：补账）
 
-1. **插件沙箱**：utilityProcess + 受限 API，替代当前进程内加载（当前最大安全短板）。
+1. **插件能力白名单**：在 Node permission model / vm 层限制 fs/net，把「进程隔离」升级为「capability 沙箱」。
 2. **插件沙箱**：utilityProcess + 受限 API + 权限确认，替代当前进程内加载。
 3. **微软正版登录**：需要 Azure 应用 id（用户提供或授权申请流程）。
 4. **体验**：多会话记忆、CurseForge zip 整合包、更多修复动作（切 Java/换加载器）。
 
-## 23. 测试用 mock LLM
+## 24. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

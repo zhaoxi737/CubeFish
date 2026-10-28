@@ -225,6 +225,22 @@ export async function runForgeCli(kernel: Kernel, mcVersion: string): Promise<nu
   return result.ok ? 0 : 1
 }
 
+export async function runCallToolCli(kernel: Kernel, spec: string): Promise<number> {
+  const tools = kernel.ctx.get('tools') as ToolsService
+  const [name, ...rest] = spec.split('::')
+  let args: Record<string, unknown> = {}
+  if (rest.length > 0) {
+    try {
+      args = JSON.parse(rest.join('::')) as Record<string, unknown>
+    } catch {
+      args = {}
+    }
+  }
+  const result = await tools.call(name, args)
+  console.log(`TOOL_RESULT ${JSON.stringify({ name, args, ...result })}`)
+  return result.ok ? 0 : 1
+}
+
 export async function runFixesCli(kernel: Kernel): Promise<number> {
   const diagnose = kernel.ctx.get('diagnose') as DiagnoseService
   const instances = kernel.ctx.get('instances') as InstancesService

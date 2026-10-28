@@ -160,3 +160,54 @@ node scripts/make-market.mjs <插件目录> https://cdn.example.com/qdoqmc
 - 每个插件包还校验 **sha256 + 大小**，不一致拒绝安装；
 - 解压防路径穿越；缺少 `plugin.json` 会回滚；
 - 安装后仍需在「本地插件」里**手动启用**（启用 = 授权执行代码）。
+
+
+## 8. 沙箱运行时（P15）
+
+插件不再在主进程内执行，而是跑在 Electron 的 **utilityProcess** 里：
+
+```
+主进程 (plugin-host)
+  ├─ 扫描 plugins/<id>/plugin.json
+  ├─ utilityProcess.fork(out/plugin-worker.mjs)
+  │    └─ worker 动态 import 插件 index.mjs，调用 apply(api)
+  ├─ 收到 ready → 在主进程注册「代理工具 / 代理命令」
+  └─ 每次工具调用 → postMessage(invoke) → worker 执行 handler → postMessage(result)
+```
+
+插件拿到的 API（与进程内版本形状一致）：
+
+| API | 说明 |
+|---|---|
+| `api.log.info/warn/error(msg)` | 写宿主结构化日志（scope = `plugin:<id>`） |
+| `api.storage.get/set(key, value)` | 插件私有存储（`<data>/plugin-data/<id>.json`），跨启动保留 |
+| `api.callTool(name, args)` | 反向调用宿主已注册的工具（例如 search_mods） |
+| `api.registerTool({name, description, parameters, handler})` | 注册 AI 工具，handler 在 worker 内执行 |
+| `api.registerCommand({name, description, run})` | 注册聊天命令，run 在 worker 内执行 |
+
+### 安全边界
+
+- **进程隔离**：插件死循环/崩溃不会拖死启动器；宿主检测 worker 退出、撤回全部代理注册项、状态标为错误；
+- **受限桥接**：插件拿不到宿主对象，只能通过上面的 API 交互；
+- **超时**：工具调用 120s 超时，初始化 20s 超时；
+- **仍未限制**：worker 进程内插件依旧可以 `require('node:fs')` 等——真正的 capability 白名单是下一步（Node permission model / vm）。
+
+### 崩溃示例
+
+```js
+export function apply(api) {
+  api.registerCommand({
+    name: 'boom',
+    description: '模拟插件崩溃',
+    run: () => {
+      process.exit(3) // 只会杀死插件进程
+    },
+  })
+}
+```
+
+调用 `/boom` 得到：
+
+```
+/boom 执行失败：插件进程已退出（code 3），已隔离
+```

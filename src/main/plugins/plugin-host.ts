@@ -1,17 +1,20 @@
-/**
- * 插件宿主（P5）：运行时加载 / 卸载第三方插件。
+﻿/**
+ * 插件宿主（P5 → P15 沙箱化）。
  *
  * 插件目录：<data>/plugins/<id>/  （plugin.json + index.mjs）
- * 权限：插件默认「未授权」，必须在界面或 CLI 显式启用后才会加载；
- *       启用的同时把插件注册的工具/命令挂到当前会话，禁用时全部撤回。
+ * 权限：插件默认「未授权」，必须显式启用后才会加载；启用时把插件声明的工具/命令挂上，禁用时全部撤回。
  *
- * 安全边界：当前实现是「主进程内加载 + 权限提示」，不是真正的沙箱。
- * 真正的沙箱（utilityProcess + RPC + fs/net 代理）列入 P5 待办。
+ * P15 起：插件代码在 **utilityProcess** 里执行，主进程只持有代理（proxy）工具/命令。
+ *  - 插件崩溃/死循环不会拖死主进程，宿主会检测到 worker 退出并把状态标成错误；
+ *  - 插件只能通过沙箱 API（log/storage/callTool/register*）与宿主交互，拿不到宿主对象；
+ *  - 能力边界仍是「进程隔离 + 受限桥接」，不是 capability 级沙箱（插件进程内仍有 Node 能力）。
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
-import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import path from 'node:path'
+import { utilityProcess, type UtilityProcess } from 'electron'
 import type { PluginInfo, PluginManifest, PluginPermission } from '../../shared/types'
+import type { SandboxCommandDef, SandboxToolDef, SandboxWorkerMessage } from '../../shared/plugin-sandbox'
 import { writeJsonAtomic, stripBom } from '../lib/fsx'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { ChatService, CommandSpec } from './chat'
@@ -28,38 +31,37 @@ function readSync<T>(file: string, fallback: T): T {
   }
 }
 
-const API_VERSION = 1
+const API_VERSION = 2
 const VALID_PERMISSIONS: PluginPermission[] = ['read', 'net', 'exec']
+const READY_TIMEOUT_MS = 20_000
+const TOOL_TIMEOUT_MS = 120_000
+
+interface PendingCall {
+  resolve: (value: unknown) => void
+  reject: (error: Error) => void
+  timer: NodeJS.Timeout
+}
 
 interface LoadedPlugin {
   manifest: PluginManifest
   dir: string
   tools: string[]
   commands: string[]
-  disposer?: () => void | Promise<void>
+  worker?: UtilityProcess
+  pid?: number
+  pending: Map<number, PendingCall>
+  nextCallId: number
+  /** 主动卸载中（忽略 worker 退出告警） */
+  disposing: boolean
+  /** worker 初始化完成（收到 ready） */
+  ready: boolean
+  readyWait: Promise<void>
+  readyResolve?: () => void
   error?: string
 }
 
 interface GrantFile {
   [id: string]: { grantedAt: number; permissions: PluginPermission[] }
-}
-
-interface PluginRuntimeApi {
-  version: string
-  plugin: { id: string; version: string }
-  permissions: PluginPermission[]
-  log: {
-    info(message: string): void
-    warn(message: string): void
-    error(message: string): void
-  }
-  callTool(name: string, args?: Record<string, unknown>): Promise<{ ok: boolean; summary: string; data?: unknown }>
-  registerTool(definition: Omit<ToolDefinition, 'source'>): void
-  registerCommand(spec: CommandSpec): void
-  storage: {
-    get<T>(key: string, fallback?: T): Promise<T | undefined>
-    set(key: string, value: unknown): Promise<void>
-  }
 }
 
 export interface PluginHostService {
@@ -71,6 +73,8 @@ export interface PluginHostService {
   setGranted(id: string, granted: boolean): Promise<PluginInfo>
   /** 等待启动时的自动加载全部结束（内核 boot 后调用） */
   init(): Promise<PluginInfo[]>
+  /** 应用退出前调用：把 worker 退出视为预期，避免误报崩溃 */
+  beginShutdown(): void
 }
 
 function parseManifest(raw: unknown): PluginManifest | undefined {
@@ -80,7 +84,7 @@ function parseManifest(raw: unknown): PluginManifest | undefined {
   const name = typeof data.name === 'string' ? data.name : id
   const version = typeof data.version === 'string' ? data.version : '0.0.0'
   const main = typeof data.main === 'string' ? data.main : 'index.mjs'
-  const apiVersion = typeof data.apiVersion === 'number' ? data.apiVersion : API_VERSION
+  const apiVersion = typeof data.apiVersion === 'number' ? data.apiVersion : 1
   if (!id || !/^[a-z0-9][a-z0-9._-]*$/.test(id)) return undefined
   if (apiVersion > API_VERSION) return undefined
   const permissions = Array.isArray(data.permissions)
@@ -112,6 +116,8 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
     mkdirSync(pluginsDir, { recursive: true })
     mkdirSync(dataDir, { recursive: true })
 
+    const workerPath = process.env.QDOQMC_PLUGIN_WORKER || path.join(process.cwd(), 'out', 'plugin-worker.mjs')
+
     let grants: GrantFile = readSync<GrantFile>(grantFile, {})
     const loaded = new Map<string, LoadedPlugin>()
     const manifests = new Map<string, { manifest: PluginManifest; dir: string }>()
@@ -128,7 +134,7 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
         const manifestFile = path.join(dir, 'plugin.json')
         if (!existsSync(manifestFile)) continue
         try {
-          const manifest = parseManifest(JSON.parse(readFileSync(manifestFile, 'utf8')))
+          const manifest = parseManifest(JSON.parse(stripBom(readFileSync(manifestFile, 'utf8'))))
           if (!manifest) {
             log.warn('plugin-host', '插件清单不合法', { dir: entry.name })
             continue
@@ -140,63 +146,173 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
       }
     }
 
-    const readPluginData = (id: string): Record<string, unknown> => {
-      return readSync<Record<string, unknown>>(path.join(dataDir, `${id}.json`), {})
-    }
+    const readPluginData = (id: string): Record<string, unknown> => readSync<Record<string, unknown>>(path.join(dataDir, `${id}.json`), {})
 
     const writePluginData = async (id: string, value: Record<string, unknown>): Promise<void> => {
       await writeJsonAtomic(path.join(dataDir, `${id}.json`), value)
     }
 
-    const createApi = (manifest: PluginManifest, state: LoadedPlugin): PluginRuntimeApi => {
-      const scope = `plugin:${manifest.id}`
-      return {
-        version: String(API_VERSION),
-        plugin: { id: manifest.id, version: manifest.version },
-        permissions: manifest.permissions,
-        log: {
-          info: (message) => log.info(scope, message),
-          warn: (message) => log.warn(scope, message),
-          error: (message) => log.error(scope, message),
+    const send = (state: LoadedPlugin, message: unknown): void => {
+      try {
+        state.worker?.postMessage(message)
+      } catch (err) {
+        log.warn('plugin-host', '向沙箱发送消息失败', { id: state.manifest.id, error: String(err) })
+      }
+    }
+
+    const hostResponse = (state: LoadedPlugin, callId: number, ok: boolean, result?: unknown, error?: string): void => {
+      send(state, { type: 'response', callId, ok, result, error })
+    }
+
+    const invoke = <T,>(state: LoadedPlugin, kind: 'invoke-tool' | 'invoke-command', name: string, payload: unknown): Promise<T> => {
+      if (!state.worker) return Promise.reject(new Error('插件沙箱未运行'))
+      const callId = state.nextCallId++
+      return new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          state.pending.delete(callId)
+          reject(new Error(`插件执行超时（${kind === 'invoke-tool' ? '工具' : '命令'} ${name}）`))
+        }, TOOL_TIMEOUT_MS)
+        state.pending.set(callId, { resolve: resolve as (value: unknown) => void, reject, timer })
+        if (kind === 'invoke-tool') {
+          send(state, { type: 'invoke-tool', callId, name, args: payload as Record<string, unknown> })
+        } else {
+          send(state, { type: 'invoke-command', callId, name, args: payload as string[] })
+        }
+      })
+    }
+
+    const handleWorkerMessage = async (state: LoadedPlugin, message: SandboxWorkerMessage): Promise<void> => {
+      const id = state.manifest.id
+      if (message.type === 'log') {
+        const fn = message.level === 'error' ? log.error : message.level === 'warn' ? log.warn : log.info
+        fn(`plugin:${id}`, message.message)
+        return
+      }
+      if (message.type === 'error') {
+        state.error = message.message
+        state.readyResolve?.()
+        log.error('plugin-host', '插件初始化失败', { id, error: message.message })
+        return
+      }
+      if (message.type === 'result') {
+        const entry = state.pending.get(message.callId)
+        if (!entry) return
+        state.pending.delete(message.callId)
+        clearTimeout(entry.timer)
+        if (message.ok) entry.resolve(message.result)
+        else entry.reject(new Error(message.error ?? '插件执行失败'))
+        return
+      }
+      if (message.type === 'request') {
+        try {
+          if (message.method === 'storage.get') {
+            const key = String((message.params as { key?: string } | undefined)?.key ?? '')
+            const store = readPluginData(id)
+            hostResponse(state, message.callId, true, key in store ? store[key] : undefined)
+            return
+          }
+          if (message.method === 'storage.set') {
+            const params = (message.params ?? {}) as { key?: string; value?: unknown }
+            const store = readPluginData(id)
+            store[String(params.key ?? '')] = params.value
+            await writePluginData(id, store)
+            hostResponse(state, message.callId, true, null)
+            return
+          }
+          if (message.method === 'tools.call') {
+            const params = (message.params ?? {}) as { name?: string; args?: Record<string, unknown> }
+            const result = await tools.call(String(params.name ?? ''), params.args ?? {})
+            hostResponse(state, message.callId, true, result)
+            return
+          }
+          hostResponse(state, message.callId, false, undefined, `未知的沙箱请求：${message.method}`)
+        } catch (err) {
+          hostResponse(state, message.callId, false, undefined, err instanceof Error ? err.message : String(err))
+        }
+        return
+      }
+      if (message.type === 'ready') {
+        state.ready = true
+        state.readyResolve?.()
+        for (const tool of message.tools) registerProxyTool(state, tool)
+        for (const command of message.commands) registerProxyCommand(state, command)
+        telemetry.record('plugin:load', { id, tools: state.tools.length, commands: state.commands.length, sandbox: true })
+        log.info('plugin-host', '插件已加载（沙箱）', {
+          id,
+          pid: state.pid,
+          tools: state.tools,
+          commands: state.commands,
+        })
+        return
+      }
+      if (message.type === 'disposed') {
+        log.info('plugin-host', '插件沙箱已退出', { id })
+      }
+    }
+
+    const registerProxyTool = (state: LoadedPlugin, definition: SandboxToolDef): void => {
+      const id = state.manifest.id
+      tools.register({
+        name: definition.name,
+        description: definition.description,
+        parameters: definition.parameters,
+        source: id,
+        handler: async (args) => {
+          const result = await invoke<{ ok: boolean; summary: string; data?: unknown }>(state, 'invoke-tool', definition.name, args ?? {})
+          return result
         },
-        callTool: (name, args) => tools.call(name, args ?? {}),
-        registerTool: (definition) => {
-          if (!definition?.name) throw new Error('registerTool 需要 name')
-          tools.register({ ...definition, source: manifest.id })
-          state.tools.push(definition.name)
-        },
-        registerCommand: (spec) => {
-          if (!spec?.name) throw new Error('registerCommand 需要 name')
-          chat.register(spec)
-          state.commands.push(spec.name)
-        },
-        storage: {
-          get: async <T,>(key: string, fallback?: T) => {
-            const store = readPluginData(manifest.id)
-            return (key in store ? (store[key] as T) : fallback) as T | undefined
-          },
-          set: async (key, value) => {
-            const store = readPluginData(manifest.id)
-            store[key] = value
-            await writePluginData(manifest.id, store)
-          },
+      })
+      state.tools.push(definition.name)
+    }
+
+    const registerProxyCommand = (state: LoadedPlugin, spec: SandboxCommandDef): void => {
+      const id = state.manifest.id
+      const command: CommandSpec = {
+        name: spec.name,
+        description: spec.description,
+        run: async (args) => {
+          const text = await invoke<string>(state, 'invoke-command', spec.name, args)
+          return text
         },
       }
+      chat.register(command)
+      state.commands.push(spec.name)
+      log.info('plugin-host', '插件命令已注册', { id, command: spec.name })
     }
 
     const teardown = async (state: LoadedPlugin): Promise<void> => {
       for (const tool of state.tools) tools.unregister(tool)
       for (const command of state.commands) chat.unregister(command)
-      if (state.disposer) {
-        try {
-          await state.disposer()
-        } catch (err) {
-          log.warn('plugin-host', '插件卸载回调失败', { id: state.manifest.id, error: String(err) })
-        }
-      }
       state.tools = []
       state.commands = []
-      state.disposer = undefined
+      state.disposing = true
+      for (const pending of state.pending.values()) {
+        clearTimeout(pending.timer)
+        pending.reject(new Error('插件已卸载'))
+      }
+      state.pending.clear()
+      const worker = state.worker
+      state.worker = undefined
+      if (!worker) return
+      try {
+        worker.postMessage({ type: 'dispose' })
+      } catch {
+        /* 忽略 */
+      }
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          try {
+            worker.kill()
+          } catch {
+            /* 忽略 */
+          }
+          resolve()
+        }, 1500)
+        worker.once('exit', () => {
+          clearTimeout(timer)
+          resolve()
+        })
+      })
     }
 
     const load = async (id: string): Promise<PluginInfo> => {
@@ -206,6 +322,12 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
       const existing = loaded.get(id)
       if (existing) return toInfo(existing)
 
+      if (!existsSync(workerPath)) {
+        throw new Error(`插件沙箱入口不存在：${workerPath}（先 npm run build）`)
+      }
+      const entryFile = path.join(entry.dir, entry.manifest.main)
+      if (!existsSync(entryFile)) throw new Error(`入口文件不存在: ${entry.manifest.main}`)
+
       grants[id] = { grantedAt: Date.now(), permissions: entry.manifest.permissions }
       await persistGrants()
 
@@ -214,28 +336,76 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
         dir: entry.dir,
         tools: [],
         commands: [],
+        pending: new Map(),
+        nextCallId: 1,
+        disposing: false,
+        ready: false,
+        readyWait: Promise.resolve(),
       }
+      state.readyWait = new Promise<void>((resolve) => {
+        state.readyResolve = resolve
+      })
       loaded.set(id, state)
 
-      try {
-        const entryFile = path.join(entry.dir, entry.manifest.main)
-        if (!existsSync(entryFile)) throw new Error(`入口文件不存在: ${entry.manifest.main}`)
-        const module = (await import(`${pathToFileURL(entryFile).href}?t=${Date.now()}`)) as {
-          apply?: (api: PluginRuntimeApi) => void | (() => void) | Promise<void | (() => void)>
-          default?: (api: PluginRuntimeApi) => void | (() => void)
+      const child = utilityProcess.fork(workerPath, [entry.dir, entry.manifest.main], {
+        serviceName: `qdoqmc-plugin-${id}`,
+        stdio: 'pipe',
+      })
+      state.worker = child
+      state.pid = child.pid
+      child.on('spawn', () => {
+        state.pid = child.pid
+        log.info('plugin-host', '插件沙箱进程已启动', { id, pid: state.pid })
+      })
+      child.stdout?.on('data', (chunk: Buffer) => log.info(`plugin:${id}`, chunk.toString('utf8').trim()))
+      child.stderr?.on('data', (chunk: Buffer) => log.warn(`plugin:${id}`, chunk.toString('utf8').trim()))
+      child.on('message', (message: SandboxWorkerMessage) => {
+        void handleWorkerMessage(state, message)
+      })
+      child.on('exit', (code) => {
+        if (state.disposing) return
+        for (const pending of state.pending.values()) {
+          clearTimeout(pending.timer)
+          pending.reject(new Error(`插件进程已退出（code ${code}），已隔离`))
         }
-        const apply = module.apply ?? module.default
-        if (typeof apply !== 'function') throw new Error('插件必须导出 apply(api) 函数')
-        const result = await apply(createApi(entry.manifest, state))
-        if (typeof result === 'function') state.disposer = result as () => void
-        telemetry.record('plugin:load', { id, tools: state.tools.length, commands: state.commands.length })
-        log.info('plugin-host', '插件已加载', { id, tools: state.tools, commands: state.commands })
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
+        state.pending.clear()
+        // 退出码 0 且不是主动卸载：通常发生在启动器自身退出/CLI 结束时，不算插件崩溃
+        if (code === 0) {
+          log.info('plugin-host', '插件沙箱已退出', { id, code })
+          state.worker = undefined
+          return
+        }
+        const message = `插件进程异常退出（code ${code}），已隔离，不影响启动器`
         state.error = message
+        log.error('plugin-host', '插件沙箱退出', { id, code })
+        telemetry.record('plugin:crash', { id, code })
+        for (const tool of state.tools) tools.unregister(tool)
+        for (const command of state.commands) chat.unregister(command)
+        state.tools = []
+        state.commands = []
+        state.worker = undefined
+      })
+
+      child.postMessage({
+        type: 'init',
+        apiVersion: API_VERSION,
+        plugin: { id, version: entry.manifest.version },
+        permissions: entry.manifest.permissions,
+        entry: pathToFileURL(entryFile).href,
+      })
+
+      const readyTimer = setTimeout(() => {
+        if (!state.ready && !state.error) state.error = '插件初始化超时（20 秒）'
+        state.readyResolve?.()
+      }, READY_TIMEOUT_MS)
+      await state.readyWait
+      clearTimeout(readyTimer)
+
+      if (state.error) {
         await teardown(state)
-        telemetry.record('plugin:error', { id, error: message })
-        log.error('plugin-host', '插件加载失败', { id, error: message })
+        loaded.delete(id)
+        delete grants[id]
+        await persistGrants()
       }
       return toInfo(state)
     }
@@ -263,6 +433,8 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
       error: state.error,
       tools: [...state.tools],
       commands: [...state.commands],
+      sandbox: true,
+      workerPid: state.pid,
     })
 
     const infoOf = (manifest: PluginManifest, dir: string): PluginInfo => ({
@@ -278,6 +450,7 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
       dir,
       tools: [],
       commands: [],
+      sandbox: true,
     })
 
     const list = (): PluginInfo[] => {
@@ -312,11 +485,13 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
         scan()
         return list()
       },
+      beginShutdown: () => {
+        for (const state of loaded.values()) state.disposing = true
+      },
     } satisfies PluginHostService)
 
     // 启动时自动加载已授权的插件。
-    // 注意：load() 内部会 scan() 重建 manifests，所以必须先快照 id 再加载，
-    // 否则在遍历 Map 的同时重建它会导致死循环。
+    // 注意：load() 内部会 scan() 重建 manifests，所以必须先快照 id 再加载。
     const loading: Promise<unknown>[] = []
     scan()
     const grantedIds = [...manifests.keys()].filter((id) => Boolean(grants[id]))
@@ -324,6 +499,10 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
       loading.push(load(id).catch((err) => log.warn('plugin-host', '自动加载插件失败', { id, error: String(err) })))
     }
     const ready = Promise.all(loading).then(() => undefined)
-    log.info('plugin-host', '插件宿主就绪', { dir: pluginsDir, plugins: manifests.size })
+    log.info('plugin-host', '插件宿主就绪（沙箱模式）', { dir: pluginsDir, plugins: manifests.size, worker: workerPath })
   })
+}
+
+function pathToFileUrl(file: string): string {
+  return `file:///${file.replace(/\\/g, '/').replace(/^\/+/, '')}`
 }

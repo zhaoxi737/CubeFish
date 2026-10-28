@@ -136,7 +136,7 @@ export function PluginsDialog({ onClose, onNotify }: Props) {
           <>
             <div className="plugins-hint">
               把插件文件夹放进 <code>%APPDATA%\QDOQMC\plugins\</code> 后点刷新。插件默认不启用；启用前请确认来源可信
-              （插件在主进程内运行，可执行任意代码）。
+              （插件跑在独立 utilityProcess 沙箱里，崩溃不会拖死启动器，但进程内仍具备 Node 能力）。
             </div>
             {error ? <div className="warn-box">{error}</div> : null}
             {plugins.length === 0 && !loading ? <div className="plugins-empty">还没有插件。</div> : null}
@@ -153,6 +153,9 @@ export function PluginsDialog({ onClose, onNotify }: Props) {
                       <span className={`plugin-state ${plugin.loaded ? 'is-on' : plugin.granted ? 'is-warn' : ''}`}>
                         {plugin.loaded ? '已启用' : plugin.granted ? '已授权未加载' : '未启用'}
                       </span>
+                      {plugin.sandbox ? (
+                        <span className="plugin-sandbox">{plugin.workerPid ? `沙箱 · PID ${plugin.workerPid}` : '沙箱'}</span>
+                      ) : null}
                     </div>
                     {plugin.description ? <div className="plugin-desc">{plugin.description}</div> : null}
                     <div className="plugin-meta">

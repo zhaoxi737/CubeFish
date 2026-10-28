@@ -339,5 +339,37 @@ export interface Diagnosis {
   checkedAt: number
 }
 
+/* ---------- P5：插件 ---------- */
+
+export type PluginPermission = 'read' | 'net' | 'exec'
+
+export interface PluginManifest {
+  id: string
+  name: string
+  version: string
+  apiVersion: number
+  main: string
+  description?: string
+  author?: string
+  permissions: PluginPermission[]
+}
+
+export interface PluginInfo {
+  id: string
+  name: string
+  version: string
+  description?: string
+  author?: string
+  apiVersion: number
+  permissions: PluginPermission[]
+  /** 用户是否授权加载（默认 false，必须显式启用） */
+  granted: boolean
+  loaded: boolean
+  error?: string
+  dir: string
+  tools: string[]
+  commands: string[]
+}
+
 
 

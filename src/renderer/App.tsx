@@ -15,6 +15,7 @@ import { ChatPanel } from './components/ChatPanel'
 import { SettingsDialog } from './components/SettingsDialog'
 import { LogDrawer } from './components/LogDrawer'
 import { ModsDialog } from './components/ModsDialog'
+import { PluginsDialog } from './components/PluginsDialog'
 
 const FALLBACK_INFO: AppInfo = {
   name: 'QDOQMC',
@@ -79,6 +80,7 @@ export function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [showLogs, setShowLogs] = useState(false)
   const [showMods, setShowMods] = useState(false)
+  const [showPlugins, setShowPlugins] = useState(false)
   const [fabricBusy, setFabricBusy] = useState(false)
   const listening = useRef(false)
 
@@ -267,11 +269,14 @@ export function App() {
         <div className="brand">
           <span className="brand-mark">QDOQMC</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P4 · 会干活</span>
+          <span className="brand-tag">P5 · 能长</span>
         </div>
         <div className="titlebar-actions">
           <button type="button" className="ghost" onClick={() => setShowMods(true)} disabled={!instance}>
             模组
+          </button>
+          <button type="button" className="ghost" onClick={() => setShowPlugins(true)}>
+            插件
           </button>
           <button type="button" className="ghost" onClick={() => void checkUpdate()}>
             检查更新
@@ -412,6 +417,7 @@ export function App() {
       {showMods && instance ? (
         <ModsDialog instance={instance} onClose={() => setShowMods(false)} onNotify={notify} />
       ) : null}
+      {showPlugins ? <PluginsDialog onClose={() => setShowPlugins(false)} onNotify={notify} /> : null}
       {showSettings && settings ? (
         <SettingsDialog settings={settings} onClose={() => setShowSettings(false)} onSave={onSaveSettings} />
       ) : null}

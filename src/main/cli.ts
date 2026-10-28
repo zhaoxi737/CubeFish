@@ -6,7 +6,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import type { Kernel } from './kernel'
-import type { AgentService } from './plugins/agent'
+import type { ChatService } from './plugins/chat'
 import type { ConflictService } from './plugins/conflict'
 import type { ContentService } from './plugins/content'
 import type { DiagnoseService } from './plugins/diagnose'
@@ -15,6 +15,8 @@ import type { LaunchService } from './plugins/launch'
 import type { LlmService } from './plugins/llm'
 import type { LoadersService } from './plugins/loaders'
 import type { MojangService } from './plugins/mojang'
+import type { PluginHostService } from './plugins/plugin-host'
+import type { ToolsService } from './plugins/tools'
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -80,14 +82,33 @@ export async function runDiagnoseCli(kernel: Kernel): Promise<number> {
 }
 
 export async function runChatCli(kernel: Kernel, text: string): Promise<number> {
-  const agent = kernel.ctx.get('agent') as AgentService
+  const chat = kernel.ctx.get('chat') as ChatService
   const llm = kernel.ctx.get('llm') as LlmService
   console.log(
     `CHAT_CONFIG ${JSON.stringify({ available: llm.available(), baseUrl: llm.baseUrl(), model: llm.model() })}`,
   )
-  const reply = await agent.run(text)
+  const reply = await chat.send(text)
   console.log(`CHAT_RESULT ${JSON.stringify(reply)}`)
   return reply.ok ? 0 : 1
+}
+
+export async function runPluginsCli(kernel: Kernel): Promise<number> {
+  const host = kernel.ctx.get('pluginHost') as PluginHostService
+  console.log(`PLUGINS_RESULT ${JSON.stringify({ dir: host.dir(), plugins: host.list() })}`)
+  return 0
+}
+
+export async function runPluginToggleCli(kernel: Kernel, id: string, granted: boolean): Promise<number> {
+  const host = kernel.ctx.get('pluginHost') as PluginHostService
+  const info = await host.setGranted(id, granted)
+  console.log(`PLUGIN_TOGGLE ${JSON.stringify(info)}`)
+  return info.error ? 1 : 0
+}
+
+export async function runToolsCli(kernel: Kernel): Promise<number> {
+  const tools = kernel.ctx.get('tools') as ToolsService
+  console.log(`TOOLS_RESULT ${JSON.stringify({ count: tools.names().length, names: tools.names() })}`)
+  return 0
 }
 
 export async function runLaunchTest(kernel: Kernel, instanceId: string, waitMs: number): Promise<number> {

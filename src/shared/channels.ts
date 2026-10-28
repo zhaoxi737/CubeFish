@@ -25,6 +25,9 @@ export const CH = {
   conflictAnalyze: 'conflict:analyze',
   diagnoseRun: 'diagnose:run',
   loaderFabric: 'loader:fabric',
+  pluginsList: 'plugins:list',
+  pluginsToggle: 'plugins:toggle',
+  pluginsReload: 'plugins:reload',
 } as const
 
 /** 主进程 → 渲染进程的推送通道 */

@@ -1,0 +1,147 @@
+import { useCallback, useEffect, useState } from 'react'
+import type { PluginInfo } from '../../shared/types'
+
+interface Props {
+  onClose: () => void
+  onNotify: (text: string) => void
+}
+
+const PERMISSION_LABEL: Record<string, string> = {
+  read: '读取文件',
+  net: '联网',
+  exec: '执行代码',
+}
+
+export function PluginsDialog({ onClose, onNotify }: Props) {
+  const [plugins, setPlugins] = useState<PluginInfo[]>([])
+  const [loading, setLoading] = useState(false)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      setPlugins(await window.qdo.plugins.list())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const toggle = useCallback(
+    async (plugin: PluginInfo, granted: boolean) => {
+      setBusy(plugin.id)
+      try {
+        const result = await window.qdo.plugins.setGranted(plugin.id, granted)
+        if (result.error) onNotify(`${granted ? '启用' : '禁用'}失败：${result.error}`)
+        else onNotify(`${granted ? '已启用' : '已禁用'} ${plugin.name}`)
+        await load()
+      } catch (err) {
+        onNotify(`操作失败：${err instanceof Error ? err.message : String(err)}`)
+      } finally {
+        setBusy(null)
+      }
+    },
+    [load, onNotify],
+  )
+
+  const reload = useCallback(
+    async (plugin: PluginInfo) => {
+      setBusy(plugin.id)
+      try {
+        const result = await window.qdo.plugins.reload(plugin.id)
+        if (result.error) onNotify(`重载失败：${result.error}`)
+        else onNotify(`已重载 ${plugin.name}`)
+        await load()
+      } catch (err) {
+        onNotify(`重载失败：${err instanceof Error ? err.message : String(err)}`)
+      } finally {
+        setBusy(null)
+      }
+    },
+    [load, onNotify],
+  )
+
+  return (
+    <div className="overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <div className="dialog dialog-wide" role="dialog" aria-modal="true">
+        <div className="dialog-head">
+          <h2>插件</h2>
+          <div className="drawer-actions">
+            <button type="button" className="ghost" onClick={() => void load()} disabled={loading}>
+              {loading ? '刷新中…' : '刷新'}
+            </button>
+            <button type="button" className="ghost" onClick={onClose}>
+              关闭
+            </button>
+          </div>
+        </div>
+
+        <div className="plugins-hint">
+          把插件文件夹放进 <code>%APPDATA%\QDOQMC\plugins\</code> 后点刷新。插件默认不启用；启用前请确认来源可信
+          （插件在主进程内运行，可执行任意代码）。
+        </div>
+
+        {error ? <div className="warn-box">{error}</div> : null}
+        {plugins.length === 0 && !loading ? <div className="plugins-empty">还没有插件。</div> : null}
+
+        <div className="plugins-list">
+          {plugins.map((plugin) => (
+            <div className="plugin-row" key={plugin.id}>
+              <div className="plugin-main">
+                <div className="plugin-title">
+                  {plugin.name}
+                  <span className="mod-slug">
+                    {plugin.id} · v{plugin.version}
+                    {plugin.author ? ` · ${plugin.author}` : ''}
+                  </span>
+                  <span className={`plugin-state ${plugin.loaded ? 'is-on' : plugin.granted ? 'is-warn' : ''}`}>
+                    {plugin.loaded ? '已启用' : plugin.granted ? '已授权未加载' : '未启用'}
+                  </span>
+                </div>
+                {plugin.description ? <div className="plugin-desc">{plugin.description}</div> : null}
+                <div className="plugin-meta">
+                  {plugin.permissions.length > 0
+                    ? `权限：${plugin.permissions.map((p) => PERMISSION_LABEL[p] ?? p).join(' / ')}`
+                    : '权限：无（仍可执行代码）'}
+                  {plugin.tools.length > 0 ? ` · 工具：${plugin.tools.join('、')}` : ''}
+                  {plugin.commands.length > 0 ? ` · 命令：/${plugin.commands.join(' /')}` : ''}
+                </div>
+                {plugin.error ? <div className="plugin-error">错误：{plugin.error}</div> : null}
+              </div>
+              <div className="plugin-actions">
+                {plugin.granted ? (
+                  <button
+                    type="button"
+                    className="ghost tiny danger"
+                    onClick={() => void toggle(plugin, false)}
+                    disabled={busy === plugin.id}
+                  >
+                    禁用
+                  </button>
+                ) : (
+                  <button type="button" className="primary" onClick={() => void toggle(plugin, true)} disabled={busy === plugin.id}>
+                    启用
+                  </button>
+                )}
+                <button type="button" className="ghost tiny" onClick={() => void reload(plugin)} disabled={busy === plugin.id}>
+                  重载
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="dialog-foot">
+          <span className="field-hint">插件可以注册 AI 工具和聊天命令；禁用会撤回全部注册项。</span>
+        </div>
+      </div>
+    </div>
+  )
+}

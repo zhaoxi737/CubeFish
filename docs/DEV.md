@@ -1,4 +1,4 @@
-# 开发手册（P0–P4）
+# 开发手册（P0–P5）
 
 ## 1. 环境
 
@@ -35,7 +35,7 @@ node_modules/.bin/electron . --launch=default --wait=50000
 
 ## 3. 架构
 
-主进程 = **Cordis 容器**（`@deepseek-ai/cordis`，与 Harness 同一内核）+ 23 个启动器插件。
+主进程 = **Cordis 容器**（`@deepseek-ai/cordis`，与 Harness 同一内核）+ 24 个启动器插件。
 
 插件按固定顺序装配（`src/main/kernel.ts`），每个插件通过 `ctx.provide(name, value)` 暴露服务，
 后续插件用 `use<T>(ctx, name)` 取用。任何一个插件加载失败都不会阻塞其它插件，
@@ -65,7 +65,8 @@ node_modules/.bin/electron . --launch=default --wait=50000
 | 20 | tools | `tools` | 启动器能力 → 模型可调用工具（含审计与事件埋点） |
 | 21 | agent | `agent` | Agent 循环（模型 ↔ 工具，最多 6 轮） |
 | 22 | chat | `chat` | 对话入口：自然语言走 agent，`/命令` 走本地 |
-| 23 | ipc | — | IPC 通道注册 + 进度与游戏状态推送 |
+| 23 | plugin-host | `pluginHost` | 第三方插件加载/卸载、权限授权、工具与命令注册 |
+| 24 | ipc | — | IPC 通道注册 + 进度与游戏状态推送 |
 
 渲染进程只通过 `window.qdo`（preload 的 contextBridge）访问主进程，契约见 `src/shared/api.ts`。
 
@@ -180,28 +181,44 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 | 无 Key 降级 | ✅ 提示去设置配置，同时保留 `/help` 等本地命令 |
 | 23 个插件全部加载 | ✅ `failed: []` |
 
-## 11. 已知限制 / 待办
+## 11. P5 验收（已实测，2026-10-29）
 
-- **慢网**：本机到 Mojang 单连接仅 ~50KB/s，并发 16 约 200KB/s，432MB 资源耗时 18 分钟。BMCLAPI 镜像是同速，镜像回退待接入（设置里预留了位置）。
+| 验收项 | 结果 |
+|---|---|
+| 插件目录扫描 + 清单校验（id/apiVersion/main） | ✅ 识别 `samples/plugins/hello-world`，未启用时为 `granted=false loaded=false` |
+| 默认不启用、显式授权 | ✅ `--enable-plugin=hello-world` 后 `loaded=true, tools=[plugin_hello], commands=[hello]` |
+| 运行时注册 AI 工具 | ✅ `--tools` 从 12 个变 13 个，含 `plugin_hello` |
+| 运行时注册聊天命令 | ✅ `--chat=/hello` → 插件返回「第 1 次问候」（存储计数持久化） |
+| 卸载时撤回注册 | ✅ `--disable-plugin` 后工具回到 12 个，命令消失 |
+| UI 插件面板 | ✅ 显示名称/版本/权限/工具/命令/状态，可启用、禁用、重载 |
+| 启动时自动加载已授权插件 | ✅ 内核 boot 后 `pluginHost.init()` 等待加载完成，工具随后即可用 |
+| 审计 | ✅ `plugin:load` / `plugin:unload` / `plugin:error` / `tool:call` 进事件流 |
+| 24 个插件全部加载 | ✅ `failed: []` |
+
+> 本轮修掉一个真 bug：启动时在 `for (const id of manifests)` 循环里调用 `load()`，而 `load()` 内部会 `scan()` 重建同一个 Map → 迭代器被破坏、CPU 100% 卡死。改为**先快照 id 再加载**。
+
+## 12. 已知限制 / 待办
+
+- **插件安全**：当前在主进程内加载（Node 全权限），权限字段是提示性的；真正沙箱（utilityProcess + RPC + fs/net 代理）未做。
+- **插件市场**：只有本地目录安装，没有远程分发与签名校验。
+- **慢网**：本机到 Mojang 单连接仅 ~50KB/s，并发 16 约 200KB/s，432MB 资源耗时 18 分钟。镜像回退待接入。
 - **加载器**：Fabric 已通；NeoForge/Forge（processors 执行引擎）未做，Quilt 不做。
-- **内容**：mod/资源包/光影的搜索安装已通；`.mrpack` 整合包、完整依赖图求解（只做 required 递归）未完成。
-- **冲突分析**：静态层已覆盖强判据；Mixin target 级别的弱判据（需解析 class 常量池）未做。
-- **AI**：真实模型调用需用户自填 Key（本机验证用的是 mock LLM）；流式输出、多轮上下文记忆、工具权限分级（插件市场第三方工具）未做。
+- **内容**：mod/资源包/光影的搜索安装已通；`.mrpack` 整包、完整依赖图求解未完成。
+- **AI**：真实模型调用需用户自填 Key（本机验证用 mock LLM）；流式输出、会话记忆未做。
 - **老版本**：legacy/pre-1.6 资源物化已实现但未实测；Java 8 运行时自动下载未实测。
-- **实例**：只有默认实例；多实例创建/切换待补。
+- **实例**：只有默认实例。
 - **登录**：仅离线（正版 OAuth 未做）。
-- **更新**：只到「检查」环节（P5 做下载替换与签名）。
-- **打包**：尚未打包（P5 做 electron-builder + 签名）。
+- **更新/打包**：只到「检查」环节，尚未 electron-builder 打包与签名。
 
-## 12. 下一步（P5：插件化 + 打包 + 交付）
+## 13. 下一步（P6：交付）
 
-1. **插件宿主**：运行时加载/卸载第三方插件（Cordis 动态 plugin），权限分级（只读/联网/执行），审计日志 UI。
-2. **插件市场**：静态清单 + 签名校验的 feed 机制（商业化预留 #6）。
-3. **AI 增强**：流式输出、会话记忆、工具结果可视化、AI 生成的插件草稿。
-4. **交付**：electron-builder 打包、自动更新下载替换、代码签名、隐私政策与统计上报端点。
+1. **打包**：electron-builder 出 NSIS 安装包 / 便携版，锁版本、生成图标。
+2. **自动更新**：`latest.json` + sha256 + 静默下载替换 + 灰度与 `minSupported` 强制更新。
+3. **插件沙箱化**：utilityProcess + 受限 API + 权限确认弹窗。
+4. **插件市场**：静态 feed + 签名校验。
 5. **补账**：NeoForge/Forge processors、`.mrpack`、资源包/光影 UI、多实例、正版登录。
 
-## 13. 测试用 mock LLM
+## 14. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

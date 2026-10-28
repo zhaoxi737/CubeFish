@@ -30,12 +30,17 @@ export interface ToolDefinition {
   description: string
   parameters: Record<string, unknown>
   handler(args: Record<string, unknown>): Promise<ToolResult>
+  /** 来源：内置 or 插件 id */
+  source?: string
 }
 
 export interface ToolsService {
   specs(): LlmToolSpec[]
   names(): string[]
   call(name: string, args: unknown): Promise<ToolResult>
+  /** 动态注册（插件宿主 / AI 生成的插件用） */
+  register(definition: ToolDefinition): void
+  unregister(name: string): void
 }
 
 const EMPTY_PARAMS = { type: 'object', properties: {}, additionalProperties: false }
@@ -324,6 +329,17 @@ export function createToolsPlugin(): LauncherPlugin<void> {
         })),
       names: () => [...registry.keys()],
       call,
+      register: (definition) => {
+        if (registry.has(definition.name)) {
+          log.warn('tools', '工具名冲突，已覆盖', { tool: definition.name, source: definition.source })
+        }
+        registry.set(definition.name, definition)
+        log.info('tools', '工具已注册', { tool: definition.name, source: definition.source ?? 'builtin' })
+      },
+      unregister: (name) => {
+        const existed = registry.delete(name)
+        if (existed) log.info('tools', '工具已注销', { tool: name })
+      },
     } satisfies ToolsService)
 
     log.info('tools', '工具注册完成', { tools: [...registry.keys()] })

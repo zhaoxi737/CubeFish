@@ -48,6 +48,11 @@ const api: QdoApi = {
   loaders: {
     fabric: (gameVersion) => ipcRenderer.invoke(CH.loaderFabric, gameVersion),
   },
+  plugins: {
+    list: () => ipcRenderer.invoke(CH.pluginsList),
+    setGranted: (id, granted) => ipcRenderer.invoke(CH.pluginsToggle, id, granted),
+    reload: (id) => ipcRenderer.invoke(CH.pluginsReload, id),
+  },
   chat: {
     send: (text) => ipcRenderer.invoke(CH.chatSend, text),
   },

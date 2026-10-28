@@ -29,6 +29,7 @@ export interface CommandSpec {
 export interface ChatService {
   send(text: string): Promise<ChatReply>
   register(spec: CommandSpec): void
+  unregister(name: string): void
   commands(): { name: string; description: string }[]
 }
 
@@ -84,6 +85,9 @@ export function createChatPlugin(): LauncherPlugin<void> {
         }
       },
       register,
+      unregister: (name: string) => {
+        registry.delete(name.toLowerCase())
+      },
       commands: () => [...registry.values()].map((c) => ({ name: c.name, description: c.description })),
     } satisfies ChatService)
 

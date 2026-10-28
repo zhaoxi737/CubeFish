@@ -12,6 +12,9 @@ import {
   runInstallCli,
   runLaunchTest,
   runModCli,
+  runPluginToggleCli,
+  runPluginsCli,
+  runToolsCli,
 } from './cli'
 
 const { app, BrowserWindow, shell } = electron
@@ -31,6 +34,10 @@ const modTarget = argValue('mod')
 const analyzeMode = process.argv.includes('--analyze')
 const diagnoseMode = process.argv.includes('--diag')
 const chatTarget = argValue('chat')
+const enablePlugin = argValue('enable-plugin')
+const disablePlugin = argValue('disable-plugin')
+const pluginsMode = process.argv.includes('--plugins')
+const toolsMode = process.argv.includes('--tools')
 const waitMs = Number(argValue('wait') ?? 60000)
 
 let mainWindow: BrowserWindowType | null = null
@@ -127,6 +134,27 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
       await win.webContents.executeJavaScript(
         `(() => { const btn = [...document.querySelectorAll('.titlebar-actions button')].find((b) => b.textContent?.trim() === '模组'); btn?.click(); return 'mods' })()`,
       )
+      // 打开「插件」面板：验证插件列表与启用状态
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.titlebar-actions button')].find((b) => b.textContent?.trim() === '插件'); btn?.click(); return 'plugins' })()`,
+      )
+      await wait(1200)
+      const pluginsShot = await shot('smoke-plugins.png')
+      const pluginsInfo = (await win.webContents.executeJavaScript(
+        `JSON.stringify({
+          rows: document.querySelectorAll('.plugin-row').length,
+          states: [...document.querySelectorAll('.plugin-state')].map((el) => el.textContent ?? '')
+        })`,
+      )) as string
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.dialog-head button')].find((b) => b.textContent?.trim() === '关闭'); btn?.click(); return 'closed' })()`,
+      )
+      await wait(300)
+
+      // 点「冲突检查」前的模组面板
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.titlebar-actions button')].find((b) => b.textContent?.trim() === '模组'); btn?.click(); return 'mods' })()`,
+      )
       await wait(2600)
       const modsShot = await shot('smoke-mods.png')
       const modsInfo = (await win.webContents.executeJavaScript(
@@ -151,9 +179,10 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           version: info?.version ?? app.getVersion(),
           plugins: k.summary.plugins,
           failed: k.summary.failed,
-          screenshots: [firstShot, aiShot, modsShot, conflictShot],
+          screenshots: [firstShot, aiShot, pluginsShot, modsShot, conflictShot],
           ui: JSON.parse(uiText),
           ai: JSON.parse(aiInfo),
+          pluginPanel: JSON.parse(pluginsInfo),
           mods: JSON.parse(modsInfo),
           conflict: JSON.parse(conflictInfo),
           chatStatus: chat,
@@ -219,6 +248,26 @@ if (!gotLock) {
       }
       if (chatTarget) {
         const code = await runChatCli(kernel, chatTarget)
+        app.exit(code)
+        return
+      }
+      if (pluginsMode) {
+        const code = await runPluginsCli(kernel)
+        app.exit(code)
+        return
+      }
+      if (enablePlugin) {
+        const code = await runPluginToggleCli(kernel, enablePlugin, true)
+        app.exit(code)
+        return
+      }
+      if (disablePlugin) {
+        const code = await runPluginToggleCli(kernel, disablePlugin, false)
+        app.exit(code)
+        return
+      }
+      if (toolsMode) {
+        const code = await runToolsCli(kernel)
         app.exit(code)
         return
       }

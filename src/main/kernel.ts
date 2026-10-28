@@ -18,6 +18,7 @@ import { createLoadersPlugin } from './plugins/loaders'
 import { createLoggerPlugin, type LogService } from './plugins/logger'
 import { createMojangPlugin } from './plugins/mojang'
 import { createPathsPlugin } from './plugins/paths'
+import { createPluginHostPlugin } from './plugins/plugin-host'
 import { createSettingsPlugin } from './plugins/settings'
 import { createStoragePlugin } from './plugins/storage'
 import { createTelemetryPlugin, type TelemetryService } from './plugins/telemetry'
@@ -86,6 +87,7 @@ export async function bootKernel(options: KernelOptions): Promise<Kernel> {
     createToolsPlugin(),
     createAgentPlugin(),
     createChatPlugin(),
+    createPluginHostPlugin(),
     createIpcPlugin({ getWindow: options.getWindow, summary }),
   ]
 
@@ -99,6 +101,16 @@ export async function bootKernel(options: KernelOptions): Promise<Kernel> {
       const message = errorMessage(err)
       summary.failed.push({ name: plugin.name, error: message })
       console.error(`[kernel] 插件加载失败: ${plugin.name}: ${message}`)
+    }
+  }
+
+  // 等待插件宿主完成启动时自动加载（受权插件要注册工具/命令后才能对外服务）
+  const pluginHost = ctx.get('pluginHost') as { init?: () => Promise<unknown> } | undefined
+  if (pluginHost?.init) {
+    try {
+      await pluginHost.init()
+    } catch (err) {
+      console.error('[kernel] 插件初始化失败:', err)
     }
   }
 

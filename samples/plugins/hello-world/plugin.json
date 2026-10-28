@@ -1,0 +1,10 @@
+{
+  "id": "hello-world",
+  "name": "示例：你好世界",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "main": "index.mjs",
+  "description": "演示插件：注册一个聊天命令和一个 AI 工具，并演示插件持久化存储。",
+  "author": "QDOQMC",
+  "permissions": []
+}

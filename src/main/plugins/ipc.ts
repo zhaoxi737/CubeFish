@@ -17,6 +17,7 @@ import type {
   LaunchDryRun,
   LaunchResult,
   LogRecord,
+  PluginInfo,
   SearchHit,
   SettingsPatch,
   SettingsShape,
@@ -39,6 +40,7 @@ import type { LoadersService } from './loaders'
 import type { LogService } from './logger'
 import type { MojangService } from './mojang'
 import type { PathsService } from './paths'
+import type { PluginHostService } from './plugin-host'
 import type { SettingsService } from './settings'
 import type { TelemetryService } from './telemetry'
 import type { UpdaterService } from './updater'
@@ -71,6 +73,7 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     const content = use<ContentService>(ctx, 'content')
     const conflict = use<ConflictService>(ctx, 'conflict')
     const diagnose = use<DiagnoseService>(ctx, 'diagnose')
+    const pluginHost = use<PluginHostService>(ctx, 'pluginHost')
 
     const push = (channel: string, payload: unknown): void => {
       const win = config.getWindow()
@@ -150,6 +153,9 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle(CH.contentRemove, (instanceId: string, fileName: string) => content.remove(instanceId, fileName))
     handle<ConflictReport>(CH.conflictAnalyze, (instanceId?: string) => conflict.analyze(instanceId ?? 'default'))
     handle<Diagnosis>(CH.diagnoseRun, (instanceId?: string) => diagnose.run(instanceId ?? 'default'))
+    handle<PluginInfo[]>(CH.pluginsList, () => pluginHost.list())
+    handle<PluginInfo>(CH.pluginsToggle, (id: string, granted: boolean) => pluginHost.setGranted(id, granted))
+    handle<PluginInfo>(CH.pluginsReload, (id: string) => pluginHost.reload(id))
     handle<FabricInstallResult>(CH.loaderFabric, async (gameVersion: string) => {
       const result = await loaders.installFabric(gameVersion)
       if (result.ok && result.versionId) {

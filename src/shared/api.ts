@@ -16,6 +16,7 @@ import type {
   LaunchDryRun,
   LaunchResult,
   LogRecord,
+  PluginInfo,
   SearchHit,
   SettingsPatch,
   SettingsShape,
@@ -72,6 +73,11 @@ export interface QdoApi {
   }
   loaders: {
     fabric(gameVersion: string): Promise<FabricInstallResult>
+  }
+  plugins: {
+    list(): Promise<PluginInfo[]>
+    setGranted(id: string, granted: boolean): Promise<PluginInfo>
+    reload(id: string): Promise<PluginInfo>
   }
   chat: {
     send(text: string): Promise<ChatReply>

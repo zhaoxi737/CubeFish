@@ -250,6 +250,8 @@ export interface InstalledContent {
   kind: string
   sha1: string
   installedAt: number
+  /** 文件当前是否启用（.jar vs .jar.disabled） */
+  enabled?: boolean
 }
 
 export interface ContentInstallResult {
@@ -270,5 +272,58 @@ export interface FabricInstallResult {
   libraries?: number
   error?: string
 }
+
+/* ---------- P3：冲突分析 / 崩溃归因 / 模组管理 ---------- */
+
+export type ConflictSeverity = 'error' | 'warn' | 'info'
+
+export type ConflictIssueKind =
+  | 'duplicate-id'
+  | 'missing-dependency'
+  | 'loader-mismatch'
+  | 'breaks'
+  | 'incompatible'
+  | 'unreadable'
+  | 'mods-in-vanilla'
+  | 'disabled'
+
+export interface ConflictIssue {
+  severity: ConflictSeverity
+  kind: ConflictIssueKind
+  mods: string[]
+  message: string
+  suggestion: string
+}
+
+export interface ModInfo {
+  file: string
+  id: string
+  name: string
+  version: string
+  loader: 'fabric' | 'forge' | 'neoforge' | 'quilt' | 'unknown'
+  enabled: boolean
+  depends: Record<string, string>
+  breaks: Record<string, string>
+  provides: string[]
+}
+
+export interface ConflictReport {
+  instanceId: string
+  mods: ModInfo[]
+  issues: ConflictIssue[]
+  checkedAt: number
+}
+
+export interface Diagnosis {
+  found: boolean
+  source?: string
+  category: string
+  severity: 'info' | 'warn' | 'error'
+  summary: string
+  evidence: string[]
+  suggestions: string[]
+  checkedAt: number
+}
+
 
 

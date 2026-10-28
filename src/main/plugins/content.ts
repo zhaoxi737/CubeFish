@@ -2,6 +2,7 @@
  * 内容服务（P2）：Modrinth 搜索 / 版本匹配 / 依赖求解 / 一键装 mod・资源包・光影。
  * API 参考 docs/RESEARCH-P1-P2.md §4。
  */
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import type {
   ContentInstallResult,
@@ -67,6 +68,8 @@ export interface ContentService {
     opts?: { mcVersion?: string; loader?: string },
   ): Promise<ContentInstallResult>
   installed(instanceId: string): Promise<InstalledContent[]>
+  toggle(instanceId: string, fileName: string): Promise<{ ok: boolean; enabled?: boolean; error?: string }>
+  remove(instanceId: string, fileName: string): Promise<{ ok: boolean; error?: string }>
   /** 下载任意已解析的版本文件到实例对应目录（含依赖递归） */
   installVersion(instanceId: string, version: ContentVersionInfo, kind: ContentKind, depth?: number): Promise<string[]>
 }
@@ -192,7 +195,66 @@ export function createContentPlugin(): LauncherPlugin<void> {
     }
 
     async function installed(instanceId: string): Promise<InstalledContent[]> {
-      return readJson<InstalledContent[]>(contentFile(instanceId), [])
+      const instance = instances.get(instanceId)
+      const dir = instance?.gameDir ?? path.join(paths.instances, instanceId, '.minecraft')
+      const list = await readJson<InstalledContent[]>(contentFile(instanceId), [])
+      return list.map((item) => {
+        const folder = kindDir((item.kind as ContentKind) ?? 'mod')
+        const normal = path.join(dir, folder, item.fileName)
+        const disabled = `${normal}.disabled`
+        return { ...item, enabled: existsSync(normal) || !existsSync(disabled) }
+      })
+    }
+
+    async function toggle(
+      instanceId: string,
+      fileName: string,
+    ): Promise<{ ok: boolean; enabled?: boolean; error?: string }> {
+      const instance = instances.get(instanceId)
+      if (!instance) return { ok: false, error: '实例不存在' }
+      const list = await installed(instanceId)
+      const item = list.find((entry) => entry.fileName === fileName)
+      const folder = kindDir((item?.kind as ContentKind) ?? 'mod')
+      const normal = path.join(instance.gameDir, folder, fileName)
+      const disabled = `${normal}.disabled`
+      try {
+        const { rename } = await import('node:fs/promises')
+        if (existsSync(normal)) {
+          await rename(normal, disabled)
+          log.info('content', '已禁用内容', { fileName })
+          return { ok: true, enabled: false }
+        }
+        if (existsSync(disabled)) {
+          await rename(disabled, normal)
+          log.info('content', '已启用内容', { fileName })
+          return { ok: true, enabled: true }
+        }
+        return { ok: false, error: '文件不存在（可能已被手动删除）' }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+
+    async function remove(instanceId: string, fileName: string): Promise<{ ok: boolean; error?: string }> {
+      const instance = instances.get(instanceId)
+      if (!instance) return { ok: false, error: '实例不存在' }
+      const list = await installed(instanceId)
+      const item = list.find((entry) => entry.fileName === fileName)
+      const folder = kindDir((item?.kind as ContentKind) ?? 'mod')
+      try {
+        const { rm } = await import('node:fs/promises')
+        await rm(path.join(instance.gameDir, folder, fileName), { force: true })
+        await rm(path.join(instance.gameDir, folder, `${fileName}.disabled`), { force: true })
+        await saveInstalled(
+          instanceId,
+          list.filter((entry) => entry.fileName !== fileName),
+        )
+        telemetry.record('content:remove', { instanceId, fileName })
+        log.info('content', '已删除内容', { fileName })
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
     }
 
     async function saveInstalled(instanceId: string, items: InstalledContent[]): Promise<void> {
@@ -319,6 +381,8 @@ export function createContentPlugin(): LauncherPlugin<void> {
       pickVersion,
       install,
       installed,
+      toggle,
+      remove,
       installVersion,
     } satisfies ContentService)
 

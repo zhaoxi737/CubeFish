@@ -3,7 +3,9 @@ import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { EntitlementService } from './entitlement'
 import type { IdentityService } from './identity'
 import type { InstancesService } from './instances'
+import type { ConflictService } from './conflict'
 import type { ContentService } from './content'
+import type { DiagnoseService } from './diagnose'
 import type { JavaService } from './java'
 import type { LogService } from './logger'
 import type { SettingsService } from './settings'
@@ -36,6 +38,8 @@ export function createChatPlugin(): LauncherPlugin<void> {
     const instances = use<InstancesService>(ctx, 'instances')
     const java = use<JavaService>(ctx, 'java')
     const content = use<ContentService>(ctx, 'content')
+    const conflict = use<ConflictService>(ctx, 'conflict')
+    const diagnose = use<DiagnoseService>(ctx, 'diagnose')
     const settings = use<SettingsService>(ctx, 'settings')
     const identity = use<IdentityService>(ctx, 'identity')
     const entitlement = use<EntitlementService>(ctx, 'entitlement')
@@ -180,6 +184,30 @@ export function createChatPlugin(): LauncherPlugin<void> {
           return `已安装 ${result.title ?? text} ${result.versionNumber ?? ''} → ${result.files.join(', ')}`
         }
         return '用法：/mod search <关键词> 或 /mod install <slug>'
+      },
+    })
+
+    register({
+      name: 'conflict',
+      description: '静态冲突检查（前置 / 版本 / 加载器 / 重复 modid）',
+      run: () => {
+        const report = conflict.analyze('default')
+        if (report.issues.length === 0) return `检查了 ${report.mods.length} 个模组，没有发现冲突。`
+        const lines = [
+          `检查了 ${report.mods.length} 个模组，发现 ${report.issues.length} 个问题：`,
+          ...report.issues.map((issue) => `- [${issue.severity}] ${issue.message}\n  → ${issue.suggestion}`),
+        ]
+        return lines.join('\n')
+      },
+    })
+
+    register({
+      name: 'diag',
+      description: '崩溃归因（读取 crash-report / latest.log）',
+      run: async () => {
+        const result = await diagnose.run('default')
+        if (!result.found) return result.summary
+        return [`归因：${result.summary}（${result.category}）`, ...result.suggestions.map((s) => `- ${s}`)].join('\n')
       },
     })
   })

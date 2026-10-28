@@ -5,8 +5,10 @@ import type {
   AppInfo,
   AppMeta,
   ChatReply,
+  ConflictReport,
   ContentInstallResult,
   ContentVersionInfo,
+  Diagnosis,
   EventSummary,
   FabricInstallResult,
   InstanceSummary,
@@ -25,7 +27,9 @@ import type {
 } from '../../shared/types'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { ChatService } from './chat'
+import type { ConflictService } from './conflict'
 import type { ContentService } from './content'
+import type { DiagnoseService } from './diagnose'
 import type { EntitlementService } from './entitlement'
 import type { IdentityService } from './identity'
 import type { InstancesService } from './instances'
@@ -65,6 +69,8 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     const launch = use<LaunchService>(ctx, 'launch')
     const loaders = use<LoadersService>(ctx, 'loaders')
     const content = use<ContentService>(ctx, 'content')
+    const conflict = use<ConflictService>(ctx, 'conflict')
+    const diagnose = use<DiagnoseService>(ctx, 'diagnose')
 
     const push = (channel: string, payload: unknown): void => {
       const win = config.getWindow()
@@ -140,6 +146,10 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
         content.install(instanceId, projectId, opts),
     )
     handle<InstalledContent[]>(CH.contentInstalled, (instanceId: string) => content.installed(instanceId))
+    handle(CH.contentToggle, (instanceId: string, fileName: string) => content.toggle(instanceId, fileName))
+    handle(CH.contentRemove, (instanceId: string, fileName: string) => content.remove(instanceId, fileName))
+    handle<ConflictReport>(CH.conflictAnalyze, (instanceId?: string) => conflict.analyze(instanceId ?? 'default'))
+    handle<Diagnosis>(CH.diagnoseRun, (instanceId?: string) => diagnose.run(instanceId ?? 'default'))
     handle<FabricInstallResult>(CH.loaderFabric, async (gameVersion: string) => {
       const result = await loaders.installFabric(gameVersion)
       if (result.ok && result.versionId) {

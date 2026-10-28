@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   AppInfo,
+  Diagnosis,
   EventSummary,
   GameStateEvent,
   InstanceSummary,
@@ -71,6 +72,7 @@ export function App() {
   const [progress, setProgress] = useState<TaskProgress | null>(null)
   const [running, setRunning] = useState<{ pid?: number } | null>(null)
   const [exited, setExited] = useState<GameStateEvent | null>(null)
+  const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null)
   const [update, setUpdate] = useState<UpdateState>({ status: 'idle', current: FALLBACK_INFO.version })
   const [events, setEvents] = useState<EventSummary | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -124,6 +126,10 @@ export function App() {
           setExited(state)
           notify(`游戏已退出：${state.hint ?? ''}${state.crashReport ? '（已生成崩溃报告）' : ''}`)
           void refreshInstalled()
+          void window.qdo
+            .diagnose.run(state.instanceId ?? 'default')
+            .then((result) => setDiagnosis(result))
+            .catch(() => undefined)
         }
       })
     }
@@ -199,6 +205,7 @@ export function App() {
       return
     }
     setExited(null)
+    setDiagnosis(null)
     try {
       const result = await window.qdo.launch.start(instance.id)
       if (!result.ok) notify(`启动失败：${result.error ?? '未知错误'}`)
@@ -260,7 +267,7 @@ export function App() {
         <div className="brand">
           <span className="brand-mark">QDOQMC</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P2 · 能装</span>
+          <span className="brand-tag">P3 · 能治</span>
         </div>
         <div className="titlebar-actions">
           <button type="button" className="ghost" onClick={() => setShowMods(true)} disabled={!instance}>
@@ -363,6 +370,16 @@ export function App() {
                 {exited.uptimeMs ? ` · 运行 ${Math.round(exited.uptimeMs / 1000)}s` : ''}
               </div>
               {exited.crashReport ? <code>{exited.crashReport}</code> : null}
+              {diagnosis?.found ? (
+                <div className="diag-block">
+                  <div className="diag-summary">诊断：{diagnosis.summary}</div>
+                  <ul className="diag-suggestions">
+                    {diagnosis.suggestions.slice(0, 3).map((suggestion) => (
+                      <li key={suggestion}>{suggestion}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </div>
           ) : null}
 

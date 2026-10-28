@@ -20,6 +20,10 @@ export const CH = {
   contentVersions: 'content:versions',
   contentInstall: 'content:install',
   contentInstalled: 'content:installed',
+  contentToggle: 'content:toggle',
+  contentRemove: 'content:remove',
+  conflictAnalyze: 'conflict:analyze',
+  diagnoseRun: 'diagnose:run',
   loaderFabric: 'loader:fabric',
 } as const
 

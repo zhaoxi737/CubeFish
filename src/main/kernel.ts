@@ -3,7 +3,9 @@ import { errorMessage, type LauncherPlugin } from './plugin-kit'
 import { createAppPlugin } from './plugins/app'
 import { createChatPlugin } from './plugins/chat'
 import { createCloudPlugin } from './plugins/cloud'
+import { createConflictPlugin } from './plugins/conflict'
 import { createContentPlugin } from './plugins/content'
+import { createDiagnosePlugin } from './plugins/diagnose'
 import { createEntitlementPlugin } from './plugins/entitlement'
 import { createIdentityPlugin } from './plugins/identity'
 import { createInstancesPlugin } from './plugins/instances'
@@ -74,6 +76,8 @@ export async function bootKernel(options: KernelOptions): Promise<Kernel> {
     createInstancesPlugin(),
     createLoadersPlugin(),
     createContentPlugin(),
+    createConflictPlugin(),
+    createDiagnosePlugin(),
     createLaunchPlugin(),
     createChatPlugin(),
     createIpcPlugin({ getWindow: options.getWindow, summary }),

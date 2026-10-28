@@ -5,7 +5,7 @@ const WELCOME: ChatMessage = {
   role: 'assistant',
   ts: Date.now(),
   text:
-    '我是 QDOQMC 的助手。现在能做的事：/help 看命令，/status 看状态，/java 看本机 Java，/mod search <关键词> 搜模组，/mod install <slug> 直接装，/instance 看隔离目录。\n装 Fabric、装模组、启动游戏都已打通；P4 起这里接入真正的 AI 工具调用（自然语言直接触发这些能力）。',
+    '我是 QDOQMC 的助手。现在能做的事：/mod search 搜模组、/mod install 装模组、/conflict 冲突检查、/diag 崩溃归因、/java 看本机 Java、/status 看状态、/instance 看隔离目录。\n下载安装、Fabric、模组市场、冲突检查、崩溃诊断都已打通；P4 起这里接入真正的 AI（一句话直接触发这些能力）。',
 }
 
 export function ChatPanel() {

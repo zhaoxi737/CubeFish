@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { InstanceSummary, InstalledContent, SearchHit } from '../../shared/types'
+import type { ConflictReport, InstanceSummary, InstalledContent, SearchHit } from '../../shared/types'
 
 interface Props {
   instance: InstanceSummary
@@ -14,6 +14,8 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [installed, setInstalled] = useState<InstalledContent[]>([])
+  const [report, setReport] = useState<ConflictReport | null>(null)
+  const [checking, setChecking] = useState(false)
 
   const loader = instance.loader === 'fabric' ? 'fabric' : undefined
   const mcVersion = instance.gameVersion
@@ -56,6 +58,7 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
         if (!result.ok) onNotify(`安装失败：${result.error ?? '未知错误'}`)
         else onNotify(`已安装 ${result.title ?? hit.title} ${result.versionNumber ?? ''}`)
         await loadInstalled()
+        setReport(null)
       } catch (err) {
         onNotify(`安装失败：${err instanceof Error ? err.message : String(err)}`)
       } finally {
@@ -65,6 +68,42 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
     [instance.id, loader, mcVersion, onNotify, loadInstalled],
   )
 
+  const toggle = useCallback(
+    async (item: InstalledContent) => {
+      const result = await window.qdo.content.toggle(instance.id, item.fileName)
+      if (!result.ok) onNotify(`操作失败：${result.error}`)
+      else onNotify(`${result.enabled ? '已启用' : '已禁用'} ${item.fileName}`)
+      await loadInstalled()
+      setReport(null)
+    },
+    [instance.id, onNotify, loadInstalled],
+  )
+
+  const remove = useCallback(
+    async (item: InstalledContent) => {
+      const result = await window.qdo.content.remove(instance.id, item.fileName)
+      if (!result.ok) onNotify(`删除失败：${result.error}`)
+      else onNotify(`已删除 ${item.fileName}`)
+      await loadInstalled()
+      setReport(null)
+    },
+    [instance.id, onNotify, loadInstalled],
+  )
+
+  const checkConflicts = useCallback(async () => {
+    setChecking(true)
+    try {
+      const result = await window.qdo.conflict.analyze(instance.id)
+      setReport(result)
+      const errors = result.issues.filter((issue) => issue.severity === 'error').length
+      onNotify(errors > 0 ? `发现 ${errors} 个冲突问题` : `检查了 ${result.mods.length} 个模组，没有冲突`)
+    } catch (err) {
+      onNotify(`冲突检查失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setChecking(false)
+    }
+  }, [instance.id, onNotify])
+
   return (
     <div className="overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <div className="dialog dialog-wide" role="dialog" aria-modal="true">
@@ -72,9 +111,14 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
           <h2>
             模组 · {mcVersion ?? '未绑定版本'} · {loader ?? 'vanilla'}
           </h2>
-          <button type="button" className="ghost" onClick={onClose}>
-            关闭
-          </button>
+          <div className="drawer-actions">
+            <button type="button" className="ghost" onClick={() => void checkConflicts()} disabled={checking}>
+              {checking ? '检查中…' : '冲突检查'}
+            </button>
+            <button type="button" className="ghost" onClick={onClose}>
+              关闭
+            </button>
+          </div>
         </div>
 
         <div className="mods-search">
@@ -92,9 +136,40 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
           </button>
         </div>
 
+        {report ? (
+          <div className="conflict-report">
+            <div className="conflict-head">
+              冲突检查：{report.mods.length} 个模组 · {report.issues.length} 个问题
+            </div>
+            {report.issues.length === 0 ? (
+              <div className="conflict-ok">没有发现冲突（前置、版本、加载器、重复 modid 均正常）</div>
+            ) : (
+              <ul className="conflict-list">
+                {report.issues.map((issue, index) => (
+                  <li key={`${issue.kind}-${index}`} className={`conflict-item conflict-${issue.severity}`}>
+                    <div className="conflict-message">{issue.message}</div>
+                    <div className="conflict-suggestion">→ {issue.suggestion}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
+
         {installed.length > 0 ? (
-          <div className="mods-installed">
-            已安装 {installed.length} 个：{installed.map((item) => item.fileName).join('、')}
+          <div className="installed-list">
+            {installed.map((item) => (
+              <div className="installed-row" key={item.fileName}>
+                <span className={`installed-name ${item.enabled === false ? 'is-disabled' : ''}`}>{item.fileName}</span>
+                <span className="installed-meta">{item.versionNumber}</span>
+                <button type="button" className="ghost tiny" onClick={() => void toggle(item)}>
+                  {item.enabled === false ? '启用' : '禁用'}
+                </button>
+                <button type="button" className="ghost tiny danger" onClick={() => void remove(item)}>
+                  删除
+                </button>
+              </div>
+            ))}
           </div>
         ) : null}
 
@@ -127,7 +202,9 @@ export function ModsDialog({ instance, onClose, onNotify }: Props) {
         </div>
 
         <div className="dialog-foot">
-          <span className="field-hint">只显示与当前实例（{mcVersion ?? '未知版本'} / {loader ?? 'vanilla'}）匹配的最新版本</span>
+          <span className="field-hint">
+            只显示与当前实例（{mcVersion ?? '未知版本'} / {loader ?? 'vanilla'}）匹配的最新版本
+          </span>
         </div>
       </div>
     </div>

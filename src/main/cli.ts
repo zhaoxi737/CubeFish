@@ -6,7 +6,9 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import type { Kernel } from './kernel'
+import type { ConflictService } from './plugins/conflict'
 import type { ContentService } from './plugins/content'
+import type { DiagnoseService } from './plugins/diagnose'
 import type { InstancesService } from './plugins/instances'
 import type { LaunchService } from './plugins/launch'
 import type { LoadersService } from './plugins/loaders'
@@ -59,6 +61,20 @@ export async function runModCli(kernel: Kernel, slug: string): Promise<number> {
   const list = await content.installed('default')
   console.log(`MOD_LIST ${JSON.stringify(list)}`)
   return result.ok ? 0 : 1
+}
+
+export async function runAnalyzeCli(kernel: Kernel): Promise<number> {
+  const conflict = kernel.ctx.get('conflict') as ConflictService
+  const report = conflict.analyze('default')
+  console.log(`CONFLICT_RESULT ${JSON.stringify(report)}`)
+  return report.issues.filter((issue) => issue.severity === 'error').length > 0 ? 1 : 0
+}
+
+export async function runDiagnoseCli(kernel: Kernel): Promise<number> {
+  const diagnose = kernel.ctx.get('diagnose') as DiagnoseService
+  const result = await diagnose.run('default')
+  console.log(`DIAG_RESULT ${JSON.stringify(result)}`)
+  return result.found ? 1 : 0
 }
 
 export async function runLaunchTest(kernel: Kernel, instanceId: string, waitMs: number): Promise<number> {

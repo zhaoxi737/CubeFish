@@ -938,3 +938,127 @@ code {
 ::-webkit-scrollbar-thumb:hover {
   background: #2f4256;
 }
+
+/* ---------- P3：已安装管理 / 冲突报告 / 崩溃诊断 ---------- */
+.installed-list {
+  padding: 8px 18px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  max-height: 150px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.installed-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px auto auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.installed-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #cbd5e1;
+}
+
+.installed-name.is-disabled {
+  color: #5f7285;
+  text-decoration: line-through;
+}
+
+.installed-meta {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ghost.tiny {
+  padding: 3px 9px;
+  font-size: 11px;
+  border-radius: 6px;
+}
+
+.ghost.tiny.danger:hover {
+  color: #fca5a5;
+  border-color: rgba(248, 113, 113, 0.45);
+}
+
+.conflict-report {
+  padding: 10px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  max-height: 170px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+
+.conflict-head {
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.conflict-ok {
+  color: #86efac;
+}
+
+.conflict-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.conflict-item {
+  border-left: 3px solid var(--border);
+  padding: 4px 0 4px 9px;
+}
+
+.conflict-error {
+  border-left-color: var(--danger);
+}
+
+.conflict-warn {
+  border-left-color: var(--warn);
+}
+
+.conflict-message {
+  color: #e2e8f0;
+}
+
+.conflict-suggestion {
+  color: var(--muted);
+  font-size: 11.5px;
+  margin-top: 2px;
+}
+
+.diag-block {
+  margin-top: 6px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  padding-top: 6px;
+}
+
+.diag-summary {
+  color: #fca5a5;
+  font-size: 12px;
+}
+
+.diag-suggestions {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: #9fb0c0;
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+/* 高度微调，避免模组面板内容被截断 */
+.conflict-report { max-height: 132px; }
+.installed-list { max-height: 110px; }
+.mods-list { min-height: 180px; max-height: 40vh; }
+.dialog-wide { width: 800px; }

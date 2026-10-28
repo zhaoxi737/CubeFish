@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { bootKernel, type Kernel } from './kernel'
-import { runFabricCli, runInstallCli, runLaunchTest, runModCli } from './cli'
+import { runAnalyzeCli, runDiagnoseCli, runFabricCli, runInstallCli, runLaunchTest, runModCli } from './cli'
 
 const { app, BrowserWindow, shell } = electron
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -20,6 +20,8 @@ const installTarget = argValue('install')
 const launchTarget = argValue('launch')
 const fabricTarget = argValue('fabric')
 const modTarget = argValue('mod')
+const analyzeMode = process.argv.includes('--analyze')
+const diagnoseMode = process.argv.includes('--diag')
 const waitMs = Number(argValue('wait') ?? 60000)
 
 let mainWindow: BrowserWindowType | null = null
@@ -99,6 +101,16 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
         `JSON.stringify({ rows: document.querySelectorAll('.mod-row').length, first: document.querySelector('.mod-title')?.textContent ?? '' })`,
       )) as string
 
+      // 点「冲突检查」，截一张冲突报告
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.drawer-actions button')].find((b) => b.textContent?.includes('冲突检查')); btn?.click(); return 'check' })()`,
+      )
+      await wait(1200)
+      const conflictShot = await shot('smoke-conflict.png')
+      const conflictInfo = (await win.webContents.executeJavaScript(
+        `JSON.stringify({ issues: document.querySelectorAll('.conflict-item').length, text: document.querySelector('.conflict-head')?.textContent ?? '' })`,
+      )) as string
+
       const info = k.ctx.get('appMeta') as { version?: string } | undefined
       console.log(
         `SMOKE_RESULT ${JSON.stringify({
@@ -107,9 +119,10 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           version: info?.version ?? app.getVersion(),
           plugins: k.summary.plugins,
           failed: k.summary.failed,
-          screenshots: [firstShot, modsShot],
+          screenshots: [firstShot, modsShot, conflictShot],
           ui: JSON.parse(uiText),
           mods: JSON.parse(modsInfo),
+          conflict: JSON.parse(conflictInfo),
           chatStatus: chat,
         })}`,
       )
@@ -158,6 +171,16 @@ if (!gotLock) {
       }
       if (modTarget) {
         const code = await runModCli(kernel, modTarget)
+        app.exit(code)
+        return
+      }
+      if (analyzeMode) {
+        const code = await runAnalyzeCli(kernel)
+        app.exit(code)
+        return
+      }
+      if (diagnoseMode) {
+        const code = await runDiagnoseCli(kernel)
         app.exit(code)
         return
       }

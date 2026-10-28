@@ -36,6 +36,14 @@ const api: QdoApi = {
     versions: (projectId, opts) => ipcRenderer.invoke(CH.contentVersions, projectId, opts),
     install: (instanceId, projectId, opts) => ipcRenderer.invoke(CH.contentInstall, instanceId, projectId, opts),
     installed: (instanceId) => ipcRenderer.invoke(CH.contentInstalled, instanceId),
+    toggle: (instanceId, fileName) => ipcRenderer.invoke(CH.contentToggle, instanceId, fileName),
+    remove: (instanceId, fileName) => ipcRenderer.invoke(CH.contentRemove, instanceId, fileName),
+  },
+  conflict: {
+    analyze: (instanceId) => ipcRenderer.invoke(CH.conflictAnalyze, instanceId),
+  },
+  diagnose: {
+    run: (instanceId) => ipcRenderer.invoke(CH.diagnoseRun, instanceId),
   },
   loaders: {
     fabric: (gameVersion) => ipcRenderer.invoke(CH.loaderFabric, gameVersion),

@@ -1,8 +1,10 @@
 import type {
   AppInfo,
   ChatReply,
+  ConflictReport,
   ContentInstallResult,
   ContentVersionInfo,
+  Diagnosis,
   EntitlementItem,
   EventSummary,
   FabricInstallResult,
@@ -59,6 +61,14 @@ export interface QdoApi {
     versions(projectId: string, opts?: { mcVersion?: string; loader?: string }): Promise<ContentVersionInfo[]>
     install(instanceId: string, projectId: string, opts?: { mcVersion?: string; loader?: string }): Promise<ContentInstallResult>
     installed(instanceId: string): Promise<InstalledContent[]>
+    toggle(instanceId: string, fileName: string): Promise<{ ok: boolean; enabled?: boolean; error?: string }>
+    remove(instanceId: string, fileName: string): Promise<{ ok: boolean; error?: string }>
+  }
+  conflict: {
+    analyze(instanceId?: string): Promise<ConflictReport>
+  }
+  diagnose: {
+    run(instanceId?: string): Promise<Diagnosis>
   }
   loaders: {
     fabric(gameVersion: string): Promise<FabricInstallResult>

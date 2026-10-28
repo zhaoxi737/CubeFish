@@ -1,4 +1,4 @@
-# 开发手册（P0–P2）
+# 开发手册（P0–P3）
 
 ## 1. 环境
 
@@ -35,7 +35,7 @@ node_modules/.bin/electron . --launch=default --wait=50000
 
 ## 3. 架构
 
-主进程 = **Cordis 容器**（`@deepseek-ai/cordis`，与 Harness 同一内核）+ 18 个启动器插件。
+主进程 = **Cordis 容器**（`@deepseek-ai/cordis`，与 Harness 同一内核）+ 20 个启动器插件。
 
 插件按固定顺序装配（`src/main/kernel.ts`），每个插件通过 `ctx.provide(name, value)` 暴露服务，
 后续插件用 `use<T>(ctx, name)` 取用。任何一个插件加载失败都不会阻塞其它插件，
@@ -57,10 +57,12 @@ node_modules/.bin/electron . --launch=default --wait=50000
 | 12 | java | `java` | Java 探测 / 按 major 匹配 / 下载 Mojang 运行时 |
 | 13 | instances | `instances` | 实例 / 版本隔离目录 / 绑定版本 |
 | 14 | loaders | `loaders` | 加载器安装（Fabric meta 合并） |
-| 15 | content | `content` | Modrinth 搜索 / 版本匹配 / 依赖 / 安装 |
-| 16 | launch | `launch` | 版本合并 / natives / classpath / 参数展开 / 进程与退出归因 |
-| 17 | chat | `chat` | 本地命令路由（P4 升级为 AI 工具调用） |
-| 18 | ipc | — | IPC 通道注册 + 进度与游戏状态推送 |
+| 15 | content | `content` | Modrinth 搜索 / 版本匹配 / 依赖 / 安装 / 启停删 |
+| 16 | conflict | `conflict` | 静态冲突分析（重复 id / 缺前置 / 加载器 / breaks） |
+| 17 | diagnose | `diagnose` | 崩溃归因（crash-report / latest.log 签名匹配） |
+| 18 | launch | `launch` | 版本合并 / natives / classpath / 参数展开 / 进程与退出归因 |
+| 19 | chat | `chat` | 本地命令路由（P4 升级为 AI 工具调用） |
+| 20 | ipc | — | IPC 通道注册 + 进度与游戏状态推送 |
 
 渲染进程只通过 `window.qdo`（preload 的 contextBridge）访问主进程，契约见 `src/shared/api.ts`。
 
@@ -147,21 +149,36 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 | Sodium 实际生效 | ✅ `Loaded configuration file for Sodium: 36 options available`，Mixin 子系统加载 |
 | 无崩溃 | ✅ 无 crash-report，正常进主菜单（Realms JWT 报错是离线模式预期） |
 
-## 9. 已知限制 / 待办
+## 9. P3 验收（已实测，2026-10-29）
+
+| 验收项 | 结果 |
+|---|---|
+| 模组元数据解析（fabric.mod.json / mods.toml / neoforge.mods.toml） | ✅ 读出 id/version/depends/breaks，并递归解析 `jars[]` 嵌套提供者 |
+| 静态冲突：重复 modid / 缺前置 / 加载器不匹配 / breaks 双向 | ✅ 注入坏模组后精确报出 `Broken Test 需要前置「missing-lib >=1.0.0」` |
+| 健康实例零误报 | ✅ 2 个模组 → 0 问题（Fabric API 的 40+ 子模块 provides 正确合并） |
+| 模组启用/禁用/删除 | ✅ `.jar` ↔ `.jar.disabled`，删除同步维护 content.json |
+| 崩溃归因：真实崩溃 | ✅ 缺前置崩溃 → `category=missing-dependency`，定位到 `broken-test 1.0.0 需要 missing-lib` |
+| 崩溃归因：签名覆盖 | OOM / 缺前置 / 重复 mod / Mixin 失败 / Java 版本 / 缺类 / GL 驱动 / JVM 访问冲突 |
+| 退出后自动诊断进 UI | ✅ 退出卡片显示诊断摘要 + 3 条建议 |
+| 20 个插件全部加载 | ✅ `failed: []`，启动 25ms |
+
+## 10. 已知限制 / 待办
 
 - **慢网**：本机到 Mojang 单连接仅 ~50KB/s，并发 16 约 200KB/s，432MB 资源耗时 18 分钟。BMCLAPI 镜像是同速，镜像回退待接入（设置里预留了位置）。
 - **加载器**：Fabric 已通；NeoForge/Forge（processors 执行引擎）未做，Quilt 不做。
-- **内容**：mod/资源包/光影的搜索安装已通；`.mrpack` 整合包、依赖图完整求解（只做了 required 依赖递归）未完成。
+- **内容**：mod/资源包/光影的搜索安装已通；`.mrpack` 整合包、完整依赖图求解（只做 required 递归）未完成。
+- **冲突分析**：静态层已覆盖强判据；Mixin target 级别的弱判据（需解析 class 常量池）未做，留给 P4 结合日志。
+- **诊断**：规则库覆盖常见 8 类；未知崩溃只给通用建议，AI 二次判断在 P4。
 - **老版本**：legacy/pre-1.6 资源物化已实现但未实测；Java 8 运行时自动下载未实测。
 - **实例**：只有默认实例；多实例创建/切换待补。
 - **登录**：仅离线（正版 OAuth 未做）。
 - **更新**：只到「检查」环节（P5 做下载替换与签名）。
 - **打包**：尚未打包（P5 做 electron-builder + 签名）。
 
-## 10. 下一步（P3：能治 / 能装补全）
+## 11. 下一步（P4：AI 接入 / 插件化）
 
-1. 静态冲突分析：解析 `fabric.mod.json` 的 depends/breaks、重复 modid、loader 不匹配。
-2. 崩溃归因：`crash-reports` / `latest.log` 解析 + 常见崩溃签名库。
-3. 模组管理 UI：启用/禁用、卸载、按实例查看。
-4. NeoForge/Forge processors 引擎（P2 遗留的最脏一块）。
-5. `.mrpack` 整合包一键安装。
+1. LLM 接入（用户自填 API Key，走 `llm` 抽象服务；托管额度是未来收费通道）。
+2. 把现有服务注册成 AI 工具：`search_content` / `install_content` / `launch_game` / `read_log` / `diagnose` / `analyze_conflicts`。
+3. 聊天面板升级：从命令路由变成「自然语言 → 工具调用 → 结果」。
+4. 插件宿主：权限分级、审计日志、运行时加载/卸载。
+5. 收尾 P2/P3 欠账：NeoForge/Forge processors、`.mrpack`、资源包/光影 UI、多实例。

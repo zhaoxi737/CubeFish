@@ -1,4 +1,4 @@
-# 开发手册（P0–P3）
+# 开发手册（P0–P4）
 
 ## 1. 环境
 
@@ -35,7 +35,7 @@ node_modules/.bin/electron . --launch=default --wait=50000
 
 ## 3. 架构
 
-主进程 = **Cordis 容器**（`@deepseek-ai/cordis`，与 Harness 同一内核）+ 20 个启动器插件。
+主进程 = **Cordis 容器**（`@deepseek-ai/cordis`，与 Harness 同一内核）+ 23 个启动器插件。
 
 插件按固定顺序装配（`src/main/kernel.ts`），每个插件通过 `ctx.provide(name, value)` 暴露服务，
 后续插件用 `use<T>(ctx, name)` 取用。任何一个插件加载失败都不会阻塞其它插件，
@@ -53,16 +53,19 @@ node_modules/.bin/electron . --launch=default --wait=50000
 | 8 | cloud | `cloud` | CloudPort：联网唯一出口，默认离线实现 |
 | 9 | telemetry | `telemetry` | 事件埋点（本地 jsonl，opt-in 上报） |
 | 10 | updater | `updater` | 更新检查状态机（下载替换在 P5） |
-| 11 | mojang | `mojang` | 版本清单 / 版本 JSON / 原版安装（client+libraries+assets+logging） |
-| 12 | java | `java` | Java 探测 / 按 major 匹配 / 下载 Mojang 运行时 |
-| 13 | instances | `instances` | 实例 / 版本隔离目录 / 绑定版本 |
-| 14 | loaders | `loaders` | 加载器安装（Fabric meta 合并） |
-| 15 | content | `content` | Modrinth 搜索 / 版本匹配 / 依赖 / 安装 / 启停删 |
-| 16 | conflict | `conflict` | 静态冲突分析（重复 id / 缺前置 / 加载器 / breaks） |
-| 17 | diagnose | `diagnose` | 崩溃归因（crash-report / latest.log 签名匹配） |
-| 18 | launch | `launch` | 版本合并 / natives / classpath / 参数展开 / 进程与退出归因 |
-| 19 | chat | `chat` | 本地命令路由（P4 升级为 AI 工具调用） |
-| 20 | ipc | — | IPC 通道注册 + 进度与游戏状态推送 |
+| 11 | llm | `llm` | OpenAI 兼容模型接入（Key 只存本地，可用环境变量覆盖做测试） |
+| 12 | mojang | `mojang` | 版本清单 / 版本 JSON / 原版安装（client+libraries+assets+logging） |
+| 13 | java | `java` | Java 探测 / 按 major 匹配 / 下载 Mojang 运行时 |
+| 14 | instances | `instances` | 实例 / 版本隔离目录 / 绑定版本 |
+| 15 | loaders | `loaders` | 加载器安装（Fabric meta 合并） |
+| 16 | content | `content` | Modrinth 搜索 / 版本匹配 / 依赖 / 安装 / 启停删 |
+| 17 | conflict | `conflict` | 静态冲突分析（重复 id / 缺前置 / 加载器 / breaks） |
+| 18 | diagnose | `diagnose` | 崩溃归因（crash-report / latest.log 签名匹配） |
+| 19 | launch | `launch` | 版本合并 / natives / classpath / 参数展开 / 进程与退出归因 |
+| 20 | tools | `tools` | 启动器能力 → 模型可调用工具（含审计与事件埋点） |
+| 21 | agent | `agent` | Agent 循环（模型 ↔ 工具，最多 6 轮） |
+| 22 | chat | `chat` | 对话入口：自然语言走 agent，`/命令` 走本地 |
+| 23 | ipc | — | IPC 通道注册 + 进度与游戏状态推送 |
 
 渲染进程只通过 `window.qdo`（preload 的 contextBridge）访问主进程，契约见 `src/shared/api.ts`。
 
@@ -162,23 +165,52 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 | 退出后自动诊断进 UI | ✅ 退出卡片显示诊断摘要 + 3 条建议 |
 | 20 个插件全部加载 | ✅ `failed: []`，启动 25ms |
 
-## 10. 已知限制 / 待办
+## 10. P4 验收（已实测，2026-10-29）
+
+> 说明：本机没有现成的模型 Key（DSH 的凭据是加密存储，不做提取），所以用**本地 mock LLM 服务器**（`scripts/mock-llm.mjs`，OpenAI 兼容）验证完整链路；真实模型只要在设置里填 Key 即可走同一条路径。
+
+| 验收项 | 结果 |
+|---|---|
+| OpenAI 兼容接入（/chat/completions + tools + tool_choice） | ✅ DeepSeek 默认端点，baseUrl/model 可配，Key 只存本地 |
+| 工具注册（13 个启动器能力 → JSON Schema） | ✅ 状态/搜索/安装/列模组/冲突/诊断/读日志/启动/停止/装版本/装 Fabric/改内存 |
+| Agent 循环（模型 ↔ 工具，最多 6 轮） | ✅ 一轮工具调用 + 二次总结，144ms 工具耗时 |
+| 真实 HTTP 链路（不是进程内 mock） | ✅ 起本地 mock 服务，走真实 fetch / JSON 序列化 / tool_calls 解析 |
+| 意图路由 | ✅ 「检查冲突」→ `analyze_conflicts`；「崩了」→ `diagnose_crash`；「优化模组」→ `search_mods` |
+| UI 工具轨迹 | ✅ 气泡下方显示 `✓ analyze_conflicts 检查了 2 个模组…` |
+| 无 Key 降级 | ✅ 提示去设置配置，同时保留 `/help` 等本地命令 |
+| 23 个插件全部加载 | ✅ `failed: []` |
+
+## 11. 已知限制 / 待办
 
 - **慢网**：本机到 Mojang 单连接仅 ~50KB/s，并发 16 约 200KB/s，432MB 资源耗时 18 分钟。BMCLAPI 镜像是同速，镜像回退待接入（设置里预留了位置）。
 - **加载器**：Fabric 已通；NeoForge/Forge（processors 执行引擎）未做，Quilt 不做。
 - **内容**：mod/资源包/光影的搜索安装已通；`.mrpack` 整合包、完整依赖图求解（只做 required 递归）未完成。
-- **冲突分析**：静态层已覆盖强判据；Mixin target 级别的弱判据（需解析 class 常量池）未做，留给 P4 结合日志。
-- **诊断**：规则库覆盖常见 8 类；未知崩溃只给通用建议，AI 二次判断在 P4。
+- **冲突分析**：静态层已覆盖强判据；Mixin target 级别的弱判据（需解析 class 常量池）未做。
+- **AI**：真实模型调用需用户自填 Key（本机验证用的是 mock LLM）；流式输出、多轮上下文记忆、工具权限分级（插件市场第三方工具）未做。
 - **老版本**：legacy/pre-1.6 资源物化已实现但未实测；Java 8 运行时自动下载未实测。
 - **实例**：只有默认实例；多实例创建/切换待补。
 - **登录**：仅离线（正版 OAuth 未做）。
 - **更新**：只到「检查」环节（P5 做下载替换与签名）。
 - **打包**：尚未打包（P5 做 electron-builder + 签名）。
 
-## 11. 下一步（P4：AI 接入 / 插件化）
+## 12. 下一步（P5：插件化 + 打包 + 交付）
 
-1. LLM 接入（用户自填 API Key，走 `llm` 抽象服务；托管额度是未来收费通道）。
-2. 把现有服务注册成 AI 工具：`search_content` / `install_content` / `launch_game` / `read_log` / `diagnose` / `analyze_conflicts`。
-3. 聊天面板升级：从命令路由变成「自然语言 → 工具调用 → 结果」。
-4. 插件宿主：权限分级、审计日志、运行时加载/卸载。
-5. 收尾 P2/P3 欠账：NeoForge/Forge processors、`.mrpack`、资源包/光影 UI、多实例。
+1. **插件宿主**：运行时加载/卸载第三方插件（Cordis 动态 plugin），权限分级（只读/联网/执行），审计日志 UI。
+2. **插件市场**：静态清单 + 签名校验的 feed 机制（商业化预留 #6）。
+3. **AI 增强**：流式输出、会话记忆、工具结果可视化、AI 生成的插件草稿。
+4. **交付**：electron-builder 打包、自动更新下载替换、代码签名、隐私政策与统计上报端点。
+5. **补账**：NeoForge/Forge processors、`.mrpack`、资源包/光影 UI、多实例、正版登录。
+
+## 13. 测试用 mock LLM
+
+```bash
+node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080
+
+# 另开一个终端：
+$env:QDOQMC_LLM_BASE_URL='http://127.0.0.1:18080/v1'
+$env:QDOQMC_LLM_KEY='test-key'
+$env:QDOQMC_LLM_MODEL='mock-model'
+node_modules/.bin/electron . --chat="帮我检查下这个实例有没有冲突"
+```
+
+会打印 `CHAT_RESULT`（含 text 与 trace）。`npm run smoke` 在同样的环境变量下会截图 `out/smoke-ai.png` 并输出 `ai.trace`。

@@ -25,6 +25,8 @@ export function SettingsDialog({ settings, onClose, onSave }: Props) {
         memoryMb: draft.memoryMb,
         playerName: draft.playerName,
         apiKey: draft.apiKey,
+        llmBaseUrl: draft.llmBaseUrl,
+        llmModel: draft.llmModel,
       })
     } finally {
       setSaving(false)
@@ -92,7 +94,29 @@ export function SettingsDialog({ settings, onClose, onSave }: Props) {
               type="password"
               value={draft.apiKey}
               onChange={(event) => update('apiKey', event.target.value)}
-              placeholder="P4 接入 AI 后再使用；不会上传"
+              placeholder="sk-... （DeepSeek / 任意 OpenAI 兼容服务）"
+              spellCheck={false}
+            />
+            <span className="field-hint">加密后只存在本机；不会上传、不会随统计上报。</span>
+          </label>
+
+          <label className="field">
+            <span className="field-label">模型接口地址</span>
+            <input
+              value={draft.llmBaseUrl}
+              onChange={(event) => update('llmBaseUrl', event.target.value)}
+              placeholder="https://api.deepseek.com/v1"
+              spellCheck={false}
+            />
+            <span className="field-hint">任何 OpenAI 兼容的 /chat/completions 端点都可以。</span>
+          </label>
+
+          <label className="field">
+            <span className="field-label">模型名</span>
+            <input
+              value={draft.llmModel}
+              onChange={(event) => update('llmModel', event.target.value)}
+              placeholder="deepseek-chat"
               spellCheck={false}
             />
           </label>

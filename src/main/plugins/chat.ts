@@ -3,6 +3,7 @@ import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { EntitlementService } from './entitlement'
 import type { IdentityService } from './identity'
 import type { InstancesService } from './instances'
+import type { AgentService } from './agent'
 import type { ConflictService } from './conflict'
 import type { ContentService } from './content'
 import type { DiagnoseService } from './diagnose'
@@ -40,6 +41,7 @@ export function createChatPlugin(): LauncherPlugin<void> {
     const content = use<ContentService>(ctx, 'content')
     const conflict = use<ConflictService>(ctx, 'conflict')
     const diagnose = use<DiagnoseService>(ctx, 'diagnose')
+    const agent = use<AgentService>(ctx, 'agent')
     const settings = use<SettingsService>(ctx, 'settings')
     const identity = use<IdentityService>(ctx, 'identity')
     const entitlement = use<EntitlementService>(ctx, 'entitlement')
@@ -59,14 +61,14 @@ export function createChatPlugin(): LauncherPlugin<void> {
         log.info('chat', '收到消息', { preview: raw.slice(0, 80) })
 
         if (!raw.startsWith('/')) {
-          const hasKey = settings.get('apiKey').length > 0
-          return {
-            ok: true,
-            kind: 'text',
-            text: hasKey
-              ? '已检测到本地 API Key，但 AI 代理（工具调用链）要到 P4 才接入。\n现在可以先用 /help 看看内置命令。'
-              : 'AI 代理尚未接入（P4）。现在可以先用 /help 看内置命令；API Key 只存本地，不会上传。',
+          if (!agent.available()) {
+            return {
+              ok: false,
+              kind: 'error',
+              text: '还没有配置模型 API Key（设置 → 模型 API Key）。\n配置后可以直接说人话让我干活，例如“装个 sodium”“看看为什么崩了”“最近有什么优化模组”。\n没配置时可以用 /help 看本地命令。',
+            }
           }
+          return agent.run(raw)
         }
 
         const [head, ...args] = raw.slice(1).split(/\s+/)

@@ -4,7 +4,15 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { bootKernel, type Kernel } from './kernel'
-import { runAnalyzeCli, runDiagnoseCli, runFabricCli, runInstallCli, runLaunchTest, runModCli } from './cli'
+import {
+  runAnalyzeCli,
+  runChatCli,
+  runDiagnoseCli,
+  runFabricCli,
+  runInstallCli,
+  runLaunchTest,
+  runModCli,
+} from './cli'
 
 const { app, BrowserWindow, shell } = electron
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -22,6 +30,7 @@ const fabricTarget = argValue('fabric')
 const modTarget = argValue('mod')
 const analyzeMode = process.argv.includes('--analyze')
 const diagnoseMode = process.argv.includes('--diag')
+const chatTarget = argValue('chat')
 const waitMs = Number(argValue('wait') ?? 60000)
 
 let mainWindow: BrowserWindowType | null = null
@@ -75,6 +84,29 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
       await wait(2400)
       const firstShot = await shot('smoke.png')
 
+      // AI 对话：发一条自然语言，验证「模型 → 工具 → 回答」轨迹（需要 mock 或真实 LLM 环境变量）
+      const sent = (await win.webContents.executeJavaScript(
+        `(() => {
+          const input = document.querySelector('.composer input')
+          if (!input) return 'no-input'
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+          setter.call(input, '帮我检查下这个实例有没有冲突')
+          input.dispatchEvent(new Event('input', { bubbles: true }))
+          const btn = document.querySelector('.composer button')
+          if (btn) btn.click()
+          return 'sent'
+        })()`,
+      )) as string
+      await wait(4500)
+      const aiShot = await shot('smoke-ai.png')
+      const aiInfo = (await win.webContents.executeJavaScript(
+        `JSON.stringify({
+          sent: ${JSON.stringify(sent)},
+          trace: [...document.querySelectorAll('.trace-item')].map((el) => el.textContent ?? ''),
+          bubbles: [...document.querySelectorAll('.bubble')].slice(-2).map((el) => (el.textContent ?? '').slice(0, 240))
+        })`,
+      )) as string
+
       const uiText = (await win.webContents.executeJavaScript(
         `JSON.stringify({
           versionSelect: document.querySelector('.version-row select')?.value ?? '',
@@ -119,8 +151,9 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           version: info?.version ?? app.getVersion(),
           plugins: k.summary.plugins,
           failed: k.summary.failed,
-          screenshots: [firstShot, modsShot, conflictShot],
+          screenshots: [firstShot, aiShot, modsShot, conflictShot],
           ui: JSON.parse(uiText),
+          ai: JSON.parse(aiInfo),
           mods: JSON.parse(modsInfo),
           conflict: JSON.parse(conflictInfo),
           chatStatus: chat,
@@ -181,6 +214,11 @@ if (!gotLock) {
       }
       if (diagnoseMode) {
         const code = await runDiagnoseCli(kernel)
+        app.exit(code)
+        return
+      }
+      if (chatTarget) {
+        const code = await runChatCli(kernel, chatTarget)
         app.exit(code)
         return
       }

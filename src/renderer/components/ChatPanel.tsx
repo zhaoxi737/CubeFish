@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChatMessage } from '../../shared/types'
+import type { ChatMessage, ToolCallTrace } from '../../shared/types'
 
-const WELCOME: ChatMessage = {
+type Message = ChatMessage & { trace?: ToolCallTrace[] }
+
+const WELCOME: Message = {
   role: 'assistant',
   ts: Date.now(),
   text:
-    '我是 QDOQMC 的助手。现在能做的事：/mod search 搜模组、/mod install 装模组、/conflict 冲突检查、/diag 崩溃归因、/java 看本机 Java、/status 看状态、/instance 看隔离目录。\n下载安装、Fabric、模组市场、冲突检查、崩溃诊断都已打通；P4 起这里接入真正的 AI（一句话直接触发这些能力）。',
+    '我是 QDOQMC 的助手。配好模型 API Key 后可以直接说人话：\n·「装个 sodium」\n·「帮我看下为什么崩了」\n·「最近有什么优化模组」\n·「启动游戏」\n没配 Key 时也能用 /help 看本地命令。',
 }
 
 export function ChatPanel() {
-  const [messages, setMessages] = useState<ChatMessage[]>([WELCOME])
+  const [messages, setMessages] = useState<Message[]>([WELCOME])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const listRef = useRef<HTMLDivElement | null>(null)
@@ -34,7 +36,15 @@ export function ChatPanel() {
     setSending(true)
     try {
       const reply = await window.qdo.chat.send(text)
-      setMessages((prev) => [...prev, { role: reply.ok ? 'assistant' : 'system', text: reply.text, ts: Date.now() }])
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: reply.ok ? 'assistant' : 'system',
+          text: reply.text,
+          ts: Date.now(),
+          trace: reply.trace,
+        },
+      ])
     } catch (err) {
       setMessages((prev) => [
         ...prev,
@@ -49,12 +59,22 @@ export function ChatPanel() {
     <aside className="chat">
       <div className="chat-head">
         <span className="chat-title">AI 助手</span>
-        <span className="chat-badge">本地命令模式</span>
+        <span className="chat-badge">工具调用</span>
       </div>
       <div className="chat-list" ref={listRef}>
         {messages.map((msg, index) => (
           <div key={`${msg.ts}-${index}`} className={`bubble bubble-${msg.role}`}>
             <pre>{msg.text}</pre>
+            {msg.trace && msg.trace.length > 0 ? (
+              <div className="trace-list">
+                {msg.trace.map((item) => (
+                  <div key={item.id} className={`trace-item ${item.ok ? 'trace-ok' : 'trace-bad'}`}>
+                    <span className="trace-tool">{item.ok ? '✓' : '✕'} {item.tool}</span>
+                    <span className="trace-summary">{item.summary}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
         ))}
         {sending ? (
@@ -75,14 +95,14 @@ export function ChatPanel() {
         <input
           value={input}
           onChange={(event) => setInput(event.target.value)}
-          placeholder="输入命令或问题，例如 /status"
+          placeholder="说人话或输入命令，例如：装个 sodium"
           spellCheck={false}
         />
         <button type="submit" disabled={sending || input.trim().length === 0}>
           发送
         </button>
       </form>
-      <div className="chat-foot">API Key 只存本地 · 不随统计上报</div>
+      <div className="chat-foot">API Key 只存本地 · 工具调用有审计日志</div>
     </aside>
   )
 }

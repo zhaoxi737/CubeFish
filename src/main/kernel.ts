@@ -1,5 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import { errorMessage, type LauncherPlugin } from './plugin-kit'
+import { createAgentPlugin } from './plugins/agent'
 import { createAppPlugin } from './plugins/app'
 import { createChatPlugin } from './plugins/chat'
 import { createCloudPlugin } from './plugins/cloud'
@@ -12,6 +13,7 @@ import { createInstancesPlugin } from './plugins/instances'
 import { createIpcPlugin, type WindowProvider } from './plugins/ipc'
 import { createJavaPlugin } from './plugins/java'
 import { createLaunchPlugin } from './plugins/launch'
+import { createLlmPlugin } from './plugins/llm'
 import { createLoadersPlugin } from './plugins/loaders'
 import { createLoggerPlugin, type LogService } from './plugins/logger'
 import { createMojangPlugin } from './plugins/mojang'
@@ -19,6 +21,7 @@ import { createPathsPlugin } from './plugins/paths'
 import { createSettingsPlugin } from './plugins/settings'
 import { createStoragePlugin } from './plugins/storage'
 import { createTelemetryPlugin, type TelemetryService } from './plugins/telemetry'
+import { createToolsPlugin } from './plugins/tools'
 import { createUpdaterPlugin } from './plugins/updater'
 
 export interface BootSummary {
@@ -71,6 +74,7 @@ export async function bootKernel(options: KernelOptions): Promise<Kernel> {
     createCloudPlugin(),
     createTelemetryPlugin(),
     createUpdaterPlugin(),
+    createLlmPlugin(),
     createMojangPlugin(),
     createJavaPlugin(),
     createInstancesPlugin(),
@@ -79,6 +83,8 @@ export async function bootKernel(options: KernelOptions): Promise<Kernel> {
     createConflictPlugin(),
     createDiagnosePlugin(),
     createLaunchPlugin(),
+    createToolsPlugin(),
+    createAgentPlugin(),
     createChatPlugin(),
     createIpcPlugin({ getWindow: options.getWindow, summary }),
   ]

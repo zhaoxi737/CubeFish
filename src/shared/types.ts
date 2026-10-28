@@ -92,10 +92,20 @@ export interface ChatMessage {
   ts: number
 }
 
+export interface ToolCallTrace {
+  id: string
+  tool: string
+  args: Record<string, unknown>
+  ok: boolean
+  summary: string
+  ms: number
+}
+
 export interface ChatReply {
   ok: boolean
   text: string
-  kind?: 'text' | 'action' | 'error'
+  kind?: 'text' | 'action' | 'error' | 'agent'
+  trace?: ToolCallTrace[]
 }
 
 export interface SettingsShape {
@@ -105,6 +115,10 @@ export interface SettingsShape {
   updateFeedUrl: string
   /** 用户自己填的模型 API Key，只存本地 */
   apiKey: string
+  /** OpenAI 兼容接口地址（DeepSeek 默认） */
+  llmBaseUrl: string
+  /** 模型名 */
+  llmModel: string
   /** 默认内存分配（MB） */
   memoryMb: number
   /** 离线登录玩家名 */

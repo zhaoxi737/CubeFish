@@ -6,11 +6,13 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import type { Kernel } from './kernel'
+import type { AgentService } from './plugins/agent'
 import type { ConflictService } from './plugins/conflict'
 import type { ContentService } from './plugins/content'
 import type { DiagnoseService } from './plugins/diagnose'
 import type { InstancesService } from './plugins/instances'
 import type { LaunchService } from './plugins/launch'
+import type { LlmService } from './plugins/llm'
 import type { LoadersService } from './plugins/loaders'
 import type { MojangService } from './plugins/mojang'
 
@@ -75,6 +77,17 @@ export async function runDiagnoseCli(kernel: Kernel): Promise<number> {
   const result = await diagnose.run('default')
   console.log(`DIAG_RESULT ${JSON.stringify(result)}`)
   return result.found ? 1 : 0
+}
+
+export async function runChatCli(kernel: Kernel, text: string): Promise<number> {
+  const agent = kernel.ctx.get('agent') as AgentService
+  const llm = kernel.ctx.get('llm') as LlmService
+  console.log(
+    `CHAT_CONFIG ${JSON.stringify({ available: llm.available(), baseUrl: llm.baseUrl(), model: llm.model() })}`,
+  )
+  const reply = await agent.run(text)
+  console.log(`CHAT_RESULT ${JSON.stringify(reply)}`)
+  return reply.ok ? 0 : 1
 }
 
 export async function runLaunchTest(kernel: Kernel, instanceId: string, waitMs: number): Promise<number> {

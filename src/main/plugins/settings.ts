@@ -17,6 +17,8 @@ export const DEFAULT_SETTINGS: SettingsShape = {
   telemetry: true,
   updateFeedUrl: '',
   apiKey: '',
+  llmBaseUrl: 'https://api.deepseek.com/v1',
+  llmModel: 'deepseek-chat',
   memoryMb: 4096,
   playerName: 'Player',
   autoCheckUpdate: true,
@@ -91,6 +93,8 @@ function sanitize(input: Partial<SettingsShape>): Partial<SettingsShape> {
   if (typeof input.autoCheckUpdate === 'boolean') out.autoCheckUpdate = input.autoCheckUpdate
   if (typeof input.updateFeedUrl === 'string') out.updateFeedUrl = input.updateFeedUrl.trim()
   if (typeof input.apiKey === 'string') out.apiKey = input.apiKey.trim()
+  if (typeof input.llmBaseUrl === 'string') out.llmBaseUrl = input.llmBaseUrl.trim() || DEFAULT_SETTINGS.llmBaseUrl
+  if (typeof input.llmModel === 'string') out.llmModel = input.llmModel.trim() || DEFAULT_SETTINGS.llmModel
   if (typeof input.playerName === 'string') out.playerName = input.playerName.trim().slice(0, 16) || 'Player'
   if (typeof input.memoryMb === 'number' && Number.isFinite(input.memoryMb)) {
     out.memoryMb = Math.min(32768, Math.max(512, Math.round(input.memoryMb)))

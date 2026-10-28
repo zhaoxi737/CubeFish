@@ -6,6 +6,8 @@ import type {
   ContentVersionInfo,
   Diagnosis,
   EntitlementItem,
+  FixAction,
+  FixResult,
   EventSummary,
   FabricInstallResult,
   GameStateEvent,
@@ -81,6 +83,8 @@ export interface QdoApi {
   }
   diagnose: {
     run(instanceId?: string): Promise<Diagnosis>
+    fixes(instanceId?: string): Promise<FixAction[]>
+    applyFix(instanceId: string, fixId: string): Promise<FixResult>
   }
   loaders: {
     fabric(gameVersion: string): Promise<FabricInstallResult>

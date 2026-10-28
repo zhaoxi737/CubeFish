@@ -294,6 +294,32 @@ export function createToolsPlugin(): LauncherPlugin<void> {
     })
 
     register({
+      name: 'auto_fix_crash',
+      description:
+        '按最近一次崩溃归因给出一键修复动作；传 fixId 则直接执行该修复（如禁用可疑模组、调大内存、安装缺失前置）。',
+      parameters: {
+        type: 'object',
+        properties: {
+          fixId: { type: 'string', description: '要执行的修复 id；不传则只列出可用修复' },
+        },
+        required: [],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const instanceId = activeId()
+        const fixId = str(args.fixId).trim()
+        if (!fixId) {
+          const [diagnosis, fixes] = await Promise.all([diagnose.run(instanceId), diagnose.fixes(instanceId)])
+          if (fixes.length === 0) return { ok: true, summary: `诊断：${diagnosis.summary}；没有可自动修复的动作`, data: fixes }
+          const list = fixes.map((fix) => `${fix.id}（${fix.label}）`).join('；')
+          return { ok: true, summary: `诊断：${diagnosis.summary}。可执行修复：${list}`, data: fixes }
+        }
+        const result = await diagnose.applyFix(instanceId, fixId)
+        return { ok: result.ok, summary: result.message }
+      },
+    })
+
+    register({
       name: 'set_memory',
       description: '设置当前实例的内存分配（MB），范围 512–32768。',
       parameters: {

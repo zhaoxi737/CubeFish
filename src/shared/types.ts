@@ -397,6 +397,24 @@ export interface Diagnosis {
   checkedAt: number
 }
 
+/* ---------- P13：崩溃一键修复 ---------- */
+
+export interface FixAction {
+  id: string
+  label: string
+  description: string
+  kind: 'disable-mod' | 'set-memory' | 'install-dependency' | 'clear-crash-reports'
+  /** 展示用的补充信息（如目标文件名、内存值） */
+  detail?: string
+}
+
+export interface FixResult {
+  ok: boolean
+  message: string
+  /** 修复后是否建议重新诊断/启动 */
+  refresh?: boolean
+}
+
 /* ---------- P5：插件 ---------- */
 
 export type PluginPermission = 'read' | 'net' | 'exec'

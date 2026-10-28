@@ -336,7 +336,23 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 > 实现：`llm.chatStream` 解析 SSE（content 增量 + tool_calls 分片聚合）→ `agent.run` 透传 `onDelta` →
 > chat 插件 `setStreamSink` → IPC `chat:delta` 事件 → 渲染层流式气泡；记忆存 `chat-history.json`（最多 20 条）。
 
-## 19. 已知限制 / 待办
+## 19. P13 验收（已实测，2026-10-29）：崩溃一键修复
+
+| 验收项 | 结果 |
+|---|---|
+| 缺前置归因 → 修复动作 | ✅ `install:missing-lib`（「安装缺失前置」按钮） |
+| 一键禁用可疑模组 | ✅ `FIX_RESULT ok`，`sodium-...jar` → `sodium-...jar.disabled` |
+| 内存不足 → 调内存 | ✅ OOM 日志 → 建议 6144 MB；执行 `memory:8192` → `instance.json memoryMb=8192` |
+| 清理崩溃报告 | ✅ `clear-crash` 动作（有 crash-reports 时出现） |
+| 退出卡片 UI | ✅ 真实崩溃（坏模组 HARD_DEP）→ 退出卡片显示诊断 + 「一键修复：安装缺失前置」按钮 |
+| 修复后自动刷新 | ✅ 应用修复后重新诊断并刷新修复列表 |
+| CLI / AI 工具 | ✅ `--fixes`、`--apply-fix=<id>`、`auto_fix_crash` |
+| `--smoke-crash` 自动化 | ✅ 启动 → 崩溃 → 关窗口 → 退出卡片 → 修复按钮，全程 20s 截图留证 |
+
+> 注：Fabric 依赖解析失败时会弹「崩溃窗口」并**保持进程存活**，所以自动化测试里先结束进程再验证退出卡片；
+> 真实用户在关掉该窗口后同样会看到这张卡片。
+
+## 20. 已知限制 / 待办
 
 - **更新**：只支持便携版（解压替换）；NSIS 安装包升级未做。
 - **签名**：便携版未做代码签名，Windows SmartScreen 会提示未知发布者。
@@ -345,19 +361,19 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 - **慢网**：本机到 Mojang 单连接仅 ~50KB/s，并发 16 约 200KB/s，432MB 资源耗时 18 分钟。镜像回退待接入。
 - **加载器**：Fabric、NeoForge（1.20.2+）已通并可启动；Forge（含 1.20.1 及更老）、Quilt 未做。NeoForge 安装需 launcher_profiles.json（缺失时自动创建）。
 - **整合包**：`.mrpack` 已通（Fabric/原版）；NeoForge/Forge 整合包会明确报错。CurseForge `.zip` 整合包不支持。
-- **AI**：真实模型调用需用户自填 Key（本机验证用 mock LLM）；已支持流式输出与会话记忆（20 条上限）；多会话/跨实例记忆未做。
+- **AI**：真实模型调用需用户自填 Key（本机验证用 mock LLM）；已支持流式输出、会话记忆与崩溃一键修复；多会话/跨实例记忆未做。
 - **老版本**：legacy/pre-1.6 资源物化已实现但未实测；Java 8 运行时自动下载未实测。
 - **实例**：支持创建/切换/删除；实例复制、导入导出、图标未做。
 - **登录**：仅离线（正版 OAuth 未做）。
 
-## 20. 下一步（P13：补账）
+## 21. 下一步（P14：补账）
 
 1. **Forge 支持**：复用 `lib/forge-installer.ts` 的 processor 引擎，先做 1.20.1（继承链 + BootstrapLauncher）。
 2. **插件沙箱**：utilityProcess + 受限 API + 权限确认，替代当前进程内加载。
 3. **微软正版登录**：需要 Azure 应用 id（用户提供或授权申请流程）。
-4. **体验**：崩溃一键修复动作、多会话记忆、CurseForge zip 整合包。
+4. **体验**：多会话记忆、CurseForge zip 整合包、更多修复动作（切 Java/换加载器）。
 
-## 21. 测试用 mock LLM
+## 22. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

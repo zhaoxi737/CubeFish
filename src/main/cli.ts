@@ -211,6 +211,25 @@ export async function runInspectModpackCli(kernel: Kernel, source: string): Prom
   return result.ok ? 0 : 1
 }
 
+export async function runFixesCli(kernel: Kernel): Promise<number> {
+  const diagnose = kernel.ctx.get('diagnose') as DiagnoseService
+  const instances = kernel.ctx.get('instances') as InstancesService
+  const instanceId = instances.active().id
+  const [diagnosis, fixes] = await Promise.all([diagnose.run(instanceId), diagnose.fixes(instanceId)])
+  console.log(`DIAG_RESULT ${JSON.stringify({ instanceId, diagnosis })}`)
+  console.log(`FIXES_RESULT ${JSON.stringify({ instanceId, fixes })}`)
+  return 0
+}
+
+export async function runApplyFixCli(kernel: Kernel, fixId: string): Promise<number> {
+  const diagnose = kernel.ctx.get('diagnose') as DiagnoseService
+  const instances = kernel.ctx.get('instances') as InstancesService
+  const instanceId = instances.active().id
+  const result = await diagnose.applyFix(instanceId, fixId)
+  console.log(`FIX_RESULT ${JSON.stringify({ instanceId, fixId, ...result })}`)
+  return result.ok ? 0 : 1
+}
+
 export async function runUpdateDownloadCli(kernel: Kernel): Promise<number> {
   const updater = kernel.ctx.get('updater') as UpdaterService
   let lastPct = -1

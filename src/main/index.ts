@@ -23,6 +23,8 @@ import {
   runModpackCli,
   runInspectModpackCli,
   runNeoForgeCli,
+  runFixesCli,
+  runApplyFixCli,
   runToolsCli,
   runUpdateApplyCli,
   runUpdateDownloadCli,
@@ -31,6 +33,7 @@ import {
 const { app, BrowserWindow, shell } = electron
 const here = path.dirname(fileURLToPath(import.meta.url))
 const isSmoke = process.argv.includes('--smoke')
+const isCrashSmoke = process.argv.includes('--smoke-crash')
 
 function argValue(name: string): string | undefined {
   const prefix = `--${name}=`
@@ -57,6 +60,8 @@ const marketInstallTarget = argValue('market-install')
 const modpackTarget = argValue('modpack')
 const inspectModpackTarget = argValue('inspect-modpack')
 const neoforgeTarget = argValue('neoforge')
+const fixesMode = process.argv.includes('--fixes')
+const applyFixTarget = argValue('apply-fix')
 const createInstanceTarget = argValue('create-instance')
 const activateInstanceTarget = argValue('activate-instance')
 const contentTarget = argValue('content')
@@ -95,6 +100,67 @@ function createWindow(): BrowserWindowType {
 
   void win.loadFile(path.join(here, '../renderer/index.html'))
   return win
+}
+
+async function runCrashSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): Promise<void> {
+  win.webContents.once('did-finish-load', async () => {
+    const dir = path.join(process.cwd(), 'out')
+    mkdirSync(dir, { recursive: true })
+    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+    try {
+      await wait(2400)
+      // 点击启动：当前实例预置了坏模组，Fabric 会在依赖解析阶段崩溃并弹错误窗口
+      const clicked = (await win.webContents.executeJavaScript(
+        `(() => { const btn = document.querySelector('.launch'); if (!btn || btn.disabled) return 'disabled'; btn.click(); return 'clicked' })()`,
+      )) as string
+      await wait(16_000)
+      // 模拟用户关掉 Fabric 的崩溃窗口：结束进程 → 启动器收到退出事件
+      const launch = k.ctx.get('launch') as { stop(): Promise<unknown> }
+      await launch.stop()
+      let fixes: string[] = []
+      let diagnosis = ''
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        await wait(1000)
+        const info = (await win.webContents.executeJavaScript(
+          `JSON.stringify({
+            fixButtons: [...document.querySelectorAll('.fix-actions button')].map((el) => el.textContent ?? ''),
+            diagnosis: document.querySelector('.diag-summary')?.textContent ?? '',
+            exitCard: document.querySelector('.diag-block') ? 'diag' : document.querySelector('.bubble') ? 'bubble' : 'none',
+            launchSub: document.querySelector('.launch-sub')?.textContent ?? ''
+          })`,
+        )) as string
+        const parsed = JSON.parse(info) as { fixButtons: string[]; diagnosis: string; exitCard: string; launchSub: string }
+        if (process.env.QDOQMC_CRASH_SMOKE_DEBUG) console.log(`CRASH_POLL ${attempt} ${JSON.stringify(parsed)}`)
+        if (parsed.fixButtons.length > 0) {
+          fixes = parsed.fixButtons
+          diagnosis = parsed.diagnosis
+          break
+        }
+      }
+      const fixShot = await shotCrash('smoke-fix.png')
+      const info = (await win.webContents.executeJavaScript(
+        `JSON.stringify({
+          fixButtons: [...document.querySelectorAll('.fix-actions button')].map((el) => el.textContent ?? ''),
+          diagnosis: document.querySelector('.diag-summary')?.textContent ?? '',
+          exitHint: document.querySelector('.launch-sub')?.textContent ?? ''
+        })`,
+      )) as string
+      console.log(
+        `CRASH_SMOKE_RESULT ${JSON.stringify({ ok: fixes.length > 0, clicked, diagnosis, fixes, screenshot: fixShot, ms: Date.now() - startedAt, ui: JSON.parse(info) })}`,
+      )
+      app.exit(fixes.length > 0 ? 0 : 1)
+    } catch (err) {
+      console.log(`CRASH_SMOKE_RESULT ${JSON.stringify({ ok: false, error: String(err) })}`)
+      app.exit(1)
+    }
+
+    async function shotCrash(name: string): Promise<string> {
+      const image = await win.webContents.capturePage()
+      const file = path.join(dir, name)
+      writeFileSync(file, image.toPNG())
+      return file
+    }
+  })
 }
 
 async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): Promise<void> {
@@ -382,6 +448,16 @@ if (!gotLock) {
         app.exit(code)
         return
       }
+      if (fixesMode) {
+        const code = await runFixesCli(kernel)
+        app.exit(code)
+        return
+      }
+      if (applyFixTarget) {
+        const code = await runApplyFixCli(kernel, applyFixTarget)
+        app.exit(code)
+        return
+      }
       if (createInstanceTarget) {
         const code = await runCreateInstanceCli(kernel, createInstanceTarget)
         app.exit(code)
@@ -409,6 +485,7 @@ if (!gotLock) {
       })
 
       if (isSmoke) await runSmoke(mainWindow, kernel, startedAt)
+      if (isCrashSmoke) await runCrashSmoke(mainWindow, kernel, startedAt)
 
       app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()

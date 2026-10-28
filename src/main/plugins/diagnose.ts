@@ -2,12 +2,14 @@
  * 崩溃归因（P3）：扫描 crash-reports / latest.log / game-*.log，按已知签名分类并给建议。
  * 规则库先覆盖最常见的一批；P4 再让 AI 在这份结构化结论上做二次判断。
  */
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import path from 'node:path'
-import type { Diagnosis } from '../../shared/types'
+import type { Diagnosis, FixAction, FixResult } from '../../shared/types'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
+import type { ContentService } from './content'
 import type { InstancesService } from './instances'
 import type { LogService } from './logger'
+import type { SettingsService } from './settings'
 import type { TelemetryService } from './telemetry'
 
 export type DiagSeverity = Diagnosis['severity']
@@ -15,6 +17,9 @@ export type DiagSeverity = Diagnosis['severity']
 export interface DiagnoseService {
   run(instanceId?: string): Promise<Diagnosis>
   analyzeText(text: string, source?: string): Diagnosis
+  /** 根据最近的崩溃归因给出可执行的一键修复动作 */
+  fixes(instanceId?: string): Promise<FixAction[]>
+  applyFix(instanceId: string, fixId: string): Promise<FixResult>
 }
 
 interface Signature {
@@ -104,6 +109,8 @@ export function createDiagnosePlugin(): LauncherPlugin<void> {
     const instances = use<InstancesService>(ctx, 'instances')
     const log = use<LogService>(ctx, 'log')
     const telemetry = use<TelemetryService>(ctx, 'telemetry')
+    const content = use<ContentService>(ctx, 'content')
+    const settings = use<SettingsService>(ctx, 'settings')
 
     function analyzeText(text: string, source?: string): Diagnosis {
       const lines = text.split(/\r?\n/)
@@ -212,7 +219,155 @@ export function createDiagnosePlugin(): LauncherPlugin<void> {
       return diagnosis
     }
 
-    ctx.provide('diagnose', { run, analyzeText } satisfies DiagnoseService)
+    /* ---------- P13：一键修复 ---------- */
+
+    async function fixes(instanceId = 'default'): Promise<FixAction[]> {
+      const instance = instances.get(instanceId)
+      if (!instance) return []
+      const diagnosis = await run(instanceId)
+      const actions: FixAction[] = []
+
+      if (diagnosis.category === 'out-of-memory') {
+        const current = instance.memoryMb
+        const next = Math.min(current + 2048, 16384)
+        if (next > current) {
+          actions.push({
+            id: `memory:${next}`,
+            label: `把内存从 ${current} MB 调到 ${next} MB`,
+            description: '堆内存不足是最常见的 OOM 原因；整合包建议 4–8 GB',
+            kind: 'set-memory',
+            detail: `${next} MB`,
+          })
+        }
+      }
+
+      if (diagnosis.category === 'missing-dependency') {
+        const match = HARD_DEP.exec(diagnosis.evidence.join('\n'))
+        const dep = match?.[3]
+        if (dep) {
+          actions.push({
+            id: `install:${dep}`,
+            label: `安装缺失前置「${dep}」`,
+            description: '在 Modrinth 搜索同名项目并安装到当前实例',
+            kind: 'install-dependency',
+            detail: dep,
+          })
+        }
+      }
+
+      const mods = await content.installed(instanceId)
+      const enabled = mods.filter((mod) => mod.enabled !== false)
+      const suspicious = [...enabled].sort((a, b) => b.installedAt - a.installedAt).slice(0, 3)
+
+      if (['duplicate-mod', 'mixin-fail', 'mod-load-failed', 'missing-class', 'unknown'].includes(diagnosis.category)) {
+        for (const mod of suspicious) {
+          actions.push({
+            id: `disable:${mod.fileName}`,
+            label: `禁用 ${mod.fileName}`,
+            description: '最近安装的模组最可疑，禁用后重新启动即可验证',
+            kind: 'disable-mod',
+            detail: mod.fileName,
+          })
+        }
+      }
+
+      const crashDir = path.join(instance.gameDir, 'crash-reports')
+      if (existsSync(crashDir)) {
+        const count = readdirSync(crashDir).length
+        if (count > 0) {
+          actions.push({
+            id: 'clear-crash',
+            label: `清理 ${count} 个崩溃报告`,
+            description: '删掉旧报告，避免下次诊断读到历史崩溃',
+            kind: 'clear-crash-reports',
+            detail: `${count} 个文件`,
+          })
+        }
+      }
+
+      // 兜底：没有崩溃时也给最近安装的模组禁用项，方便手动排查
+      if (actions.filter((action) => action.kind === 'disable-mod').length === 0) {
+        for (const mod of suspicious) {
+          actions.push({
+            id: `disable:${mod.fileName}`,
+            label: `禁用 ${mod.fileName}`,
+            description: '排查模组冲突时用：禁用后重启，看问题是否消失',
+            kind: 'disable-mod',
+            detail: mod.fileName,
+          })
+        }
+      }
+
+      return actions
+    }
+
+    async function applyFix(instanceId: string, fixId: string): Promise<FixResult> {
+      const instance = instances.get(instanceId)
+      if (!instance) return { ok: false, message: '实例不存在' }
+      try {
+        if (fixId.startsWith('disable:')) {
+          const fileName = fixId.slice('disable:'.length)
+          const result = await content.toggle(instanceId, fileName)
+          if (!result.ok) return { ok: false, message: `禁用失败：${result.error ?? '未知错误'}` }
+          telemetry.record('diagnose:fix', { instanceId, kind: 'disable-mod', fileName })
+          log.info('diagnose', '已禁用可疑模组', { instanceId, fileName })
+          return {
+            ok: Boolean(result.enabled === false),
+            message: result.enabled === false ? `已禁用 ${fileName}，重新启动试试` : `${fileName} 仍然是启用状态`,
+            refresh: true,
+          }
+        }
+        if (fixId.startsWith('memory:')) {
+          const target = Number(fixId.slice('memory:'.length))
+          if (!Number.isFinite(target)) return { ok: false, message: '内存值不合法' }
+          const bounded = Math.min(Math.max(Math.round(target), 512), 32768)
+          instances.setMemory(instanceId, bounded)
+          telemetry.record('diagnose:fix', { instanceId, kind: 'set-memory', mb: bounded })
+          log.info('diagnose', '已调整内存', { instanceId, mb: bounded })
+          return { ok: true, message: `内存已调到 ${bounded} MB，重新启动生效`, refresh: true }
+        }
+        if (fixId.startsWith('install:')) {
+          const dep = fixId.slice('install:'.length)
+          const mcVersion = instance.gameVersion ?? instance.mcVersion
+          const loader = instance.loader === 'fabric' ? 'fabric' : undefined
+          const hits = await content.search(dep, { type: 'mod', mcVersion, loader, limit: 5 })
+          if (hits.length === 0) return { ok: false, message: `没在 Modrinth 找到「${dep}」，请手动搜索安装` }
+          const hit = hits[0]
+          const result = await content.install(instanceId, hit.projectId, { mcVersion, loader })
+          if (!result.ok) return { ok: false, message: `安装失败：${result.error ?? '未知错误'}` }
+          telemetry.record('diagnose:fix', { instanceId, kind: 'install-dependency', project: hit.projectId })
+          log.info('diagnose', '已安装缺失前置', { instanceId, project: hit.projectId })
+          return {
+            ok: true,
+            message: `已安装 ${result.title ?? hit.title} ${result.versionNumber ?? ''}，重新启动试试`,
+            refresh: true,
+          }
+        }
+        if (fixId === 'clear-crash') {
+          const crashDir = path.join(instance.gameDir, 'crash-reports')
+          let removed = 0
+          if (existsSync(crashDir)) {
+            for (const name of readdirSync(crashDir)) {
+              try {
+                rmSync(path.join(crashDir, name), { recursive: true, force: true })
+                removed += 1
+              } catch {
+                /* 跳过被占用的文件 */
+              }
+            }
+          }
+          telemetry.record('diagnose:fix', { instanceId, kind: 'clear-crash-reports', removed })
+          return { ok: true, message: `已清理 ${removed} 个崩溃报告` }
+        }
+        return { ok: false, message: `未知的修复动作：${fixId}` }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        log.warn('diagnose', '修复动作失败', { instanceId, fixId, error: message })
+        return { ok: false, message }
+      }
+    }
+
+    ctx.provide('diagnose', { run, analyzeText, fixes, applyFix } satisfies DiagnoseService)
   })
 }
 

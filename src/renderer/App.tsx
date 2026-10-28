@@ -3,6 +3,7 @@ import type {
   AppInfo,
   Diagnosis,
   EventSummary,
+  FixAction,
   GameStateEvent,
   InstanceSummary,
   SettingsPatch,
@@ -75,6 +76,8 @@ export function App() {
   const [running, setRunning] = useState<{ pid?: number } | null>(null)
   const [exited, setExited] = useState<GameStateEvent | null>(null)
   const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null)
+  const [fixes, setFixes] = useState<FixAction[]>([])
+  const [fixBusy, setFixBusy] = useState<string | null>(null)
   const [update, setUpdate] = useState<UpdateState>({ status: 'idle', current: FALLBACK_INFO.version })
   const [events, setEvents] = useState<EventSummary | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -145,10 +148,15 @@ export function App() {
           setExited(state)
           notify(`游戏已退出：${state.hint ?? ''}${state.crashReport ? '（已生成崩溃报告）' : ''}`)
           void refreshInstalled()
+          const exitedInstance = state.instanceId ?? 'default'
           void window.qdo
-            .diagnose.run(state.instanceId ?? 'default')
+            .diagnose.run(exitedInstance)
             .then((result) => setDiagnosis(result))
             .catch(() => undefined)
+          void window.qdo
+            .diagnose.fixes(exitedInstance)
+            .then((list) => setFixes(list))
+            .catch(() => setFixes([]))
         }
       })
     }
@@ -379,6 +387,30 @@ export function App() {
     [hasApi, notify, refreshInstalled],
   )
 
+  const applyFix = useCallback(
+    async (fix: FixAction) => {
+      if (!hasApi || fixBusy) return
+      const instanceId = instance?.id ?? 'default'
+      setFixBusy(fix.id)
+      try {
+        const result = await window.qdo.diagnose.applyFix(instanceId, fix.id)
+        notify(result.message)
+        await refreshInstalled()
+        const [nextDiagnosis, nextFixes] = await Promise.all([
+          window.qdo.diagnose.run(instanceId),
+          window.qdo.diagnose.fixes(instanceId),
+        ])
+        setDiagnosis(nextDiagnosis)
+        setFixes(nextFixes)
+      } catch (err) {
+        notify(`修复失败：${err instanceof Error ? err.message : String(err)}`)
+      } finally {
+        setFixBusy(null)
+      }
+    },
+    [fixBusy, hasApi, instance?.id, notify, refreshInstalled],
+  )
+
   const canLaunch = Boolean(instance?.installed) && !running && !installing
   const progressPct = progress && progress.total > 0 ? Math.min(100, Math.round((progress.done / progress.total) * 100)) : 0
   const failed = info.failedPlugins
@@ -389,7 +421,7 @@ export function App() {
         <div className="brand">
           <span className="brand-mark">QDOQMC</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P11 · NeoForge</span>
+          <span className="brand-tag">P13 · 一键修复</span>
         </div>
         <div className="titlebar-actions">
           <button type="button" className="ghost" onClick={() => setShowMods(true)} disabled={!instance}>
@@ -557,6 +589,22 @@ export function App() {
                       <li key={suggestion}>{suggestion}</li>
                     ))}
                   </ul>
+                  {fixes.length > 0 ? (
+                    <div className="fix-actions">
+                      {fixes.slice(0, 4).map((fix) => (
+                        <button
+                          key={fix.id}
+                          type="button"
+                          className="ghost tiny"
+                          title={fix.description}
+                          disabled={fixBusy === fix.id}
+                          onClick={() => void applyFix(fix)}
+                        >
+                          {fixBusy === fix.id ? '修复中…' : `一键修复：${fix.label}`}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>

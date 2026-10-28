@@ -34,6 +34,8 @@ export const CH = {
   contentInspect: 'content:inspect',
   conflictAnalyze: 'conflict:analyze',
   diagnoseRun: 'diagnose:run',
+  diagnoseFixes: 'diagnose:fixes',
+  diagnoseApplyFix: 'diagnose:apply-fix',
   loaderFabric: 'loader:fabric',
   loaderNeoForge: 'loader:neoforge',
   pluginsList: 'plugins:list',

@@ -1,0 +1,28 @@
+{
+  "name": "qdoqmc",
+  "productName": "QDOQMC",
+  "version": "0.1.0",
+  "description": "AI 驱动的 Minecraft 启动器",
+  "private": true,
+  "type": "module",
+  "main": "out/main/index.mjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "electron .",
+    "smoke": "electron . --smoke",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.5",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "electron": "43.3.0",
+    "esbuild": "0.28.2",
+    "typescript": "^5.9.0"
+  }
+}

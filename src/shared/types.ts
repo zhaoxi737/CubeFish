@@ -37,10 +37,19 @@ export interface UpdateManifest {
   minSupported?: string
   rollout?: number
   sha256?: string
+  size?: number
   releasedAt?: string
 }
 
-export type UpdateStatus = 'idle' | 'checking' | 'available' | 'uptodate' | 'offline' | 'error'
+export type UpdateStatus =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'ready'
+  | 'uptodate'
+  | 'offline'
+  | 'error'
 
 export interface UpdateState {
   status: UpdateStatus
@@ -52,6 +61,10 @@ export interface UpdateState {
   checkedAt?: number
   minSupported?: string
   mustUpdate?: boolean
+  sha256?: string
+  size?: number
+  /** 已下载待安装的包路径 */
+  stagedPath?: string
 }
 
 export interface InstanceSummary {
@@ -176,7 +189,7 @@ export type InstallStage = 'version' | 'libraries' | 'assets' | 'logging' | 'leg
 
 export interface TaskProgress {
   taskId: string
-  kind: 'install'
+  kind: 'install' | 'update'
   stage: InstallStage | string
   done: number
   total: number

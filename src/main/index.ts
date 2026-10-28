@@ -15,6 +15,8 @@ import {
   runPluginToggleCli,
   runPluginsCli,
   runToolsCli,
+  runUpdateApplyCli,
+  runUpdateDownloadCli,
 } from './cli'
 
 const { app, BrowserWindow, shell } = electron
@@ -38,6 +40,8 @@ const enablePlugin = argValue('enable-plugin')
 const disablePlugin = argValue('disable-plugin')
 const pluginsMode = process.argv.includes('--plugins')
 const toolsMode = process.argv.includes('--tools')
+const updateDownloadMode = process.argv.includes('--update-download')
+const updateApplyMode = process.argv.includes('--update-apply')
 const waitMs = Number(argValue('wait') ?? 60000)
 
 let mainWindow: BrowserWindowType | null = null
@@ -269,6 +273,17 @@ if (!gotLock) {
       if (toolsMode) {
         const code = await runToolsCli(kernel)
         app.exit(code)
+        return
+      }
+      if (updateDownloadMode) {
+        const code = await runUpdateDownloadCli(kernel)
+        app.exit(code)
+        return
+      }
+      if (updateApplyMode) {
+        const code = await runUpdateApplyCli(kernel)
+        // 给更新脚本留出启动时间，再退出进程（脚本会等本进程退出后替换文件）
+        setTimeout(() => app.exit(code), 2000)
         return
       }
       if (launchTarget) {

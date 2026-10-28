@@ -14,6 +14,8 @@ const api: QdoApi = {
   },
   update: {
     check: () => ipcRenderer.invoke(CH.updateCheck),
+    download: () => ipcRenderer.invoke(CH.updateDownload),
+    apply: () => ipcRenderer.invoke(CH.updateApply),
   },
   launch: {
     dryRun: (instanceId) => ipcRenderer.invoke(CH.launchDryRun, instanceId),

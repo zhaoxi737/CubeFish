@@ -37,6 +37,8 @@ export interface QdoApi {
   }
   update: {
     check(): Promise<UpdateState>
+    download(): Promise<UpdateState>
+    apply(): Promise<{ ok: boolean; script?: string; error?: string }>
   }
   launch: {
     dryRun(instanceId?: string): Promise<LaunchDryRun>

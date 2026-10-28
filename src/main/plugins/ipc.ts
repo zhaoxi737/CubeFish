@@ -45,7 +45,7 @@ import type { SettingsService } from './settings'
 import type { TelemetryService } from './telemetry'
 import type { UpdaterService } from './updater'
 
-const { ipcMain } = electron
+const { ipcMain, app } = electron
 
 export type WindowProvider = () => BrowserWindow | null
 
@@ -83,6 +83,7 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     mojang.setProgressSink((progress: TaskProgress) => push(EVT.progress, progress))
     java.setProgressSink((progress: TaskProgress) => push(EVT.progress, progress))
     loaders.setProgressSink((progress: TaskProgress) => push(EVT.progress, progress))
+    updater.setProgressSink((progress: TaskProgress) => push(EVT.progress, progress))
     launch.setGameStateSink((state) => push(EVT.gameState, state))
 
     const handle = <T>(channel: string, handler: (...args: any[]) => T | Promise<T>): void => {
@@ -110,6 +111,14 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle<SettingsShape>(CH.settingsPatch, (patch: SettingsPatch) => settings.patch(patch))
     handle<LogRecord[]>(CH.logsTail, (limit?: number) => log.tail(limit ?? 200))
     handle<UpdateState>(CH.updateCheck, () => updater.check('manual'))
+    handle<UpdateState>(CH.updateDownload, () => updater.download())
+    handle(CH.updateApply, async () => {
+      const result = await updater.apply()
+      if (result.ok) {
+        setTimeout(() => app.quit(), 800)
+      }
+      return result
+    })
     handle<LaunchDryRun>(CH.launchDryRun, (id?: string) => instances.dryRun(id))
     handle<InstanceSummary[]>(CH.instancesList, () => instances.list())
     handle<ChatReply>(CH.chatSend, (text: string) => chat.send(text))

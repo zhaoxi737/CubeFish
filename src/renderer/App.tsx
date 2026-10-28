@@ -40,6 +40,7 @@ const STAGE_LABEL: Record<string, string> = {
   assets: '下载游戏资源',
   legacy: '物化旧版资源',
   logging: '日志配置',
+  download: '下载更新包',
   done: '安装完成',
 }
 
@@ -226,8 +227,33 @@ export function App() {
     notify(result.forced ? '已强制结束游戏进程' : '已请求结束游戏')
   }, [hasApi, notify])
 
-  const installFabric = useCallback(async () => {
-    if (!hasApi || fabricBusy) return
+  const downloadUpdate = useCallback(async () => {
+    if (!hasApi) return
+    notify('开始下载更新…')
+    try {
+      const state = await window.qdo.update.download()
+      setUpdate(state)
+      if (state.status === 'ready') notify('更新包已下载，点击「重启并更新」完成安装')
+      else notify(`更新下载失败：${state.message ?? '未知错误'}`)
+    } catch (err) {
+      notify(`更新下载失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setProgress(null)
+    }
+  }, [hasApi, notify])
+
+  const applyUpdate = useCallback(async () => {
+    if (!hasApi) return
+    try {
+      const result = await window.qdo.update.apply()
+      if (!result.ok) notify(`更新失败：${result.error ?? '未知错误'}`)
+      else notify('正在重启并安装更新…')
+    } catch (err) {
+      notify(`更新失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [hasApi, notify])
+
+  const installFabric = useCallback(async () => {    if (!hasApi || fabricBusy) return
     const gameVersion = instance?.gameVersion ?? selected
     if (!gameVersion || !installed.includes(gameVersion)) {
       notify('先安装对应的原版版本，再装 Fabric')
@@ -293,13 +319,33 @@ export function App() {
       <main className="main">
         <section className="stage">
           <div className="instances-line">
-            <span className="instance-name">{instance?.name ?? '默认实例'}</span>
-            <span className="chip">{instance?.gameVersion ?? instance?.versionId ?? '未选版本'}</span>
+            <span className="instance-name">{instance?.name ?? '默认实例'}</span>            <span className="chip">{instance?.gameVersion ?? instance?.versionId ?? '未选版本'}</span>
             <span className="chip">{instance?.loader ?? 'vanilla'}</span>
             <span className="chip">{instance?.memoryMb ?? 0} MB</span>
             <span className="chip">{instance?.playerName ?? 'Player'}</span>
             <span className="chip subtle">版本隔离</span>
           </div>
+
+          {update.status === 'available' || update.status === 'downloading' || update.status === 'ready' ? (
+            <div className={`update-banner update-${update.status}`}>
+              <div className="update-text">
+                发现新版本 v{update.latest ?? '?'}
+                {update.mustUpdate ? <span className="update-must">必须更新</span> : null}
+                {update.notes ? <span className="update-note">{update.notes}</span> : null}
+              </div>
+              {update.status === 'available' ? (
+                <button type="button" className="primary" onClick={() => void downloadUpdate()}>
+                  下载更新
+                </button>
+              ) : null}
+              {update.status === 'downloading' ? <span className="update-progress">下载中…</span> : null}
+              {update.status === 'ready' ? (
+                <button type="button" className="primary" onClick={() => void applyUpdate()}>
+                  重启并更新
+                </button>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="version-row">
             <select

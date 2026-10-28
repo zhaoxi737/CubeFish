@@ -5,6 +5,8 @@ export const CH = {
   settingsPatch: 'settings:patch',
   logsTail: 'logs:tail',
   updateCheck: 'update:check',
+  updateDownload: 'update:download',
+  updateApply: 'update:apply',
   launchDryRun: 'launch:dry-run',
   instancesList: 'instances:list',
   chatSend: 'chat:send',

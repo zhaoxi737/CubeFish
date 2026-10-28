@@ -1,4 +1,4 @@
-# 开发手册（P0–P6）
+# 开发手册（P0–P7）
 
 ## 1. 环境
 
@@ -45,6 +45,8 @@ electron . --plugins
 electron . --enable-plugin=hello-world
 electron . --tools
 electron . --chat="帮我检查下冲突"
+electron . --update-download
+electron . --update-apply
 ```
 
 > electron 二进制若未随 npm install 下载成功，可用本地缓存解压：
@@ -227,9 +229,24 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 | 更新检查走真实 HTTP | ✅ 本地静态服务 + 设置更新源 → 打包版报「发现新版本 0.2.0（当前 0.1.0）」 |
 | BOM 兼容 | ✅ 修复设置文件带 UTF-8 BOM 导致 JSON 解析失败、设置回退默认值的 bug |
 
-## 13. 已知限制 / 待办
+## 13. P7 验收（已实测，2026-10-29）
 
-- **更新**：只做「检查」，下载与替换未做（`latest.json` 已带 sha256/size，可直接接）。
+| 验收项 | 结果 |
+|---|---|
+| 更新下载（真实 HTTP + 进度事件） | ✅ 打包版 `--update-download` 从本地静态服务拉 138.3MB |
+| sha256 强制校验 | ✅ 清单无 sha256 直接拒绝；下载后不一致即删除文件 |
+| 暂存与状态恢复 | ✅ `%APPDATA%\QDOQMC\updates\staged.json`，重启后仍识别为「已下载」 |
+| 退出后替换 + 自动重启 | ✅ `apply-update.ps1` 等父进程退出 → Expand-Archive → 重新拉起 |
+| 端到端升级 | ✅ 0.1.0 → **0.2.0**：`resources/app/package.json` version 变更、marker 文件出现、进程重启 |
+| 更新失败可恢复 | ✅ 替换前校验 zip 大小；脚本异常写 `apply.log` |
+
+> 踩到的两个 Windows 真坑：
+> 1. `spawn` 的子进程会被 Electron 的 Windows Job 在父进程退出时连带杀掉 → 改用 `explorer.exe` 打开 `.cmd`，把更新脚本放到 explorer 进程树下。
+> 2. `detached: true` + 无控制台时 `powershell.exe` 会立即退出（exit 0）→ 放弃 detached，改由 explorer 启动。
+
+## 14. 已知限制 / 待办
+
+- **更新**：只支持便捷版（解压替换）；NSIS 安装包升级未做。
 - **签名**：便携版未做代码签名，Windows SmartScreen 会提示未知发布者。
 - **插件安全**：主进程内加载（Node 全权限），权限字段是提示性的；真正沙箱未做。
 - **插件市场**：只有本地目录安装，没有远程分发与签名校验。
@@ -241,15 +258,15 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 - **实例**：只有默认实例。
 - **登录**：仅离线（正版 OAuth 未做）。
 
-## 14. 下一步（P7：可分发与补账）
+## 15. 下一步（P8：补账与打磨）
 
-1. **自动更新下载替换**：校验 sha256 → 解压到 `updates/` → 下次启动替换（便携版方案）。
-2. **NSIS 安装包 + 代码签名**（有证书后）。
-3. **插件沙箱化**：utilityProcess + 受限 API + 权限确认弹窗。
-4. **插件市场**：静态 feed + 签名校验。
-5. **补账**：NeoForge/Forge processors、`.mrpack`、资源包/光影 UI、多实例、正版登录。
+1. **NSIS 安装包 + 代码签名**（有证书后）。
+2. **插件沙箱化**：utilityProcess + 受限 API + 权限确认弹窗。
+3. **插件市场**：静态 feed + 签名校验。
+4. **补账**：NeoForge/Forge processors、`.mrpack`、资源包/光影 UI、多实例、正版登录。
+5. **体验**：流式 AI 输出、会话记忆、崩溃一键修复动作。
 
-## 15. 测试用 mock LLM
+## 16. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

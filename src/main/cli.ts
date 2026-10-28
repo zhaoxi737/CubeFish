@@ -17,6 +17,7 @@ import type { LoadersService } from './plugins/loaders'
 import type { MojangService } from './plugins/mojang'
 import type { PluginHostService } from './plugins/plugin-host'
 import type { ToolsService } from './plugins/tools'
+import type { UpdaterService } from './plugins/updater'
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -109,6 +110,35 @@ export async function runToolsCli(kernel: Kernel): Promise<number> {
   const tools = kernel.ctx.get('tools') as ToolsService
   console.log(`TOOLS_RESULT ${JSON.stringify({ count: tools.names().length, names: tools.names() })}`)
   return 0
+}
+
+export async function runUpdateDownloadCli(kernel: Kernel): Promise<number> {
+  const updater = kernel.ctx.get('updater') as UpdaterService
+  let lastPct = -1
+  updater.setProgressSink((p) => {
+    const pct = p.total > 0 ? Math.round((p.done / p.total) * 100) : 0
+    if (pct !== lastPct && pct % 10 === 0) {
+      lastPct = pct
+      console.log(`[update] ${pct}% ${(p.done / 1048576).toFixed(1)}MB / ${(p.total / 1048576).toFixed(1)}MB`)
+    }
+  })
+  const checked = await updater.check('manual')
+  console.log(`UPDATE_CHECK ${JSON.stringify(checked)}`)
+  if (checked.status === 'ready') {
+    console.log(`UPDATE_DOWNLOAD ${JSON.stringify(checked)}`)
+    return 0
+  }
+  if (checked.status !== 'available') return 0
+  const result = await updater.download()
+  console.log(`UPDATE_DOWNLOAD ${JSON.stringify(result)}`)
+  return result.status === 'ready' ? 0 : 1
+}
+
+export async function runUpdateApplyCli(kernel: Kernel): Promise<number> {
+  const updater = kernel.ctx.get('updater') as UpdaterService
+  const result = await updater.apply()
+  console.log(`UPDATE_APPLY ${JSON.stringify(result)}`)
+  return result.ok ? 0 : 1
 }
 
 export async function runLaunchTest(kernel: Kernel, instanceId: string, waitMs: number): Promise<number> {

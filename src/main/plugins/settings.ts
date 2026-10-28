@@ -26,6 +26,7 @@ export const DEFAULT_SETTINGS: SettingsShape = {
   marketUrl: '',
   marketPublicKey: '',
   msClientId: '',
+  curseforgeApiKey: '',
   autoCheckUpdate: true,
 }
 
@@ -105,6 +106,7 @@ function sanitize(input: Partial<SettingsShape>): Partial<SettingsShape> {
   if (typeof input.marketUrl === 'string') out.marketUrl = input.marketUrl.trim()
   if (typeof input.marketPublicKey === 'string') out.marketPublicKey = input.marketPublicKey
   if (typeof input.msClientId === 'string') out.msClientId = input.msClientId.trim()
+  if (typeof input.curseforgeApiKey === 'string') out.curseforgeApiKey = input.curseforgeApiKey.trim()
   if (typeof input.memoryMb === 'number' && Number.isFinite(input.memoryMb)) {
     out.memoryMb = Math.min(32768, Math.max(512, Math.round(input.memoryMb)))
   }

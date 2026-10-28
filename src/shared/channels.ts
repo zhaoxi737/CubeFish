@@ -39,6 +39,8 @@ export const CH = {
   contentRemove: 'content:remove',
   contentModpack: 'content:modpack',
   contentInspect: 'content:inspect',
+  contentCursePack: 'content:curse-pack',
+  contentInspectCurse: 'content:inspect-curse',
   conflictAnalyze: 'conflict:analyze',
   diagnoseRun: 'diagnose:run',
   diagnoseFixes: 'diagnose:fixes',

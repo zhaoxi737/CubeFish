@@ -8,6 +8,8 @@ import type {
   ConflictReport,
   ContentInstallResult,
   ContentVersionInfo,
+  CursePackInspectResult,
+  CursePackInstallResult,
   AccountState,
   AccountSummary,
   DeviceCodeInfo,
@@ -204,6 +206,8 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
       return looksLikeLocation ? content.installModpack(source) : content.installModpackProject(source)
     })
     handle(CH.contentInspect, (source: string) => content.inspectModpack(source))
+    handle(CH.contentCursePack, (source: string) => content.installCursePack(source))
+    handle(CH.contentInspectCurse, (source: string) => content.inspectCursePack(source))
     handle<ConflictReport>(CH.conflictAnalyze, (instanceId?: string) => conflict.analyze(instanceId ?? 'default'))
     handle<Diagnosis>(CH.diagnoseRun, (instanceId?: string) => diagnose.run(instanceId ?? 'default'))
     handle<FixAction[]>(CH.diagnoseFixes, (instanceId?: string) => diagnose.fixes(instanceId ?? 'default'))

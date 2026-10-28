@@ -288,6 +288,21 @@ export async function runRemoveAccountCli(kernel: Kernel, uuid: string): Promise
   return 0
 }
 
+
+export async function runCursePackCli(kernel: Kernel, source: string): Promise<number> {
+  const content = kernel.ctx.get('content') as ContentService
+  const result = await content.installCursePack(source)
+  console.log(`CURSE_PACK_RESULT ${JSON.stringify(result)}`)
+  return result.ok ? 0 : 1
+}
+
+export async function runInspectCursePackCli(kernel: Kernel, source: string): Promise<number> {
+  const content = kernel.ctx.get('content') as ContentService
+  const result = await content.inspectCursePack(source)
+  console.log(`CURSE_INSPECT_RESULT ${JSON.stringify(result)}`)
+  return result.ok ? 0 : 1
+}
+
 export async function runCallToolCli(kernel: Kernel, spec: string): Promise<number> {
   const tools = kernel.ctx.get('tools') as ToolsService
   const [name, ...rest] = spec.split('::')

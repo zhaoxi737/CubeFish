@@ -264,6 +264,29 @@ export function createToolsPlugin(): LauncherPlugin<void> {
     })
 
     register({
+      name: 'install_curse_pack',
+      description: '从本机 .zip 安装 CurseForge 整合包（需要 CurseForge API Key 才能下载清单里的模组；自带 mods 的包不需要）。参数是 zip 路径。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: '整合包 zip 的绝对路径' },
+        },
+        required: ['path'],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const source = str(args.path).trim()
+        if (!source) return { ok: false, summary: '需要整合包 zip 路径' }
+        const result = await content.installCursePack(source)
+        if (!result.ok) return { ok: false, summary: `整合包安装失败：${result.error}` }
+        return {
+          ok: true,
+          summary: `已安装「${result.packName}」到实例 ${result.instanceId}（${result.loader} ${result.mcVersion}，下载 ${result.resolved} 个模组，自带 ${result.bundled} 个）`,
+        }
+      },
+    })
+
+    register({
       name: 'install_forge',
       description: '给当前原版版本安装 Forge 加载器（1.20.1 等经典版本，需先装对应原版）。',
       parameters: EMPTY_PARAMS,

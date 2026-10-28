@@ -27,6 +27,8 @@ import {
   runFixesCli,
   runApplyFixCli,
   runCallToolCli,
+  runCursePackCli,
+  runInspectCursePackCli,
   runAccountCli,
   runLoginMsCli,
   runLogoutCli,
@@ -75,6 +77,8 @@ const forgeTarget = argValue('forge')
 const fixesMode = process.argv.includes('--fixes')
 const applyFixTarget = argValue('apply-fix')
 const callToolTarget = argValue('call-tool')
+const cursePackTarget = argValue('curse-pack')
+const inspectCurseTarget = argValue('inspect-curse-pack')
 const accountMode = process.argv.includes('--account')
 const loginMsMode = process.argv.includes('--login-ms')
 const logoutMode = process.argv.includes('--logout')
@@ -517,6 +521,16 @@ if (!gotLock) {
       }
       if (callToolTarget) {
         const code = await runCallToolCli(kernel, callToolTarget)
+        app.exit(code)
+        return
+      }
+      if (cursePackTarget) {
+        const code = await runCursePackCli(kernel, cursePackTarget)
+        app.exit(code)
+        return
+      }
+      if (inspectCurseTarget) {
+        const code = await runInspectCursePackCli(kernel, inspectCurseTarget)
         app.exit(code)
         return
       }

@@ -1,5 +1,5 @@
 /**
- * 内容服务（P2）：Modrinth 搜索 / 版本匹配 / 依赖求解 / 一键装 mod・资源包・光影。
+ * 内容服务（P2 → P20）：Modrinth 搜索/安装、.mrpack、CurseForge .zip 整合包，以及 mod/资源包/光影一键装。
  * API 参考 docs/RESEARCH-P1-P2.md §4。
  */
 import AdmZip from 'adm-zip'
@@ -10,6 +10,8 @@ import type {
   ContentInstallResult,
   ContentVersionInfo,
   InstalledContent,
+  CursePackInspectResult,
+  CursePackInstallResult,
   ModpackInspectResult,
   ModpackInstallResult,
   SearchHit,
@@ -82,6 +84,10 @@ export interface ContentService {
   installModpackProject(projectId: string, name?: string): Promise<ModpackInstallResult>
   /** 只解析 .mrpack 的索引，不安装（用于预览/测试） */
   inspectModpack(source: string): Promise<ModpackInspectResult>
+  /** 安装 CurseForge .zip 整合包 */
+  installCursePack(source: string, opts?: { name?: string }): Promise<CursePackInstallResult>
+  /** 只解析 CurseForge 整合包（预览：加载器/文件数/是否需要 API Key） */
+  inspectCursePack(source: string): Promise<CursePackInspectResult>
   /** 下载任意已解析的版本文件到实例对应目录（含依赖递归） */
   installVersion(instanceId: string, version: ContentVersionInfo, kind: ContentKind, depth?: number): Promise<string[]>
 }
@@ -597,6 +603,216 @@ export function createContentPlugin(): LauncherPlugin<void> {
       }
     }
 
+    /* ---------- CurseForge .zip 整合包 ---------- */
+
+    interface CurseManifest {
+      name?: string
+      version?: string
+      minecraft?: { version?: string; modLoaders?: { id?: string; primary?: boolean }[] }
+      files?: { projectID?: number; fileID?: number; required?: boolean }[]
+      overrides?: string
+    }
+
+    interface CurseFileInfo {
+      fileName?: string
+      downloadUrl?: string
+      displayName?: string
+    }
+
+    const CF_API = (): string => (process.env.QDOQMC_CF_API_BASE || 'https://api.curseforge.com').replace(/\/+$/, '')
+    const CF_KEY = (): string => process.env.QDOQMC_CF_API_KEY || settings.get('curseforgeApiKey') || ''
+
+    function parseCurseLoader(id: string | undefined): { loader: string; version: string } | undefined {
+      const match = /^(forge|neoforge|fabric|quilt)-(.+)$/i.exec(id ?? '')
+      if (!match) return undefined
+      return { loader: match[1].toLowerCase(), version: match[2] }
+    }
+
+    async function cfFileInfo(projectId: number, fileId: number): Promise<CurseFileInfo> {
+      const key = CF_KEY()
+      if (!key) {
+        throw new Error('缺少 CurseForge API Key（设置 → CurseForge API Key，或环境变量 QDOQMC_CF_API_KEY）')
+      }
+      const res = await fetch(`${CF_API()}/v1/mods/${projectId}/files/${fileId}`, {
+        headers: { 'x-api-key': key, accept: 'application/json' },
+        signal: AbortSignal.timeout(20_000),
+      })
+      if (!res.ok) throw new Error(`CurseForge 文件解析失败（HTTP ${res.status}）`)
+      const data = (await res.json()) as { data?: CurseFileInfo }
+      if (!data.data?.fileName || !data.data?.downloadUrl) throw new Error('CurseForge 没有返回文件下载地址（可能被作者禁用）')
+      return data.data
+    }
+
+    function readCurseManifest(buffer: Buffer): { manifest: CurseManifest; zip: AdmZip } {
+      const zip = new AdmZip(buffer)
+      const entry = zip.getEntry('manifest.json')
+      if (!entry) throw new Error('不是 CurseForge 整合包（缺 manifest.json）')
+      const manifest = JSON.parse(entry.getData().toString('utf8')) as CurseManifest
+      if (!manifest.minecraft?.version) throw new Error('manifest.json 没有声明 minecraft.version')
+      return { manifest, zip }
+    }
+
+    function countBundledMods(zip: AdmZip): number {
+      return zip.getEntries().filter((entry) => !entry.isDirectory && /^mods\/.+\.jar$/i.test(entry.entryName)).length
+    }
+
+    async function inspectCursePack(source: string): Promise<CursePackInspectResult> {
+      try {
+        const { manifest, zip } = readCurseManifest(await readSource(source))
+        const primary = manifest.minecraft?.modLoaders?.find((item) => item.primary) ?? manifest.minecraft?.modLoaders?.[0]
+        const parsed = parseCurseLoader(primary?.id)
+        const bundled = countBundledMods(zip)
+        return {
+          ok: true,
+          name: manifest.name,
+          mcVersion: manifest.minecraft?.version,
+          loader: parsed?.loader,
+          loaderVersion: parsed?.version,
+          fileCount: manifest.files?.length ?? 0,
+          bundledMods: bundled,
+          needsApiKey: (manifest.files?.length ?? 0) > 0 && bundled === 0 && !CF_KEY(),
+        }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+
+    async function installCursePack(source: string, opts?: { name?: string }): Promise<CursePackInstallResult> {
+      try {
+        const { manifest, zip } = readCurseManifest(await readSource(source))
+        const mc = manifest.minecraft?.version as string
+        const primary = manifest.minecraft?.modLoaders?.find((item) => item.primary) ?? manifest.minecraft?.modLoaders?.[0]
+        const parsed = parseCurseLoader(primary?.id)
+        if (!parsed) return { ok: false, error: `无法识别的加载器：${primary?.id ?? '（未声明）'}` }
+        if (parsed.loader === 'quilt') return { ok: false, error: '暂不支持 Quilt 整合包' }
+
+        const instance = instances.create(opts?.name ?? manifest.name ?? 'CF 整合包')
+        instances.setActive(instance.id)
+
+        let loaderName = 'vanilla'
+        let versionId = mc
+        if (parsed.loader === 'forge') {
+          const result = await loaders.installForge(mc, parsed.version)
+          if (!result.ok || !result.versionId) throw new Error(`Forge 安装失败：${result.error ?? '未知错误'}`)
+          versionId = result.versionId
+          loaderName = 'forge'
+        } else if (parsed.loader === 'neoforge') {
+          const result = await loaders.installNeoForge(mc, parsed.version)
+          if (!result.ok || !result.versionId) throw new Error(`NeoForge 安装失败：${result.error ?? '未知错误'}`)
+          versionId = result.versionId
+          loaderName = 'neoforge'
+        } else {
+          const result = await loaders.installFabric(mc)
+          if (!result.ok || !result.versionId) throw new Error(`Fabric 安装失败：${result.error ?? '未知错误'}`)
+          versionId = result.versionId
+          loaderName = 'fabric'
+        }
+        instances.setVersion(instance.id, versionId, mc, mc, loaderName)
+
+        const modsDir = path.join(instance.gameDir, 'mods')
+        await ensureDir(modsDir)
+        const added: InstalledContent[] = []
+        const addEntry = (fileName: string, projectId: string, versionNumber: string) => {
+          added.push({
+            projectId,
+            versionId: versionNumber,
+            versionNumber,
+            fileName,
+            kind: 'mod',
+            sha1: '',
+            installedAt: Date.now(),
+          })
+        }
+
+        // 1) 包内自带的 mods（离线包）
+        let bundled = 0
+        for (const entry of zip.getEntries()) {
+          if (entry.isDirectory) continue
+          const name = entry.entryName.replace(/\\/g, '/')
+          if (!/^mods\/.+\.jar$/i.test(name)) continue
+          const fileName = name.slice('mods/'.length)
+          writeFileSync(path.join(modsDir, ...fileName.split('/')), entry.getData())
+          addEntry(fileName, `curse:bundled:${fileName}`, 'bundled')
+          bundled += 1
+        }
+
+        // 2) manifest 里的文件（需要 API Key 解析文件名与下载地址）
+        const files = manifest.files ?? []
+        let resolved = 0
+        if (files.length > 0) {
+          if (!CF_KEY() && bundled === 0) {
+            throw new Error('这个整合包只带文件清单（没有内置 mods），需要配置 CurseForge API Key 才能下载')
+          }
+          for (const file of files) {
+            if (file.required === false) continue
+            if (!file.projectID || !file.fileID) continue
+            if (!CF_KEY()) continue
+            const info = await cfFileInfo(file.projectID, file.fileID)
+            const dest = path.join(modsDir, info.fileName as string)
+            await new Downloader({ cacheDir: paths.downloads, concurrency: 1 }).fetchOne({
+              url: info.downloadUrl as string,
+              dest,
+              label: info.fileName as string,
+            })
+            addEntry(info.fileName as string, `curse:${file.projectID}`, String(file.fileID))
+            resolved += 1
+            if (resolved >= 200) break
+          }
+        }
+
+        // 3) overrides 覆盖目录
+        const overridesPrefix = `${(manifest.overrides ?? 'overrides').replace(/\/+$/, '')}/`
+        let overrides = 0
+        for (const entry of zip.getEntries()) {
+          if (entry.isDirectory) continue
+          const name = entry.entryName.replace(/\\/g, '/')
+          if (!name.startsWith(overridesPrefix)) continue
+          const relative = name.slice(overridesPrefix.length)
+          if (!relative || relative.includes('..')) continue
+          const dest = path.join(instance.gameDir, ...relative.split('/'))
+          await ensureDir(path.dirname(dest))
+          writeFileSync(dest, entry.getData())
+          overrides += 1
+        }
+
+        const list = await installed(instance.id)
+        list.push(...added)
+        await saveInstalled(instance.id, list)
+
+        telemetry.record('content:curse-pack', {
+          instanceId: instance.id,
+          mc,
+          loader: loaderName,
+          resolved,
+          bundled,
+          overrides,
+        })
+        log.info('content', 'CurseForge 整合包安装完成', {
+          pack: manifest.name,
+          instanceId: instance.id,
+          resolved,
+          bundled,
+          overrides,
+        })
+        return {
+          ok: true,
+          packName: manifest.name ?? instance.name,
+          instanceId: instance.id,
+          mcVersion: mc,
+          loader: loaderName,
+          loaderVersion: parsed.version,
+          resolved,
+          bundled,
+          overrides,
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        log.error('content', 'CurseForge 整合包安装失败', { error: message })
+        telemetry.record('content:curse-pack:error', { error: message })
+        return { ok: false, error: message }
+      }
+    }
+
     ctx.provide('content', {
       search,
       versions,
@@ -608,6 +824,8 @@ export function createContentPlugin(): LauncherPlugin<void> {
       installModpack,
       installModpackProject,
       inspectModpack,
+      installCursePack,
+      inspectCursePack,
       installVersion,
     } satisfies ContentService)
 

@@ -8,6 +8,8 @@ import type {
   ConflictReport,
   ContentInstallResult,
   ContentVersionInfo,
+  CursePackInspectResult,
+  CursePackInstallResult,
   Diagnosis,
   EntitlementItem,
   FixAction,
@@ -81,6 +83,8 @@ export interface QdoApi {
     remove(instanceId: string, fileName: string): Promise<{ ok: boolean; error?: string }>
     installModpack(source: string): Promise<ModpackInstallResult>
     inspectModpack(source: string): Promise<ModpackInspectResult>
+    installCursePack(source: string): Promise<CursePackInstallResult>
+    inspectCursePack(source: string): Promise<CursePackInspectResult>
   }
   conflict: {
     analyze(instanceId?: string): Promise<ConflictReport>

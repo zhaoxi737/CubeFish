@@ -146,6 +146,8 @@ export interface SettingsShape {
   marketPublicKey: string
   /** 微软登录的 Azure 应用 client_id；留空 = 只能离线登录 */
   msClientId: string
+  /** CurseForge API Key（仅本机，用于解析整合包文件）；留空 = 只能装自带 mods 的包 */
+  curseforgeApiKey: string
   /** 启动时自动检查更新 */
   autoCheckUpdate: boolean
 }
@@ -333,6 +335,32 @@ export interface ModpackInstallResult {
   files?: number
   bytes?: number
   overrides?: number
+  error?: string
+}
+
+export interface CursePackInstallResult {
+  ok: boolean
+  packName?: string
+  instanceId?: string
+  mcVersion?: string
+  loader?: string
+  loaderVersion?: string
+  resolved?: number
+  bundled?: number
+  overrides?: number
+  error?: string
+}
+
+export interface CursePackInspectResult {
+  ok: boolean
+  name?: string
+  mcVersion?: string
+  loader?: string
+  loaderVersion?: string
+  fileCount?: number
+  bundledMods?: number
+  /** 没有 API Key 且包内没带 mods 时，需要用户填 Key 才能装 */
+  needsApiKey?: boolean
   error?: string
 }
 

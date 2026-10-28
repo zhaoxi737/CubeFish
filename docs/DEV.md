@@ -455,7 +455,24 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 > 实测命令：`electron . --call-tool=sneak_probe`（临时探测插件），结果：
 > `{"outside":"DENIED:ERR_ACCESS_DENIED","own":"READ_OK","write":"DENIED:ERR_ACCESS_DENIED","child":"DENIED:ERR_ACCESS_DENIED"}`
 
-## 26. 已知限制 / 待办
+## 26. P20 验收（已实测，2026-10-29）：CurseForge .zip 整合包
+
+| 验收项 | 结果 |
+|---|---|
+| manifest 解析 | ✅ `CURSE_INSPECT_RESULT {"name":"CF 测试包","mcVersion":"1.20.1","loader":"forge","loaderVersion":"47.4.28","fileCount":1,"bundledMods":0,"needsApiKey":true}` |
+| 无 Key + 无内置 mods | ✅ 明确报错：「这个整合包只带文件清单（没有内置 mods），需要配置 CurseForge API Key 才能下载」 |
+| 有 Key：解析 fileID → 下载 | ✅ mock API 返回文件名/下载地址 → 下载到实例 `mods/cf-test-mod.jar`（`resolved:1`） |
+| 自带 mods 的离线包 | ✅ 无需 Key，`bundled:1` 直接复制进实例 |
+| overrides 覆盖 | ✅ `overrides/config/cf-marker.txt` 写入实例 |
+| content.json | ✅ 记录 `{"projectId":"curse:111","versionId":"222","fileName":"cf-test-mod.jar"}` |
+| 加载器安装 | ✅ 复用 `installForge/installNeoForge/installFabric`（按 manifest 的 `forge-47.4.28` 精确版本） |
+| CLI / AI / 设置 | ✅ `--curse-pack=<zip>`、`--inspect-curse-pack=<zip>`、工具 `install_curse_pack`、设置项 `curseforgeApiKey` |
+| mock CF API | ✅ `scripts/mock-cf.mjs`（fileID 解析 + CDN 下载） |
+
+> 真实使用需要用户在 CurseForge 申请免费 API Key（填设置即可）；包内自带 `mods/` 的离线包不需要 Key。
+> 与 Modrinth 的 `.mrpack` 共用同一套「新建实例 → 装加载器 → 落盘 → overrides」流程。
+
+## 27. 已知限制 / 待办
 
 - **更新**：只支持便携版（解压替换）；NSIS 安装包升级未做。
 - **签名**：便携版未做代码签名，Windows SmartScreen 会提示未知发布者。
@@ -463,20 +480,20 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 - **插件市场**：feed 与签名链路已通；缺少审核、版本更新检测、分类与评分。
 - **慢网**：本机到 Mojang 单连接仅 ~50KB/s，并发 16 约 200KB/s，432MB 资源耗时 18 分钟。镜像回退待接入。
 - **加载器**：Fabric、NeoForge（1.20.2+）、Forge（1.20.1 实测）已通并可启动；更老的 Forge（1.12.2 等）未验证，Quilt 未做。Forge/NeoForge 安装需 launcher_profiles.json（缺失时自动创建）。
-- **整合包**：`.mrpack` 已通（Fabric / NeoForge / Forge / 原版）；Quilt 明确报错；CurseForge `.zip` 整合包不支持。
+- **整合包**：`.mrpack` 与 CurseForge `.zip` 均支持（Fabric / NeoForge / Forge / 原版）；Quilt 明确报错；CF 需自备 API Key（离线包免 Key）。
 - **AI**：真实模型调用需用户自填 Key（本机验证用 mock LLM）；已支持流式输出、会话记忆与崩溃一键修复；多会话/跨实例记忆未做。
 - **老版本**：legacy/pre-1.6 资源物化已实现但未实测；Java 8 运行时自动下载未实测。
 - **实例**：支持创建/切换/删除；实例复制、导入导出、图标未做。
 - **登录**：微软正版登录已通（设备码 + Xbox Live + Minecraft Services，mock 全链路验证）；需要用户自备 Azure client_id；令牌用 DPAPI 加密存本机，支持多账号切换。
 
-## 27. 下一步（P20：补账）
+## 28. 下一步（P21：补账）
 
 1. **插件网络白名单**：Node permission model 不管网络，考虑 vm/代理层限制 outbound。
-2. **CurseForge `.zip` 整合包**：解析 manifest.json + 从 edge CDN 拉取 mods。
+2. **整合包 UI**：文件选择器 + 安装前预览（当前只有 CLI/AI 入口）。
 3. **账号头像/到期提醒** 与多实例独立账号绑定。
 4. **体验**：多会话记忆、更多修复动作（切 Java/换加载器）、安装包体积优化。
 
-## 28. 测试用 mock LLM
+## 29. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

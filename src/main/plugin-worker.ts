@@ -19,11 +19,25 @@ interface ParentPort {
   postMessage(message: SandboxWorkerMessage): void
 }
 
-const parentPort = (process as unknown as { parentPort?: ParentPort }).parentPort
-if (!parentPort) {
-  throw new Error('plugin worker 必须在 utilityProcess 内运行（缺少 process.parentPort）')
+/**
+ * 传输层：兼容两种宿主。
+ *  - Electron utilityProcess：process.parentPort.on('message', (e) => e.data)
+ *  - child_process.fork（ELECTRON_RUN_AS_NODE + Node permission model）：process.on('message')
+ */
+const electronPort = (process as unknown as { parentPort?: ParentPort }).parentPort
+const nodeIpc = process as unknown as {
+  send?: (message: unknown) => boolean
+  on: (event: 'message', listener: (message: SandboxHostMessage) => void) => void
 }
-const port: ParentPort = parentPort
+
+const port: ParentPort = electronPort ?? {
+  on: (_event, listener) => {
+    nodeIpc.on('message', (message) => listener({ data: message }))
+  },
+  postMessage: (message) => {
+    nodeIpc.send?.(message)
+  },
+}
 
 const send = (message: SandboxWorkerMessage): void => port.postMessage(message)
 

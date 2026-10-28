@@ -432,11 +432,34 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 > 加密用 Electron `safeStorage`（Windows 上是 DPAPI，绑定当前 Windows 用户）。换个 Windows 用户/机器就解不开，这是预期行为。
 > CLI：`--accounts` / `--switch-account=<uuid>` / `--remove-account=<uuid>`。
 
-## 25. 已知限制 / 待办
+## 25. P19 验收（已实测，2026-10-29）：插件能力沙箱（Node permission model）
+
+| 验收项 | 结果 |
+|---|---|
+| worker 以 Node 身份启动 | ✅ `child_process.fork` + `ELECTRON_RUN_AS_NODE=1` + `--permission` |
+| 越权读盘 | ✅ `fs.readFileSync('C:/Windows/win.ini')` → `DENIED:ERR_ACCESS_DENIED` |
+| 读自己插件目录 | ✅ `plugin.json` → `READ_OK`（`--allow-fs-read=<插件目录>`） |
+| 写盘 | ✅ `fs.writeFileSync(...)` → `DENIED:ERR_ACCESS_DENIED`（未开 allow-fs-write） |
+| 起子进程 | ✅ `child_process.execSync` → `DENIED:ERR_ACCESS_DENIED` |
+| 正常插件回归 | ✅ hello-world 工具/命令照常工作 |
+| 崩溃隔离 | ✅ `process.exit(3)` → 「插件进程已退出（code 3），已隔离」，宿主存活 |
+| 打包版 | ✅ 打包后 `--call-tool=plugin_hello` 通过（fork 子进程 PID 22228） |
+
+> 机制：插件 worker 现在由 `child_process.fork` 启动，参数带
+> `--permission --allow-fs-read=<插件目录> --allow-fs-read=<worker 目录>`；
+> 读插件自身文件可以，越权读/写盘、child_process、worker_threads 全部被 Node 拒绝。
+>
+> 仍未覆盖：**网络**。Node permission model 目前不限制 net，插件联网能力仍靠 manifest 的 `net` 权限声明与来源审核。
+> 另外打包时若以后关闭 RunAsNode fuse，需要回退到 utilityProcess 模式。
+>
+> 实测命令：`electron . --call-tool=sneak_probe`（临时探测插件），结果：
+> `{"outside":"DENIED:ERR_ACCESS_DENIED","own":"READ_OK","write":"DENIED:ERR_ACCESS_DENIED","child":"DENIED:ERR_ACCESS_DENIED"}`
+
+## 26. 已知限制 / 待办
 
 - **更新**：只支持便携版（解压替换）；NSIS 安装包升级未做。
 - **签名**：便携版未做代码签名，Windows SmartScreen 会提示未知发布者。
-- **插件安全**：已改为 utilityProcess 进程隔离 + 受限桥接 API（P15）；进程内仍具备 Node 能力，capability 级沙箱（fs/net 白名单）未做。
+- **插件安全**：fork 子进程 + Node permission model（P19）：fs 读白名单到插件目录、禁止写盘/child_process；**网络仍开放**，依赖 manifest 的 net 声明与审核。
 - **插件市场**：feed 与签名链路已通；缺少审核、版本更新检测、分类与评分。
 - **慢网**：本机到 Mojang 单连接仅 ~50KB/s，并发 16 约 200KB/s，432MB 资源耗时 18 分钟。镜像回退待接入。
 - **加载器**：Fabric、NeoForge（1.20.2+）、Forge（1.20.1 实测）已通并可启动；更老的 Forge（1.12.2 等）未验证，Quilt 未做。Forge/NeoForge 安装需 launcher_profiles.json（缺失时自动创建）。
@@ -446,14 +469,14 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 - **实例**：支持创建/切换/删除；实例复制、导入导出、图标未做。
 - **登录**：微软正版登录已通（设备码 + Xbox Live + Minecraft Services，mock 全链路验证）；需要用户自备 Azure client_id；令牌用 DPAPI 加密存本机，支持多账号切换。
 
-## 26. 下一步（P19：补账）
+## 27. 下一步（P20：补账）
 
-1. **插件能力白名单**：在 Node permission model / vm 层限制 fs/net，把「进程隔离」升级为「capability 沙箱」。
+1. **插件网络白名单**：Node permission model 不管网络，考虑 vm/代理层限制 outbound。
 2. **CurseForge `.zip` 整合包**：解析 manifest.json + 从 edge CDN 拉取 mods。
 3. **账号头像/到期提醒** 与多实例独立账号绑定。
 4. **体验**：多会话记忆、更多修复动作（切 Java/换加载器）、安装包体积优化。
 
-## 27. 测试用 mock LLM
+## 28. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

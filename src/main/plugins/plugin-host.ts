@@ -12,7 +12,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import path from 'node:path'
-import { utilityProcess, type UtilityProcess } from 'electron'
+import { fork, type ChildProcess } from 'node:child_process'
 import type { PluginInfo, PluginManifest, PluginPermission } from '../../shared/types'
 import type { SandboxCommandDef, SandboxToolDef, SandboxWorkerMessage } from '../../shared/plugin-sandbox'
 import { writeJsonAtomic, stripBom } from '../lib/fsx'
@@ -47,7 +47,7 @@ interface LoadedPlugin {
   dir: string
   tools: string[]
   commands: string[]
-  worker?: UtilityProcess
+  worker?: ChildProcess
   pid?: number
   pending: Map<number, PendingCall>
   nextCallId: number
@@ -75,6 +75,13 @@ export interface PluginHostService {
   init(): Promise<PluginInfo[]>
   /** 应用退出前调用：把 worker 退出视为预期，避免误报崩溃 */
   beginShutdown(): void
+}
+
+
+/** fork 出来的子进程带 IPC；统一用一个宽松签名的封装，避免 unknown 类型噪音 */
+function postToWorker(worker: ChildProcess | undefined, message: unknown): void {
+  if (!worker) return
+  ;(worker as unknown as { send(payload: unknown): boolean }).send(message)
 }
 
 function parseManifest(raw: unknown): PluginManifest | undefined {
@@ -154,7 +161,7 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
 
     const send = (state: LoadedPlugin, message: unknown): void => {
       try {
-        state.worker?.postMessage(message)
+        postToWorker(state.worker, message)
       } catch (err) {
         log.warn('plugin-host', '向沙箱发送消息失败', { id: state.manifest.id, error: String(err) })
       }
@@ -295,14 +302,14 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
       state.worker = undefined
       if (!worker) return
       try {
-        worker.postMessage({ type: 'dispose' })
+        postToWorker(worker, { type: 'dispose' })
       } catch {
         /* 忽略 */
       }
       await new Promise<void>((resolve) => {
         const timer = setTimeout(() => {
           try {
-            worker.kill()
+            worker.kill('SIGKILL')
           } catch {
             /* 忽略 */
           }
@@ -347,9 +354,12 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
       })
       loaded.set(id, state)
 
-      const child = utilityProcess.fork(workerPath, [entry.dir, entry.manifest.main], {
-        serviceName: `qdoqmc-plugin-${id}`,
-        stdio: 'pipe',
+      // 能力沙箱：worker 以 Node 身份启动（ELECTRON_RUN_AS_NODE），开启 permission model，
+      // 只允许读插件自己的目录，禁止写盘、禁止 child_process/worker_threads。
+      const child = fork(workerPath, [entry.dir, entry.manifest.main], {
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+        execArgv: ['--permission', `--allow-fs-read=${entry.dir}`, `--allow-fs-read=${path.dirname(workerPath)}`],
+        stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       })
       state.worker = child
       state.pid = child.pid
@@ -386,7 +396,7 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
         state.worker = undefined
       })
 
-      child.postMessage({
+      postToWorker(child, {
         type: 'init',
         apiVersion: API_VERSION,
         plugin: { id, version: entry.manifest.version },

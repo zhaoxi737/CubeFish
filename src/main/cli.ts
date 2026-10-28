@@ -303,6 +303,16 @@ export async function runInspectCursePackCli(kernel: Kernel, source: string): Pr
   return result.ok ? 0 : 1
 }
 
+
+export async function runGameLogCli(kernel: Kernel, instanceId?: string): Promise<number> {
+  const diagnose = kernel.ctx.get('diagnose') as DiagnoseService
+  const instances = kernel.ctx.get('instances') as InstancesService
+  const target = instanceId || instances.active().id
+  const result = diagnose.gameLog(target, 200)
+  console.log(`GAME_LOG_RESULT ${JSON.stringify({ instanceId: target, file: result.file, lineCount: result.lines.length, error: result.error, tail: result.lines.slice(-5) })}`)
+  return result.error ? 1 : 0
+}
+
 export async function runCallToolCli(kernel: Kernel, spec: string): Promise<number> {
   const tools = kernel.ctx.get('tools') as ToolsService
   const [name, ...rest] = spec.split('::')

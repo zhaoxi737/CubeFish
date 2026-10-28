@@ -57,6 +57,7 @@ const api: QdoApi = {
     run: (instanceId) => ipcRenderer.invoke(CH.diagnoseRun, instanceId),
     fixes: (instanceId) => ipcRenderer.invoke(CH.diagnoseFixes, instanceId),
     applyFix: (instanceId, fixId) => ipcRenderer.invoke(CH.diagnoseApplyFix, instanceId, fixId),
+    gameLog: (instanceId, lines) => ipcRenderer.invoke(CH.diagGameLog, instanceId, lines),
   },
   loaders: {
     fabric: (gameVersion) => ipcRenderer.invoke(CH.loaderFabric, gameVersion),

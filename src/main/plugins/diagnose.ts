@@ -20,6 +20,8 @@ export interface DiagnoseService {
   /** 根据最近的崩溃归因给出可执行的一键修复动作 */
   fixes(instanceId?: string): Promise<FixAction[]>
   applyFix(instanceId: string, fixId: string): Promise<FixResult>
+  /** 读游戏日志尾部（latest.log 或最新 game-*.log） */
+  gameLog(instanceId?: string, lines?: number): { file?: string; lines: string[]; error?: string }
 }
 
 interface Signature {
@@ -367,7 +369,25 @@ export function createDiagnosePlugin(): LauncherPlugin<void> {
       }
     }
 
-    ctx.provide('diagnose', { run, analyzeText, fixes, applyFix } satisfies DiagnoseService)
+    function gameLog(instanceId = 'default', lines = 300): { file?: string; lines: string[]; error?: string } {
+      const instance = instances.get(instanceId)
+      if (!instance) return { lines: [], error: '实例不存在' }
+      const logDir = path.join(instance.gameDir, 'logs')
+      const file = newestFile(logDir, (name) => name === 'latest.log' || name.startsWith('game-')) 
+      if (!file) return { lines: [], error: '还没有游戏日志（先启动一次游戏）' }
+      try {
+        const full = path.join(logDir, file)
+        const size = statSync(full).size
+        const buffer = readFileSync(full)
+        const chunk = size > 256 * 1024 ? buffer.subarray(size - 256 * 1024) : buffer
+        const all = chunk.toString('utf8').split(/\r?\n/)
+        return { file, lines: all.slice(-Math.max(10, lines)) }
+      } catch (err) {
+        return { lines: [], error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+
+    ctx.provide('diagnose', { run, analyzeText, fixes, applyFix, gameLog } satisfies DiagnoseService)
   })
 }
 

@@ -47,6 +47,7 @@ export const CH = {
   diagnoseRun: 'diagnose:run',
   diagnoseFixes: 'diagnose:fixes',
   diagnoseApplyFix: 'diagnose:apply-fix',
+  diagGameLog: 'diag:game-log',
   loaderFabric: 'loader:fabric',
   loaderNeoForge: 'loader:neoforge',
   loaderForge: 'loader:forge',

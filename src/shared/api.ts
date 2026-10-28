@@ -96,6 +96,7 @@ export interface QdoApi {
     run(instanceId?: string): Promise<Diagnosis>
     fixes(instanceId?: string): Promise<FixAction[]>
     applyFix(instanceId: string, fixId: string): Promise<FixResult>
+    gameLog(instanceId?: string, lines?: number): Promise<{ file?: string; lines: string[]; error?: string }>
   }
   loaders: {
     fabric(gameVersion: string): Promise<FabricInstallResult>

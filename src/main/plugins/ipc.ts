@@ -215,6 +215,7 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle<Diagnosis>(CH.diagnoseRun, (instanceId?: string) => diagnose.run(instanceId ?? 'default'))
     handle<FixAction[]>(CH.diagnoseFixes, (instanceId?: string) => diagnose.fixes(instanceId ?? 'default'))
     handle<FixResult>(CH.diagnoseApplyFix, (instanceId: string, fixId: string) => diagnose.applyFix(instanceId, fixId))
+    handle(CH.diagGameLog, (instanceId?: string, lines?: number) => diagnose.gameLog(instanceId ?? 'default', lines ?? 300))
     handle<PluginInfo[]>(CH.pluginsList, () => pluginHost.list())
     handle<PluginInfo>(CH.pluginsToggle, (id: string, granted: boolean) => pluginHost.setGranted(id, granted))
     handle<PluginInfo>(CH.pluginsReload, (id: string) => pluginHost.reload(id))

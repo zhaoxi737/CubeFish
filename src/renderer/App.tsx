@@ -443,7 +443,7 @@ export function App() {
         <div className="brand">
           <span className="brand-mark">QDOQMC</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P21 · 整合包 UI</span>
+          <span className="brand-tag">P22 · 游戏日志</span>
         </div>
         <div className="titlebar-actions">
           <button type="button" className="ghost" onClick={() => setShowMods(true)} disabled={!instance}>
@@ -710,7 +710,7 @@ export function App() {
       {showSettings && settings ? (
         <SettingsDialog settings={settings} onClose={() => setShowSettings(false)} onSave={onSaveSettings} onNotify={notify} />
       ) : null}
-      {showLogs ? <LogDrawer onClose={() => setShowLogs(false)} /> : null}
+      {showLogs ? <LogDrawer onClose={() => setShowLogs(false)} instanceId={instance?.id} /> : null}
     </div>
   )
 }

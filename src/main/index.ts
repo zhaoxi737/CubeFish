@@ -28,6 +28,7 @@ import {
   runFixesCli,
   runApplyFixCli,
   runCallToolCli,
+  runGameLogCli,
   runCursePackCli,
   runInspectCursePackCli,
   runAccountCli,
@@ -78,6 +79,7 @@ const forgeTarget = argValue('forge')
 const fixesMode = process.argv.includes('--fixes')
 const applyFixTarget = argValue('apply-fix')
 const callToolTarget = argValue('call-tool')
+const gameLogTarget = argValue('game-log')
 const cursePackTarget = argValue('curse-pack')
 const inspectCurseTarget = argValue('inspect-curse-pack')
 const accountMode = process.argv.includes('--account')
@@ -361,6 +363,49 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
         `JSON.stringify({ issues: document.querySelectorAll('.conflict-item').length, text: document.querySelector('.conflict-head')?.textContent ?? '' })`,
       )) as string
 
+      console.log('SMOKE_STEP gamelog-start')
+      // 游戏日志：写一份假的 latest.log，打开日志抽屉 → 游戏日志 tab → 截图
+      try {
+        const logDir = path.join(process.env.APPDATA ?? '', 'QDOQMC', 'instances', 'default', '.minecraft', 'logs')
+        mkdirSync(logDir, { recursive: true })
+        writeFileSync(
+          path.join(logDir, 'latest.log'),
+          [
+            '[00:00:01] [main/INFO]: Setting user: Player',
+            '[00:00:02] [main/INFO]: Backend library: LWJGL version 3.3.3',
+            '[00:00:03] [Render thread/INFO]: Reloading ResourceManager: vanilla',
+            '[00:00:04] [Worker-Main-1/WARN]: Failed to load texture atlas for testing',
+            '[00:00:05] [Render thread/ERROR]: java.lang.RuntimeException: smoke game log line',
+            '[00:00:06] [Render thread/INFO]: OpenAL initialized on device OpenAL Soft',
+            '[00:00:07] [main/INFO]: Sound engine started',
+          ].join('\n'),
+        )
+      } catch (err) {
+        console.log('GAMELOG_SETUP_ERROR', String(err))
+      }
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.titlebar-actions button')].find((b) => b.textContent?.trim() === '日志'); btn?.click(); return 'log-open' })()`,
+      )
+      await wait(900)
+      await win.webContents.executeJavaScript(
+        `(() => { const tab = [...document.querySelectorAll('.kind-tab')].find((b) => b.textContent?.trim() === '游戏日志'); tab?.click(); return 'game-tab' })()`,
+      )
+      await wait(1200)
+      const gameLogShot = await shot('smoke-gamelog.png')
+      const gameLogInfo = (await win.webContents.executeJavaScript(
+        `JSON.stringify({
+          file: document.querySelector('.log-gamebar')?.textContent ?? '',
+          rows: document.querySelectorAll('.log-row.log-game').length,
+          errors: document.querySelectorAll('.log-row.log-error.log-game').length,
+          sample: [...document.querySelectorAll('.log-row.log-game .log-msg')].slice(-2).map((el) => el.textContent ?? '')
+        })`,
+      )) as string
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.drawer .drawer-actions button')].find((b) => b.textContent?.trim() === '关闭'); btn?.click(); return 'closed' })()`,
+      )
+      await wait(500)
+
+      console.log('SMOKE_STEP gamelog-done')
       // 本机整合包：生成一个自带 mods 的 CurseForge 包，走 UI「预览 → 安装」
       const packPath = path.join(dir, 'smoke-pack.zip')
       try {
@@ -371,10 +416,10 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
             JSON.stringify({
               manifestType: 'minecraftModpack',
               manifestVersion: 1,
-              name: 'Smoke CF 包',
+              name: 'Smoke Fabric 包',
               version: '1.0.0',
               author: 'QDOQMC',
-              minecraft: { version: '1.20.1', modLoaders: [{ id: 'forge-47.4.28', primary: true }] },
+              minecraft: { version: '1.21.11', modLoaders: [{ id: 'fabric-0.20.1', primary: true }] },
               files: [],
               overrides: 'overrides',
             }),
@@ -387,6 +432,16 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
         console.log('PACK_SETUP_ERROR', String(err))
       }
 
+      await win.webContents.executeJavaScript(
+        `(() => {
+          if (!document.querySelector('.mods-search')) {
+            const modsBtn = [...document.querySelectorAll('.titlebar-actions button')].find((b) => b.textContent?.trim() === '模组')
+            modsBtn?.click()
+          }
+          return 'ensure-mods'
+        })()`,
+      )
+      await wait(800)
       await win.webContents.executeJavaScript(
         `(() => { const tab = [...document.querySelectorAll('.kind-tab')].find((b) => b.textContent?.trim() === '整合包'); tab?.click(); return 'pack-tab' })()`,
       )
@@ -416,13 +471,13 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
       )
       let packDone = JSON.stringify({ toast: '', loader: 'vanilla', waited: 0 })
       let packDoneShot = packShot
-      for (let attempt = 0; attempt < 60; attempt += 1) {
-        await wait(3000)
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        await wait(2000)
         const state = (await win.webContents.executeJavaScript(
           `window.qdo.instances.list().then((list) => JSON.stringify({
             toast: document.querySelector('.toast')?.textContent ?? '',
-            loader: list.find((item) => item.name === 'Smoke CF 包')?.loader ?? '',
-            versionId: list.find((item) => item.name === 'Smoke CF 包')?.versionId ?? '',
+            loader: list.find((item) => item.name === 'Smoke Fabric 包')?.loader ?? '',
+            versionId: list.find((item) => item.name === 'Smoke Fabric 包')?.versionId ?? '',
             count: list.length
           }))`,
         )) as string
@@ -435,6 +490,7 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
         }
       }
 
+      console.log('SMOKE_STEP pack-done')
       const info = k.ctx.get('appMeta') as { version?: string } | undefined
       console.log(
         `SMOKE_RESULT ${JSON.stringify({
@@ -453,6 +509,7 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           modpack: JSON.parse(modpackInfo),
           conflict: JSON.parse(conflictInfo),
           pack: { preview: JSON.parse(packInfo), done: JSON.parse(packDone), screenshot: packShot, doneScreenshot: packDoneShot },
+          gameLog: { info: JSON.parse(gameLogInfo), screenshot: gameLogShot },
           chatStatus: chat,
         })}`,
       )
@@ -597,6 +654,11 @@ if (!gotLock) {
       }
       if (callToolTarget) {
         const code = await runCallToolCli(kernel, callToolTarget)
+        app.exit(code)
+        return
+      }
+      if (gameLogTarget) {
+        const code = await runGameLogCli(kernel, gameLogTarget)
         app.exit(code)
         return
       }

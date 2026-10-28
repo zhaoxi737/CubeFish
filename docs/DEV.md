@@ -487,7 +487,22 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 > 入口：模组面板 → 整合包 → 顶部路径输入框 + 预览/安装；CLI 仍有 `--curse-pack` / `--modpack`。
 > smoke 现在会真装一个自带 mods 的 CurseForge 包并等待加载器就绪（`pack.done.loader=forge`）。
 
-## 28. 已知限制 / 待办
+## 28. P22 验收（已实测，2026-10-29）：游戏日志查看
+
+| 验收项 | 结果 |
+|---|---|
+| 日志抽屉双标签 | ✅ 「启动器日志 / 游戏日志」切换 |
+| 读取游戏日志 | ✅ `latest.log`（无则最新 `game-*.log`），尾部最多 256KB / 400 行 |
+| 自动刷新 | ✅ 游戏日志 tab 每 2 秒刷新（游戏运行时实时可看） |
+| 级别高亮 | ✅ ERROR/WARN 行红色/黄色高亮（截图可见 RuntimeException 行标红） |
+| 实例参数 | ✅ 按当前实例读取（抽屉标题旁显示 `实例 default`） |
+| UI 证据 | ✅ smoke 截图 `smoke-gamelog.png`：7 行日志、1 行 error 高亮 |
+| CLI | ✅ `--game-log[=instanceId]` 输出 `GAME_LOG_RESULT`（行数与尾部 5 行） |
+
+> 之前的日志抽屉只有启动器的结构化 JSONL；现在玩家/客服排查时可以直接在应用里看到游戏自己的 latest.log，
+> 不用去翻 `%APPDATA%\QDOQMC\instances\<id>\.minecraft\logs`。
+
+## 29. 已知限制 / 待办
 
 - **更新**：只支持便携版（解压替换）；NSIS 安装包升级未做。
 - **签名**：便携版未做代码签名，Windows SmartScreen 会提示未知发布者。
@@ -501,14 +516,14 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 - **实例**：支持创建/切换/删除；实例复制、导入导出、图标未做。
 - **登录**：微软正版登录已通（设备码 + Xbox Live + Minecraft Services，mock 全链路验证）；需要用户自备 Azure client_id；令牌用 DPAPI 加密存本机，支持多账号切换。
 
-## 29. 下一步（P22：补账）
+## 30. 下一步（P23：补账）
 
 1. **插件网络白名单**：Node permission model 不管网络，考虑 vm/代理层限制 outbound。
 2. **整合包文件选择器**：接系统对话框（当前走路径输入）。
 3. **账号头像/到期提醒** 与多实例独立账号绑定。
 4. **体验**：多会话记忆、更多修复动作（切 Java/换加载器）、安装包体积优化。
 
-## 30. 测试用 mock LLM
+## 31. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

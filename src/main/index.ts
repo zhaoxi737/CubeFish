@@ -2,6 +2,7 @@ import electron from 'electron'
 import type { BrowserWindow as BrowserWindowType } from 'electron'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import AdmZip from 'adm-zip'
 import { fileURLToPath } from 'node:url'
 import { bootKernel, type Kernel } from './kernel'
 import {
@@ -360,6 +361,80 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
         `JSON.stringify({ issues: document.querySelectorAll('.conflict-item').length, text: document.querySelector('.conflict-head')?.textContent ?? '' })`,
       )) as string
 
+      // 本机整合包：生成一个自带 mods 的 CurseForge 包，走 UI「预览 → 安装」
+      const packPath = path.join(dir, 'smoke-pack.zip')
+      try {
+        const packZip = new AdmZip()
+        packZip.addFile(
+          'manifest.json',
+          Buffer.from(
+            JSON.stringify({
+              manifestType: 'minecraftModpack',
+              manifestVersion: 1,
+              name: 'Smoke CF 包',
+              version: '1.0.0',
+              author: 'QDOQMC',
+              minecraft: { version: '1.20.1', modLoaders: [{ id: 'forge-47.4.28', primary: true }] },
+              files: [],
+              overrides: 'overrides',
+            }),
+          ),
+        )
+        packZip.addFile('mods/smoke-bundled.jar', Buffer.from('SMOKE-BUNDLED-MOD'))
+        packZip.addFile('overrides/config/smoke-pack.txt', Buffer.from('smoke pack overrides'))
+        packZip.writeZip(packPath)
+      } catch (err) {
+        console.log('PACK_SETUP_ERROR', String(err))
+      }
+
+      await win.webContents.executeJavaScript(
+        `(() => { const tab = [...document.querySelectorAll('.kind-tab')].find((b) => b.textContent?.trim() === '整合包'); tab?.click(); return 'pack-tab' })()`,
+      )
+      await wait(900)
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const input = document.querySelector('.pack-row input')
+          if (!input) return 'no-input'
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+          setter.call(input, ${JSON.stringify(packPath)})
+          input.dispatchEvent(new Event('input', { bubbles: true }))
+          const preview = [...document.querySelectorAll('.pack-row button')].find((b) => b.textContent?.trim() === '预览')
+          preview?.click()
+          return 'preview-clicked'
+        })()`,
+      )
+      await wait(1600)
+      const packShot = await shot('smoke-pack.png')
+      const packInfo = (await win.webContents.executeJavaScript(
+        `JSON.stringify({
+          preview: document.querySelector('.pack-preview')?.textContent ?? '',
+          previewOk: Boolean(document.querySelector('.pack-preview:not(.is-bad)'))
+        })`,
+      )) as string
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.pack-row button')].find((b) => b.textContent?.trim() === '安装'); btn?.click(); return 'install-clicked' })()`,
+      )
+      let packDone = JSON.stringify({ toast: '', loader: 'vanilla', waited: 0 })
+      let packDoneShot = packShot
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        await wait(3000)
+        const state = (await win.webContents.executeJavaScript(
+          `window.qdo.instances.list().then((list) => JSON.stringify({
+            toast: document.querySelector('.toast')?.textContent ?? '',
+            loader: list.find((item) => item.name === 'Smoke CF 包')?.loader ?? '',
+            versionId: list.find((item) => item.name === 'Smoke CF 包')?.versionId ?? '',
+            count: list.length
+          }))`,
+        )) as string
+        packDone = state
+        const parsed = JSON.parse(state) as { toast: string; loader: string }
+        if (parsed.loader && parsed.loader !== 'vanilla') {
+          await wait(600)
+          packDoneShot = await shot('smoke-pack-done.png')
+          break
+        }
+      }
+
       const info = k.ctx.get('appMeta') as { version?: string } | undefined
       console.log(
         `SMOKE_RESULT ${JSON.stringify({
@@ -377,6 +452,7 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           resourcepack: JSON.parse(rpInfo),
           modpack: JSON.parse(modpackInfo),
           conflict: JSON.parse(conflictInfo),
+          pack: { preview: JSON.parse(packInfo), done: JSON.parse(packDone), screenshot: packShot, doneScreenshot: packDoneShot },
           chatStatus: chat,
         })}`,
       )

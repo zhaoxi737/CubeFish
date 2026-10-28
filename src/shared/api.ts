@@ -10,6 +10,7 @@ import type {
   ContentVersionInfo,
   CursePackInspectResult,
   CursePackInstallResult,
+  PackInspect,
   Diagnosis,
   EntitlementItem,
   FixAction,
@@ -85,6 +86,8 @@ export interface QdoApi {
     inspectModpack(source: string): Promise<ModpackInspectResult>
     installCursePack(source: string): Promise<CursePackInstallResult>
     inspectCursePack(source: string): Promise<CursePackInspectResult>
+    inspectPack(source: string): Promise<PackInspect>
+    installPack(source: string): Promise<ModpackInstallResult & { kind?: 'curseforge' | 'modrinth'; resolved?: number; bundled?: number; overrides?: number }>
   }
   conflict: {
     analyze(instanceId?: string): Promise<ConflictReport>

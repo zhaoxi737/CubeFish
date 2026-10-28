@@ -338,6 +338,19 @@ export interface ModpackInstallResult {
   error?: string
 }
 
+export interface PackInspect {
+  ok: boolean
+  kind?: 'curseforge' | 'modrinth'
+  name?: string
+  mcVersion?: string
+  loader?: string
+  loaderVersion?: string
+  fileCount?: number
+  bundledMods?: number
+  needsApiKey?: boolean
+  error?: string
+}
+
 export interface CursePackInstallResult {
   ok: boolean
   packName?: string

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { ConflictReport, InstanceSummary, InstalledContent, SearchHit } from '../../shared/types'
+import type { ConflictReport, InstanceSummary, InstalledContent, PackInspect, SearchHit } from '../../shared/types'
 
 interface Props {
   instance: InstanceSummary
@@ -33,6 +33,48 @@ export function ModsDialog({ instance, onClose, onNotify, onRefresh }: Props) {
   const [installed, setInstalled] = useState<InstalledContent[]>([])
   const [report, setReport] = useState<ConflictReport | null>(null)
   const [checking, setChecking] = useState(false)
+  const [packPath, setPackPath] = useState('')
+  const [packPreview, setPackPreview] = useState<PackInspect | null>(null)
+  const [packBusy, setPackBusy] = useState(false)
+
+  const previewPack = useCallback(async () => {
+    const source = packPath.trim()
+    if (!source) {
+      onNotify('先粘贴整合包路径')
+      return
+    }
+    setPackBusy(true)
+    try {
+      setPackPreview(await window.qdo.content.inspectPack(source))
+    } catch (err) {
+      setPackPreview({ ok: false, error: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setPackBusy(false)
+    }
+  }, [onNotify, packPath])
+
+  const installPack = useCallback(async () => {
+    const source = packPath.trim()
+    if (!source) {
+      onNotify('先粘贴整合包路径')
+      return
+    }
+    setPackBusy(true)
+    try {
+      const result = await window.qdo.content.installPack(source)
+      if (!result.ok) onNotify(`整合包安装失败：${result.error ?? '未知错误'}`)
+      else {
+        const count = result.kind === 'curseforge' ? (result.resolved ?? 0) + (result.bundled ?? 0) : result.files ?? 0
+        onNotify(`已安装「${result.packName}」到新实例（${result.loader} ${result.mcVersion}，${count} 个文件）`)
+        onRefresh?.()
+        setPackPreview(null)
+      }
+    } catch (err) {
+      onNotify(`整合包安装失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setPackBusy(false)
+    }
+  }, [onNotify, onRefresh, packPath])
 
   const loader = instance.loader === 'fabric' ? 'fabric' : undefined
   const mcVersion = instance.gameVersion
@@ -161,6 +203,45 @@ export function ModsDialog({ instance, onClose, onNotify, onRefresh }: Props) {
             </button>
           ))}
         </div>
+
+        {kind === 'modpack' ? (
+          <div className="pack-local">
+            <div className="pack-row">
+              <input
+                value={packPath}
+                onChange={(event) => setPackPath(event.target.value)}
+                placeholder="粘贴本机整合包路径（.mrpack / CurseForge .zip）"
+                spellCheck={false}
+              />
+              <button type="button" className="ghost" onClick={() => void previewPack()} disabled={packBusy}>
+                {packBusy ? '处理中…' : '预览'}
+              </button>
+              <button type="button" className="primary" onClick={() => void installPack()} disabled={packBusy}>
+                安装
+              </button>
+            </div>
+            {packPreview ? (
+              <div className={`pack-preview ${packPreview.ok ? '' : 'is-bad'}`}>
+                {packPreview.ok ? (
+                  <>
+                    <strong>{packPreview.name ?? '未命名整合包'}</strong>
+                    <span>
+                      {packPreview.kind === 'curseforge' ? 'CurseForge' : 'Modrinth'} · {packPreview.mcVersion} ·{' '}
+                      {packPreview.loader ?? 'vanilla'} {packPreview.loaderVersion ?? ''}
+                    </span>
+                    <span>
+                      清单 {packPreview.fileCount ?? 0} 个文件
+                      {packPreview.bundledMods ? ` · 自带 ${packPreview.bundledMods} 个` : ''}
+                    </span>
+                    {packPreview.needsApiKey ? <span className="pack-warn">需要 CurseForge API Key</span> : null}
+                  </>
+                ) : (
+                  <span className="pack-warn">{packPreview.error ?? '无法识别'}</span>
+                )}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="mods-search">
           <input

@@ -12,6 +12,7 @@ import type {
   InstalledContent,
   CursePackInspectResult,
   CursePackInstallResult,
+  PackInspect,
   ModpackInspectResult,
   ModpackInstallResult,
   SearchHit,
@@ -88,6 +89,10 @@ export interface ContentService {
   installCursePack(source: string, opts?: { name?: string }): Promise<CursePackInstallResult>
   /** 只解析 CurseForge 整合包（预览：加载器/文件数/是否需要 API Key） */
   inspectCursePack(source: string): Promise<CursePackInspectResult>
+  /** 统一预览：自动识别 .mrpack / CurseForge .zip */
+  inspectPack(source: string): Promise<PackInspect>
+  /** 统一安装：自动识别格式 */
+  installPack(source: string, opts?: { name?: string }): Promise<ModpackInstallResult & { kind?: 'curseforge' | 'modrinth'; resolved?: number; bundled?: number; overrides?: number }>
   /** 下载任意已解析的版本文件到实例对应目录（含依赖递归） */
   installVersion(instanceId: string, version: ContentVersionInfo, kind: ContentKind, depth?: number): Promise<string[]>
 }
@@ -813,6 +818,72 @@ export function createContentPlugin(): LauncherPlugin<void> {
       }
     }
 
+    /* ---------- 统一整合包入口（P21：UI 用） ---------- */
+
+    async function inspectPack(source: string): Promise<PackInspect> {
+      try {
+        const buffer = await readSource(source)
+        const zip = new AdmZip(buffer)
+        if (zip.getEntry('manifest.json')) {
+          const result = await inspectCursePack(source)
+          return {
+            ok: result.ok,
+            kind: 'curseforge',
+            name: result.name,
+            mcVersion: result.mcVersion,
+            loader: result.loader,
+            loaderVersion: result.loaderVersion,
+            fileCount: result.fileCount,
+            bundledMods: result.bundledMods,
+            needsApiKey: result.needsApiKey,
+            error: result.error,
+          }
+        }
+        if (zip.getEntry('modrinth.index.json')) {
+          const result = await inspectModpack(source)
+          const deps = result.dependencies ?? {}
+          const loader = deps['fabric-loader']
+            ? 'fabric'
+            : deps.neoforge
+              ? 'neoforge'
+              : deps.forge
+                ? 'forge'
+                : deps['quilt-loader']
+                  ? 'quilt'
+                  : 'vanilla'
+          const loaderVersion = (deps['fabric-loader'] ?? deps.neoforge ?? deps.forge ?? deps['quilt-loader']) as
+            | string
+            | undefined
+          return {
+            ok: result.ok,
+            kind: 'modrinth',
+            name: result.name,
+            mcVersion: result.dependencies?.minecraft,
+            loader,
+            loaderVersion,
+            fileCount: result.fileCount,
+            bundledMods: 0,
+            needsApiKey: false,
+            error: result.error,
+          }
+        }
+        return { ok: false, error: '不是可识别的整合包（缺 manifest.json 或 modrinth.index.json）' }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+
+    async function installPack(source: string, opts?: { name?: string }): Promise<ModpackInstallResult & { kind?: 'curseforge' | 'modrinth'; resolved?: number; bundled?: number; overrides?: number }> {
+      const inspected = await inspectPack(source)
+      if (!inspected.ok) return { ok: false, error: inspected.error ?? '无法识别整合包' }
+      if (inspected.kind === 'curseforge') {
+        const result = await installCursePack(source, opts)
+        return { ...result, kind: 'curseforge' }
+      }
+      const result = await installModpack(source, opts)
+      return { ...result, kind: 'modrinth' }
+    }
+
     ctx.provide('content', {
       search,
       versions,
@@ -826,6 +897,8 @@ export function createContentPlugin(): LauncherPlugin<void> {
       inspectModpack,
       installCursePack,
       inspectCursePack,
+      inspectPack,
+      installPack,
       installVersion,
     } satisfies ContentService)
 

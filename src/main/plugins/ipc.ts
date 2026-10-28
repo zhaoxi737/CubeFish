@@ -10,6 +10,7 @@ import type {
   ContentVersionInfo,
   CursePackInspectResult,
   CursePackInstallResult,
+  PackInspect,
   AccountState,
   AccountSummary,
   DeviceCodeInfo,
@@ -208,6 +209,8 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle(CH.contentInspect, (source: string) => content.inspectModpack(source))
     handle(CH.contentCursePack, (source: string) => content.installCursePack(source))
     handle(CH.contentInspectCurse, (source: string) => content.inspectCursePack(source))
+    handle(CH.contentInspectPack, (source: string) => content.inspectPack(source))
+    handle(CH.contentInstallPack, (source: string) => content.installPack(source))
     handle<ConflictReport>(CH.conflictAnalyze, (instanceId?: string) => conflict.analyze(instanceId ?? 'default'))
     handle<Diagnosis>(CH.diagnoseRun, (instanceId?: string) => diagnose.run(instanceId ?? 'default'))
     handle<FixAction[]>(CH.diagnoseFixes, (instanceId?: string) => diagnose.fixes(instanceId ?? 'default'))

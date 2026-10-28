@@ -41,6 +41,8 @@ export const CH = {
   contentInspect: 'content:inspect',
   contentCursePack: 'content:curse-pack',
   contentInspectCurse: 'content:inspect-curse',
+  contentInspectPack: 'content:inspect-pack',
+  contentInstallPack: 'content:install-pack',
   conflictAnalyze: 'conflict:analyze',
   diagnoseRun: 'diagnose:run',
   diagnoseFixes: 'diagnose:fixes',

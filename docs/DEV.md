@@ -472,7 +472,22 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 > 真实使用需要用户在 CurseForge 申请免费 API Key（填设置即可）；包内自带 `mods/` 的离线包不需要 Key。
 > 与 Modrinth 的 `.mrpack` 共用同一套「新建实例 → 装加载器 → 落盘 → overrides」流程。
 
-## 27. 已知限制 / 待办
+## 27. P21 验收（已实测，2026-10-29）：整合包 UI（本机文件 + 预览 + 安装）
+
+| 验收项 | 结果 |
+|---|---|
+| 统一识别 | ✅ `content.inspectPack` 自动区分 `.mrpack`（modrinth.index.json）与 CurseForge `.zip`（manifest.json） |
+| 预览卡片 | ✅ 截图显示「Smoke CF 包 · CurseForge · 1.20.1 · forge 47.4.28 · 清单 0 个文件 · 自带 1 个」 |
+| UI 安装 | ✅ 点「安装」后新实例 `loader=forge, versionId=1.20.1-forge-47.4.28`，toast「已安装…」 |
+| 需要 Key 的包 | ✅ 预览卡片显示「需要 CurseForge API Key」警示 |
+| 自动识别安装 | ✅ `content.installPack` 按格式分派到 `installCursePack` / `installModpack` |
+| 无文件选择器依赖 | ✅ 支持直接粘贴路径（也为自动化测试留了入口） |
+| 回归 | ✅ 原有 Modrinth 整合包搜索/安装、冲突检查、模组面板均正常 |
+
+> 入口：模组面板 → 整合包 → 顶部路径输入框 + 预览/安装；CLI 仍有 `--curse-pack` / `--modpack`。
+> smoke 现在会真装一个自带 mods 的 CurseForge 包并等待加载器就绪（`pack.done.loader=forge`）。
+
+## 28. 已知限制 / 待办
 
 - **更新**：只支持便携版（解压替换）；NSIS 安装包升级未做。
 - **签名**：便携版未做代码签名，Windows SmartScreen 会提示未知发布者。
@@ -486,14 +501,14 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 - **实例**：支持创建/切换/删除；实例复制、导入导出、图标未做。
 - **登录**：微软正版登录已通（设备码 + Xbox Live + Minecraft Services，mock 全链路验证）；需要用户自备 Azure client_id；令牌用 DPAPI 加密存本机，支持多账号切换。
 
-## 28. 下一步（P21：补账）
+## 29. 下一步（P22：补账）
 
 1. **插件网络白名单**：Node permission model 不管网络，考虑 vm/代理层限制 outbound。
-2. **整合包 UI**：文件选择器 + 安装前预览（当前只有 CLI/AI 入口）。
+2. **整合包文件选择器**：接系统对话框（当前走路径输入）。
 3. **账号头像/到期提醒** 与多实例独立账号绑定。
 4. **体验**：多会话记忆、更多修复动作（切 Java/换加载器）、安装包体积优化。
 
-## 29. 测试用 mock LLM
+## 30. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

@@ -30,6 +30,9 @@ import {
   runAccountCli,
   runLoginMsCli,
   runLogoutCli,
+  runAccountsCli,
+  runSwitchAccountCli,
+  runRemoveAccountCli,
   runToolsCli,
   runUpdateApplyCli,
   runUpdateDownloadCli,
@@ -41,6 +44,7 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 process.env.QDOQMC_PLUGIN_WORKER = path.join(here, '..', 'plugin-worker.mjs')
 const isSmoke = process.argv.includes('--smoke')
 const isCrashSmoke = process.argv.includes('--smoke-crash')
+const isSettingsSmoke = process.argv.includes('--smoke-settings')
 
 function argValue(name: string): string | undefined {
   const prefix = `--${name}=`
@@ -74,6 +78,9 @@ const callToolTarget = argValue('call-tool')
 const accountMode = process.argv.includes('--account')
 const loginMsMode = process.argv.includes('--login-ms')
 const logoutMode = process.argv.includes('--logout')
+const accountsMode = process.argv.includes('--accounts')
+const switchAccountTarget = argValue('switch-account')
+const removeAccountTarget = argValue('remove-account')
 const createInstanceTarget = argValue('create-instance')
 const activateInstanceTarget = argValue('activate-instance')
 const contentTarget = argValue('content')
@@ -112,6 +119,39 @@ function createWindow(): BrowserWindowType {
 
   void win.loadFile(path.join(here, '../renderer/index.html'))
   return win
+}
+
+
+async function runSettingsSmoke(win: BrowserWindowType, startedAt: number): Promise<void> {
+  win.webContents.once('did-finish-load', async () => {
+    const dir = path.join(process.cwd(), 'out')
+    mkdirSync(dir, { recursive: true })
+    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+    try {
+      await wait(2400)
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.titlebar-actions button')].find((b) => b.textContent?.trim() === '设置'); btn?.click(); return 'settings' })()`,
+      )
+      await wait(1200)
+      await win.webContents.executeJavaScript(`(() => { const body = document.querySelector('.dialog-body'); if (body) body.scrollTop = body.scrollHeight; return 'scrolled' })()`)
+      await wait(700)
+      const image = await win.webContents.capturePage()
+      const file = path.join(dir, 'smoke-settings.png')
+      writeFileSync(file, image.toPNG())
+      const info = (await win.webContents.executeJavaScript(
+        `JSON.stringify({
+          accounts: [...document.querySelectorAll('.account-item')].map((el) => el.textContent ?? ''),
+          loginButton: [...document.querySelectorAll('.dialog button')].map((el) => el.textContent ?? '').find((text) => text.includes('微软账号')) ?? '',
+          clientIdField: Boolean([...document.querySelectorAll('.field-label')].find((el) => el.textContent?.includes('client_id')))
+        })`,
+      )) as string
+      console.log(`SETTINGS_SMOKE_RESULT ${JSON.stringify({ ok: true, screenshot: file, ms: Date.now() - startedAt, ui: JSON.parse(info) })}`)
+      app.exit(0)
+    } catch (err) {
+      console.log(`SETTINGS_SMOKE_RESULT ${JSON.stringify({ ok: false, error: String(err) })}`)
+      app.exit(1)
+    }
+  })
 }
 
 async function runCrashSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): Promise<void> {
@@ -495,6 +535,21 @@ if (!gotLock) {
         app.exit(code)
         return
       }
+      if (accountsMode) {
+        const code = await runAccountsCli(kernel)
+        app.exit(code)
+        return
+      }
+      if (switchAccountTarget) {
+        const code = await runSwitchAccountCli(kernel, switchAccountTarget)
+        app.exit(code)
+        return
+      }
+      if (removeAccountTarget) {
+        const code = await runRemoveAccountCli(kernel, removeAccountTarget)
+        app.exit(code)
+        return
+      }
       if (createInstanceTarget) {
         const code = await runCreateInstanceCli(kernel, createInstanceTarget)
         app.exit(code)
@@ -532,6 +587,7 @@ if (!gotLock) {
 
       if (isSmoke) await runSmoke(mainWindow, kernel, startedAt)
       if (isCrashSmoke) await runCrashSmoke(mainWindow, kernel, startedAt)
+      if (isSettingsSmoke) await runSettingsSmoke(mainWindow, startedAt)
 
       app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()

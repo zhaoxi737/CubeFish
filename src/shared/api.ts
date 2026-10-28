@@ -1,5 +1,6 @@
 import type {
   AccountState,
+  AccountSummary,
   AppInfo,
   ChatReply,
   DeviceCodeInfo,
@@ -112,6 +113,9 @@ export interface QdoApi {
   }
   auth: {
     state(): Promise<AccountState>
+    accounts(): Promise<AccountSummary[]>
+    switchAccount(uuid: string): Promise<AccountState>
+    removeAccount(uuid: string): Promise<AccountState>
     begin(): Promise<DeviceCodeInfo>
     complete(): Promise<LoginStatus>
     logout(): Promise<AccountState>

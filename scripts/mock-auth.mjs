@@ -10,10 +10,12 @@
  *   $env:QDOQMC_MS_CLIENT_ID='test-client'
  *   electron . --login-ms
  */
+import { createHash } from 'node:crypto'
 import http from 'node:http'
 
 const PORT = Number(process.env.MOCK_AUTH_PORT || 18081)
-const PROFILE = { id: '0123456789abcdef0123456789abcdef', name: 'MockPlayer' }
+const NAME = process.env.MOCK_AUTH_NAME || 'MockPlayer'
+const PROFILE = { id: createHash('md5').update(NAME).digest('hex'), name: NAME }
 let tokenCalls = 0
 
 function json(res, status, body) {

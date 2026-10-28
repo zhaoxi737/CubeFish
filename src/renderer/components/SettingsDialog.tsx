@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { AccountState, DeviceCodeInfo, SettingsPatch, SettingsShape } from '../../shared/types'
+import type { AccountState, AccountSummary, DeviceCodeInfo, SettingsPatch, SettingsShape } from '../../shared/types'
 
 interface Props {
   settings: SettingsShape
@@ -15,6 +15,18 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
   const [device, setDevice] = useState<DeviceCodeInfo | null>(null)
   const [authBusy, setAuthBusy] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
+  const [accounts, setAccounts] = useState<AccountSummary[]>([])
+
+  const refreshAccounts = useCallback(async () => {
+    if (typeof window.qdo === 'undefined') return
+    try {
+      const [list, state] = await Promise.all([window.qdo.auth.accounts(), window.qdo.auth.state()])
+      setAccounts(list)
+      setAccount(state)
+    } catch {
+      /* 忽略 */
+    }
+  }, [])
 
   useEffect(() => {
     if (typeof window.qdo === 'undefined') return
@@ -22,7 +34,8 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
       .state()
       .then((state) => setAccount(state))
       .catch(() => undefined)
-  }, [])
+    void refreshAccounts()
+  }, [refreshAccounts])
 
   const loginMicrosoft = useCallback(async () => {
     if (typeof window.qdo === 'undefined') return
@@ -38,6 +51,7 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
         if (status.status === 'ok' && status.account) {
           setAccount(status.account)
           setDevice(null)
+          await refreshAccounts()
           onNotify?.(`已登录：${status.account.name}`)
           break
         }
@@ -52,13 +66,21 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
     } finally {
       setAuthBusy(false)
     }
-  }, [onNotify])
+  }, [onNotify, refreshAccounts])
 
-  const logoutMicrosoft = useCallback(async () => {
-    const next = await window.qdo.auth.logout()
+  const switchAccount = useCallback(async (uuid: string) => {
+    const next = await window.qdo.auth.switchAccount(uuid)
     setAccount(next)
-    onNotify?.('已退出微软账号')
-  }, [onNotify])
+    await refreshAccounts()
+    onNotify?.(`已切换到 ${next.name}`)
+  }, [onNotify, refreshAccounts])
+
+  const removeAccount = useCallback(async (uuid: string) => {
+    const next = await window.qdo.auth.removeAccount(uuid)
+    setAccount(next)
+    await refreshAccounts()
+    onNotify?.('已移除账号')
+  }, [onNotify, refreshAccounts])
 
 
   const update = <K extends keyof SettingsShape>(key: K, value: SettingsShape[K]) => {
@@ -186,19 +208,44 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
 
           <div className="field">
             <span className="field-label">微软账号（正版登录）</span>
+            {accounts.length > 0 ? (
+              <div className="account-list">
+                {accounts.map((entry) => (
+                  <div className="account-item" key={entry.uuid}>
+                    <span className={`account-name ${entry.active ? 'is-ms' : ''}`}>
+                      {entry.name}
+                      <small>
+                        {entry.active ? ' · 当前' : ''}
+                        {entry.tokenStorage === 'encrypted' ? ' · 令牌已加密' : ' · 令牌未加密'}
+                      </small>
+                    </span>
+                    <div className="account-actions">
+                      {!entry.active ? (
+                        <button type="button" className="ghost tiny" onClick={() => void switchAccount(entry.uuid)} disabled={authBusy}>
+                          切换
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="ghost tiny danger"
+                        onClick={() => void removeAccount(entry.uuid)}
+                        disabled={authBusy}
+                      >
+                        移除
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="account-row">
+                <span className="account-name">离线 · {draft.playerName || 'Player'}</span>
+              </div>
+            )}
             <div className="account-row">
-              <span className={`account-name ${account?.type === 'microsoft' ? 'is-ms' : ''}`}>
-                {account ? `${account.type === 'microsoft' ? '微软' : '离线'} · ${account.name}` : '读取中…'}
-              </span>
-              {account?.type === 'microsoft' ? (
-                <button type="button" className="ghost tiny" onClick={() => void logoutMicrosoft()} disabled={authBusy}>
-                  退出
-                </button>
-              ) : (
-                <button type="button" className="primary" onClick={() => void loginMicrosoft()} disabled={authBusy}>
-                  {authBusy ? '登录中…' : '登录微软账号'}
-                </button>
-              )}
+              <button type="button" className="primary" onClick={() => void loginMicrosoft()} disabled={authBusy}>
+                {authBusy ? '登录中…' : '登录微软账号（添加）'}
+              </button>
             </div>
             {device ? (
               <div className="device-code">

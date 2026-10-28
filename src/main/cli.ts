@@ -267,6 +267,27 @@ export async function runLogoutCli(kernel: Kernel): Promise<number> {
   return 0
 }
 
+
+export async function runAccountsCli(kernel: Kernel): Promise<number> {
+  const auth = kernel.ctx.get('auth') as AuthService
+  console.log(`ACCOUNTS_RESULT ${JSON.stringify({ account: auth.account(), accounts: auth.accounts() })}`)
+  return 0
+}
+
+export async function runSwitchAccountCli(kernel: Kernel, uuid: string): Promise<number> {
+  const auth = kernel.ctx.get('auth') as AuthService
+  const account = auth.switchAccount(uuid)
+  console.log(`ACCOUNT_RESULT ${JSON.stringify(account)}`)
+  return 0
+}
+
+export async function runRemoveAccountCli(kernel: Kernel, uuid: string): Promise<number> {
+  const auth = kernel.ctx.get('auth') as AuthService
+  const account = auth.removeAccount(uuid)
+  console.log(`ACCOUNT_RESULT ${JSON.stringify(account)}`)
+  return 0
+}
+
 export async function runCallToolCli(kernel: Kernel, spec: string): Promise<number> {
   const tools = kernel.ctx.get('tools') as ToolsService
   const [name, ...rest] = spec.split('::')

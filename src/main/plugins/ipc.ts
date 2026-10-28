@@ -9,6 +9,7 @@ import type {
   ContentInstallResult,
   ContentVersionInfo,
   AccountState,
+  AccountSummary,
   DeviceCodeInfo,
   Diagnosis,
   EventSummary,
@@ -157,6 +158,9 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle<DeviceCodeInfo>(CH.authBegin, () => auth.beginLogin())
     handle<LoginStatus>(CH.authComplete, () => auth.completeLogin())
     handle<AccountState>(CH.authLogout, () => auth.logout())
+    handle<AccountSummary[]>(CH.authAccounts, () => auth.accounts())
+    handle<AccountState>(CH.authSwitch, (uuid: string) => auth.switchAccount(uuid))
+    handle<AccountState>(CH.authRemove, (uuid: string) => auth.removeAccount(uuid))
     handle(CH.entitlements, () => entitlement.list())
     handle<EventSummary>(CH.eventsSummary, () => telemetry.summary())
 

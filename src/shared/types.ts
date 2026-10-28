@@ -430,6 +430,14 @@ export interface DeviceCodeInfo {
   interval: number
 }
 
+export interface AccountSummary {
+  uuid: string
+  name: string
+  active: boolean
+  expiresAt: number
+  tokenStorage: 'encrypted' | 'plain' | 'none'
+}
+
 export interface LoginStatus {
   status: 'pending' | 'ok' | 'error'
   account?: AccountState

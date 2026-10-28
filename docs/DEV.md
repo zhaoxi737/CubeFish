@@ -416,7 +416,23 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 > 我们不做内置 client_id：那属于发行方资质，且需要用户同意服务条款。
 > 令牌只存本机 `%APPDATA%\QDOQMC\account.json`，不上传；后续接云服务时再考虑加密存储。
 
-## 24. 已知限制 / 待办
+## 24. P18 验收（已实测，2026-10-29）：令牌加密 + 多账号
+
+| 验收项 | 结果 |
+|---|---|
+| DPAPI 加密落盘 | ✅ `accounts.json` 中 `accessToken: "enc1:djEwEKdu..."`；全文不含明文 `mock-mc-token` |
+| 解密后启动 | ✅ 加密账号启动：`LAUNCH_START {"playerName":"MockPlayer","accountType":"microsoft"}` |
+| 多账号 | ✅ 两次登录 → `ACCOUNTS_RESULT` 两条（MockPlayer / SecondPlayer，均 `tokenStorage: encrypted`） |
+| 切换账号 | ✅ `--switch-account=<uuid>` → 激活 MockPlayer，随后启动 playerName 变为 MockPlayer |
+| 移除账号 | ✅ `--remove-account=<uuid>` → 只剩一条，激活项自动回退 |
+| 旧版迁移 | ✅ 启动时把 P17 的明文 `account.json` 导入为新格式并清空旧文件 |
+| UI | ✅ 设置里账号列表（当前账号高亮 + 「令牌已加密」+ 切换/移除 + 登录添加） |
+| 降级 | ✅ safeStorage 不可用时标记 `raw:`（base64），UI 显示「令牌未加密」，不伪装成加密 |
+
+> 加密用 Electron `safeStorage`（Windows 上是 DPAPI，绑定当前 Windows 用户）。换个 Windows 用户/机器就解不开，这是预期行为。
+> CLI：`--accounts` / `--switch-account=<uuid>` / `--remove-account=<uuid>`。
+
+## 25. 已知限制 / 待办
 
 - **更新**：只支持便携版（解压替换）；NSIS 安装包升级未做。
 - **签名**：便携版未做代码签名，Windows SmartScreen 会提示未知发布者。
@@ -428,16 +444,16 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 - **AI**：真实模型调用需用户自填 Key（本机验证用 mock LLM）；已支持流式输出、会话记忆与崩溃一键修复；多会话/跨实例记忆未做。
 - **老版本**：legacy/pre-1.6 资源物化已实现但未实测；Java 8 运行时自动下载未实测。
 - **实例**：支持创建/切换/删除；实例复制、导入导出、图标未做。
-- **登录**：微软正版登录已通（设备码 + Xbox Live + Minecraft Services，mock 全链路验证）；需要用户自备 Azure client_id，令牌明文存本机。
+- **登录**：微软正版登录已通（设备码 + Xbox Live + Minecraft Services，mock 全链路验证）；需要用户自备 Azure client_id；令牌用 DPAPI 加密存本机，支持多账号切换。
 
-## 25. 下一步（P18：补账）
+## 26. 下一步（P19：补账）
 
 1. **插件能力白名单**：在 Node permission model / vm 层限制 fs/net，把「进程隔离」升级为「capability 沙箱」。
 2. **CurseForge `.zip` 整合包**：解析 manifest.json + 从 edge CDN 拉取 mods。
-3. **令牌加密存储**（DPAPI）与多账号切换。
+3. **账号头像/到期提醒** 与多实例独立账号绑定。
 4. **体验**：多会话记忆、更多修复动作（切 Java/换加载器）、安装包体积优化。
 
-## 26. 测试用 mock LLM
+## 27. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

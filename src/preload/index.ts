@@ -82,6 +82,9 @@ const api: QdoApi = {
   },
   auth: {
     state: () => ipcRenderer.invoke(CH.authState),
+    accounts: () => ipcRenderer.invoke(CH.authAccounts),
+    switchAccount: (uuid) => ipcRenderer.invoke(CH.authSwitch, uuid),
+    removeAccount: (uuid) => ipcRenderer.invoke(CH.authRemove, uuid),
     begin: () => ipcRenderer.invoke(CH.authBegin),
     complete: () => ipcRenderer.invoke(CH.authComplete),
     logout: () => ipcRenderer.invoke(CH.authLogout),

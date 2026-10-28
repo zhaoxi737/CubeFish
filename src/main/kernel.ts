@@ -2,6 +2,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { errorMessage, type LauncherPlugin } from './plugin-kit'
 import { createAgentPlugin } from './plugins/agent'
 import { createAppPlugin } from './plugins/app'
+import { createAuthPlugin } from './plugins/auth'
 import { createChatPlugin } from './plugins/chat'
 import { createCloudPlugin } from './plugins/cloud'
 import { createConflictPlugin } from './plugins/conflict'
@@ -75,6 +76,7 @@ export async function bootKernel(options: KernelOptions): Promise<Kernel> {
     createEntitlementPlugin(),
     createCloudPlugin(),
     createTelemetryPlugin(),
+    createAuthPlugin(),
     createUpdaterPlugin(),
     createLlmPlugin(),
     createMojangPlugin(),

@@ -80,6 +80,12 @@ const api: QdoApi = {
       }
     },
   },
+  auth: {
+    state: () => ipcRenderer.invoke(CH.authState),
+    begin: () => ipcRenderer.invoke(CH.authBegin),
+    complete: () => ipcRenderer.invoke(CH.authComplete),
+    logout: () => ipcRenderer.invoke(CH.authLogout),
+  },
   entitlement: {
     list: () => ipcRenderer.invoke(CH.entitlements),
   },

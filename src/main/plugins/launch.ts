@@ -12,6 +12,7 @@ import { ensureDir } from '../lib/fsx'
 import { parseMaven } from '../lib/maven'
 import { detectOsContext, evaluateRules, type OsContext } from '../lib/rules'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
+import type { AuthService } from './auth'
 import type { InstancesService } from './instances'
 import type { JavaService } from './java'
 import type { LogService } from './logger'
@@ -93,6 +94,7 @@ export function createLaunchPlugin(): LauncherPlugin<void> {
     const log = use<LogService>(ctx, 'log')
     const meta = use<AppMeta>(ctx, 'appMeta')
     const settings = use<SettingsService>(ctx, 'settings')
+    const auth = use<AuthService>(ctx, 'auth')
     const instances = use<InstancesService>(ctx, 'instances')
     const mojang = use<MojangService>(ctx, 'mojang')
     const java = use<JavaService>(ctx, 'java')
@@ -246,8 +248,12 @@ export function createLaunchPlugin(): LauncherPlugin<void> {
         if (!bootstrapLoader) cp.push(versionJar)
         const classpath = cp.join(path.delimiter)
 
-        const playerName = instance.playerName || settings.get('playerName') || 'Player'
-        const uuid = offlineUuid(playerName)
+        // 账号：微软已登录则用正版令牌，否则离线
+        const account = await auth.ensureAccount()
+        const microsoft = account.type === 'microsoft'
+        const playerName = microsoft ? account.name : instance.playerName || settings.get('playerName') || 'Player'
+        const uuid = microsoft ? account.uuid : offlineUuid(playerName)
+        const accessToken = microsoft && account.accessToken ? account.accessToken : '-'
         const assetIndexId = resolved.assetIndexId ?? 'legacy'
         const virtualAssets =
           assetIndexId === 'pre-1.6' ? 'pre-1.6' : assetIndexId === 'legacy' ? 'legacy' : assetIndexId
@@ -255,15 +261,15 @@ export function createLaunchPlugin(): LauncherPlugin<void> {
         const values: Record<string, string> = {
           auth_player_name: playerName,
           auth_uuid: uuid,
-          auth_access_token: '-',
-          auth_session: '-',
+          auth_access_token: accessToken,
+          auth_session: accessToken,
           version_name: instance.versionId,
           version_type: resolved.type,
           game_directory: gameDir,
           assets_root: paths.assets,
           assets_index_name: assetIndexId,
           game_assets: path.join(paths.assets, 'virtual', virtualAssets),
-          user_type: 'legacy',
+          user_type: microsoft ? 'msa' : 'legacy',
           user_properties: '{}',
           natives_directory: nativesDir,
           launcher_name: 'QDOQMC',
@@ -369,6 +375,7 @@ export function createLaunchPlugin(): LauncherPlugin<void> {
           versionId: instance.versionId,
           javaPath: javaInfo.path,
           playerName,
+          accountType: microsoft ? 'microsoft' : 'offline',
           ms: Date.now() - startedAt,
         }
       } catch (err) {

@@ -13,6 +13,7 @@ import type { DiagnoseService } from './plugins/diagnose'
 import type { InstancesService } from './plugins/instances'
 import type { LaunchService } from './plugins/launch'
 import type { LlmService } from './plugins/llm'
+import type { AuthService } from './plugins/auth'
 import type { LoadersService } from './plugins/loaders'
 import type { MarketService } from './plugins/market'
 import type { MojangService } from './plugins/mojang'
@@ -223,6 +224,47 @@ export async function runForgeCli(kernel: Kernel, mcVersion: string): Promise<nu
   }
   console.log(`FORGE_RESULT ${JSON.stringify(result)}`)
   return result.ok ? 0 : 1
+}
+
+
+export async function runAccountCli(kernel: Kernel): Promise<number> {
+  const auth = kernel.ctx.get('auth') as AuthService
+  console.log(`ACCOUNT_RESULT ${JSON.stringify(auth.account())}`)
+  return 0
+}
+
+export async function runLoginMsCli(kernel: Kernel): Promise<number> {
+  const auth = kernel.ctx.get('auth') as AuthService
+  try {
+    const info = await auth.beginLogin()
+    console.log(`DEVICE_CODE ${JSON.stringify(info)}`)
+    const deadline = Date.now() + Math.max(30, info.expiresIn) * 1000
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, Math.max(1, info.interval) * 1000))
+      const status = await auth.completeLogin()
+      console.log(`LOGIN_STATUS ${status.status}`)
+      if (status.status === 'ok') {
+        console.log(`ACCOUNT_RESULT ${JSON.stringify(status.account)}`)
+        return 0
+      }
+      if (status.status === 'error') {
+        console.log(`LOGIN_ERROR ${status.error}`)
+        return 1
+      }
+    }
+    console.log('LOGIN_ERROR 设备码超时')
+    return 1
+  } catch (err) {
+    console.log(`LOGIN_ERROR ${err instanceof Error ? err.message : String(err)}`)
+    return 1
+  }
+}
+
+export async function runLogoutCli(kernel: Kernel): Promise<number> {
+  const auth = kernel.ctx.get('auth') as AuthService
+  const account = auth.logout()
+  console.log(`ACCOUNT_RESULT ${JSON.stringify(account)}`)
+  return 0
 }
 
 export async function runCallToolCli(kernel: Kernel, spec: string): Promise<number> {

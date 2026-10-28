@@ -27,6 +27,9 @@ import {
   runFixesCli,
   runApplyFixCli,
   runCallToolCli,
+  runAccountCli,
+  runLoginMsCli,
+  runLogoutCli,
   runToolsCli,
   runUpdateApplyCli,
   runUpdateDownloadCli,
@@ -68,6 +71,9 @@ const forgeTarget = argValue('forge')
 const fixesMode = process.argv.includes('--fixes')
 const applyFixTarget = argValue('apply-fix')
 const callToolTarget = argValue('call-tool')
+const accountMode = process.argv.includes('--account')
+const loginMsMode = process.argv.includes('--login-ms')
+const logoutMode = process.argv.includes('--logout')
 const createInstanceTarget = argValue('create-instance')
 const activateInstanceTarget = argValue('activate-instance')
 const contentTarget = argValue('content')
@@ -471,6 +477,21 @@ if (!gotLock) {
       }
       if (callToolTarget) {
         const code = await runCallToolCli(kernel, callToolTarget)
+        app.exit(code)
+        return
+      }
+      if (accountMode) {
+        const code = await runAccountCli(kernel)
+        app.exit(code)
+        return
+      }
+      if (loginMsMode) {
+        const code = await runLoginMsCli(kernel)
+        app.exit(code)
+        return
+      }
+      if (logoutMode) {
+        const code = await runLogoutCli(kernel)
         app.exit(code)
         return
       }

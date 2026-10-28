@@ -10,6 +10,7 @@ import type { ContentService } from './content'
 import type { DiagnoseService } from './diagnose'
 import type { JavaService } from './java'
 import type { LogService } from './logger'
+import type { AuthService } from './auth'
 import type { SettingsService } from './settings'
 import type { StorageService } from './storage'
 import type { TelemetryService } from './telemetry'
@@ -51,6 +52,7 @@ export function createChatPlugin(): LauncherPlugin<void> {
     const diagnose = use<DiagnoseService>(ctx, 'diagnose')
     const agent = use<AgentService>(ctx, 'agent')
     const settings = use<SettingsService>(ctx, 'settings')
+    const auth = use<AuthService>(ctx, 'auth')
     const identity = use<IdentityService>(ctx, 'identity')
     const entitlement = use<EntitlementService>(ctx, 'entitlement')
     const telemetry = use<TelemetryService>(ctx, 'telemetry')
@@ -156,6 +158,10 @@ export function createChatPlugin(): LauncherPlugin<void> {
         const lines = [
           `启动器版本：${info?.version ?? '?'}`,
           `实例：${inst?.name ?? '无'} · 版本 ${inst?.mcVersion || '未安装'} · 加载器 ${inst?.loader ?? '-'}`,
+          (() => {
+            const account = auth.account()
+            return `账号：${account.type === 'microsoft' ? '微软正版' : '离线'} · ${account.name}`
+          })(),
           `内存分配：${settings.get('memoryMb')} MB`,
           `匿名统计：${settings.get('telemetry') ? '开' : '关'} · 设备 ${identity.installId.slice(0, 8)}`,
           `授权：${free ? '免费期（全部功能放行）' : '已加载本地许可'}`,

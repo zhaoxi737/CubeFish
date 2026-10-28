@@ -398,7 +398,25 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 
 > 之前 `.mrpack` 遇到 neoforge/forge 依赖会直接报「暂不支持」，现在按依赖类型分派到对应加载器安装器。
 
-## 23. 已知限制 / 待办
+## 23. P17 验收（已实测，2026-10-29）：微软正版登录（设备码）
+
+| 验收项 | 结果 |
+|---|---|
+| 设备码流程 | ✅ `DEVICE_CODE {"userCode":"MOCK-1234","verificationUri":"...","interval":1}` |
+| 轮询与完成 | ✅ `LOGIN_STATUS pending` → `ok`，保存官方账号 |
+| 账号落盘 | ✅ `account.json`：name/uuid/accessToken/refreshToken/expiresAt |
+| 启动使用正版令牌 | ✅ `LAUNCH_START {"playerName":"MockPlayer","accountType":"microsoft"}` |
+| 令牌自动续期 | ✅ 把 expiresAt 改成过去 → 启动时日志 `已刷新微软令牌` |
+| 退出登录 | ✅ `--logout` → `ACCOUNT_RESULT {"type":"offline",...}` |
+| /status | ✅ 显示 `账号：微软正版 · MockPlayer`（离线时显示离线） |
+| UI | ✅ 设置里新增「微软账号」区块（登录按钮 + 设备码展示 + 退出）与 client_id 输入 |
+| mock 授权服务器 | ✅ `scripts/mock-auth.mjs` 覆盖 devicecode → token → XBL → XSTS → Minecraft → profile 全链路 |
+
+> 真实使用需要用户在 Azure 门户注册一个「公共客户端」应用，把 Application ID 填到设置（或 `QDOQMC_MS_CLIENT_ID`）。
+> 我们不做内置 client_id：那属于发行方资质，且需要用户同意服务条款。
+> 令牌只存本机 `%APPDATA%\QDOQMC\account.json`，不上传；后续接云服务时再考虑加密存储。
+
+## 24. 已知限制 / 待办
 
 - **更新**：只支持便携版（解压替换）；NSIS 安装包升级未做。
 - **签名**：便携版未做代码签名，Windows SmartScreen 会提示未知发布者。
@@ -410,16 +428,16 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 - **AI**：真实模型调用需用户自填 Key（本机验证用 mock LLM）；已支持流式输出、会话记忆与崩溃一键修复；多会话/跨实例记忆未做。
 - **老版本**：legacy/pre-1.6 资源物化已实现但未实测；Java 8 运行时自动下载未实测。
 - **实例**：支持创建/切换/删除；实例复制、导入导出、图标未做。
-- **登录**：仅离线（正版 OAuth 未做）。
+- **登录**：微软正版登录已通（设备码 + Xbox Live + Minecraft Services，mock 全链路验证）；需要用户自备 Azure client_id，令牌明文存本机。
 
-## 24. 下一步（P17：补账）
+## 25. 下一步（P18：补账）
 
 1. **插件能力白名单**：在 Node permission model / vm 层限制 fs/net，把「进程隔离」升级为「capability 沙箱」。
 2. **CurseForge `.zip` 整合包**：解析 manifest.json + 从 edge CDN 拉取 mods。
-3. **微软正版登录**：需要 Azure 应用 id（用户提供或授权申请流程）。
+3. **令牌加密存储**（DPAPI）与多账号切换。
 4. **体验**：多会话记忆、更多修复动作（切 Java/换加载器）、安装包体积优化。
 
-## 25. 测试用 mock LLM
+## 26. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

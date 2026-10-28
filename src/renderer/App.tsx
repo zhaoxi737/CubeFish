@@ -443,7 +443,7 @@ export function App() {
         <div className="brand">
           <span className="brand-mark">QDOQMC</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P16 · 整合包补全</span>
+          <span className="brand-tag">P17 · 微软登录</span>
         </div>
         <div className="titlebar-actions">
           <button type="button" className="ghost" onClick={() => setShowMods(true)} disabled={!instance}>
@@ -708,7 +708,7 @@ export function App() {
       ) : null}
       {showPlugins ? <PluginsDialog onClose={() => setShowPlugins(false)} onNotify={notify} /> : null}
       {showSettings && settings ? (
-        <SettingsDialog settings={settings} onClose={() => setShowSettings(false)} onSave={onSaveSettings} />
+        <SettingsDialog settings={settings} onClose={() => setShowSettings(false)} onSave={onSaveSettings} onNotify={notify} />
       ) : null}
       {showLogs ? <LogDrawer onClose={() => setShowLogs(false)} /> : null}
     </div>

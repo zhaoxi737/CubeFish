@@ -1,6 +1,9 @@
 import type {
+  AccountState,
   AppInfo,
   ChatReply,
+  DeviceCodeInfo,
+  LoginStatus,
   ConflictReport,
   ContentInstallResult,
   ContentVersionInfo,
@@ -106,6 +109,12 @@ export interface QdoApi {
     clear(): Promise<{ ok: boolean }>
     /** 订阅流式增量；返回取消订阅函数 */
     onDelta(callback: (text: string) => void): () => void
+  }
+  auth: {
+    state(): Promise<AccountState>
+    begin(): Promise<DeviceCodeInfo>
+    complete(): Promise<LoginStatus>
+    logout(): Promise<AccountState>
   }
   entitlement: {
     list(): Promise<EntitlementItem[]>

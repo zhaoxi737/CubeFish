@@ -1,4 +1,4 @@
-﻿/** Renderer 与主进程共用的类型定义。纯类型，无运行时代码。 */
+/** Renderer 与主进程共用的类型定义。纯类型，无运行时代码。 */
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
@@ -144,6 +144,8 @@ export interface SettingsShape {
   marketUrl: string
   /** 市场 feed 签名公钥（PEM，Ed25519）。留空 = 不校验签名（开发模式） */
   marketPublicKey: string
+  /** 微软登录的 Azure 应用 client_id；留空 = 只能离线登录 */
+  msClientId: string
   /** 启动时自动检查更新 */
   autoCheckUpdate: boolean
 }
@@ -230,6 +232,8 @@ export interface LaunchResult {
   versionId?: string
   javaPath?: string
   playerName?: string
+  /** 本次启动用的账号类型 */
+  accountType?: 'offline' | 'microsoft'
   ms?: number
   error?: string
 }
@@ -406,6 +410,30 @@ export interface FixAction {
   kind: 'disable-mod' | 'set-memory' | 'install-dependency' | 'clear-crash-reports'
   /** 展示用的补充信息（如目标文件名、内存值） */
   detail?: string
+}
+
+/* ---------- P17：微软正版登录 ---------- */
+
+export interface AccountState {
+  type: 'offline' | 'microsoft'
+  name: string
+  uuid: string
+  /** 仅微软账号：Minecraft 访问令牌（只存本机） */
+  accessToken?: string
+  expiresAt?: number
+}
+
+export interface DeviceCodeInfo {
+  userCode: string
+  verificationUri: string
+  expiresIn: number
+  interval: number
+}
+
+export interface LoginStatus {
+  status: 'pending' | 'ok' | 'error'
+  account?: AccountState
+  error?: string
 }
 
 export interface FixResult {

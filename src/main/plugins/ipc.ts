@@ -8,8 +8,11 @@ import type {
   ConflictReport,
   ContentInstallResult,
   ContentVersionInfo,
+  AccountState,
+  DeviceCodeInfo,
   Diagnosis,
   EventSummary,
+  LoginStatus,
   FabricInstallResult,
   FixAction,
   FixResult,
@@ -40,6 +43,7 @@ import type { InstancesService } from './instances'
 import type { JavaService } from './java'
 import type { LaunchService } from './launch'
 import type { LoadersService } from './loaders'
+import type { AuthService } from './auth'
 import type { LogService } from './logger'
 import type { MarketService } from './market'
 import type { MojangService } from './mojang'
@@ -69,6 +73,7 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     const instances = use<InstancesService>(ctx, 'instances')
     const chat = use<ChatService>(ctx, 'chat')
     const entitlement = use<EntitlementService>(ctx, 'entitlement')
+    const auth = use<AuthService>(ctx, 'auth')
     const telemetry = use<TelemetryService>(ctx, 'telemetry')
     const mojang = use<MojangService>(ctx, 'mojang')
     const java = use<JavaService>(ctx, 'java')
@@ -148,6 +153,10 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
       chat.clearHistory()
       return { ok: true }
     })
+    handle<AccountState>(CH.authState, () => auth.account())
+    handle<DeviceCodeInfo>(CH.authBegin, () => auth.beginLogin())
+    handle<LoginStatus>(CH.authComplete, () => auth.completeLogin())
+    handle<AccountState>(CH.authLogout, () => auth.logout())
     handle(CH.entitlements, () => entitlement.list())
     handle<EventSummary>(CH.eventsSummary, () => telemetry.summary())
 

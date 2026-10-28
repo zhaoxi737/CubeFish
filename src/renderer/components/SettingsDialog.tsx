@@ -1,15 +1,65 @@
-import { useState } from 'react'
-import type { SettingsPatch, SettingsShape } from '../../shared/types'
+import { useCallback, useEffect, useState } from 'react'
+import type { AccountState, DeviceCodeInfo, SettingsPatch, SettingsShape } from '../../shared/types'
 
 interface Props {
   settings: SettingsShape
   onClose: () => void
   onSave: (patch: SettingsPatch) => Promise<void> | void
+  onNotify?: (text: string) => void
 }
 
-export function SettingsDialog({ settings, onClose, onSave }: Props) {
+export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
   const [draft, setDraft] = useState<SettingsShape>({ ...settings })
   const [saving, setSaving] = useState(false)
+  const [account, setAccount] = useState<AccountState | null>(null)
+  const [device, setDevice] = useState<DeviceCodeInfo | null>(null)
+  const [authBusy, setAuthBusy] = useState(false)
+  const [authError, setAuthError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (typeof window.qdo === 'undefined') return
+    void window.qdo.auth
+      .state()
+      .then((state) => setAccount(state))
+      .catch(() => undefined)
+  }, [])
+
+  const loginMicrosoft = useCallback(async () => {
+    if (typeof window.qdo === 'undefined') return
+    setAuthBusy(true)
+    setAuthError(null)
+    try {
+      const info = await window.qdo.auth.begin()
+      setDevice(info)
+      const deadline = Date.now() + Math.max(30, info.expiresIn) * 1000
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, Math.max(1, info.interval) * 1000))
+        const status = await window.qdo.auth.complete()
+        if (status.status === 'ok' && status.account) {
+          setAccount(status.account)
+          setDevice(null)
+          onNotify?.(`已登录：${status.account.name}`)
+          break
+        }
+        if (status.status === 'error') {
+          setAuthError(status.error ?? '登录失败')
+          setDevice(null)
+          break
+        }
+      }
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setAuthBusy(false)
+    }
+  }, [onNotify])
+
+  const logoutMicrosoft = useCallback(async () => {
+    const next = await window.qdo.auth.logout()
+    setAccount(next)
+    onNotify?.('已退出微软账号')
+  }, [onNotify])
+
 
   const update = <K extends keyof SettingsShape>(key: K, value: SettingsShape[K]) => {
     setDraft((prev) => ({ ...prev, [key]: value }))
@@ -28,6 +78,7 @@ export function SettingsDialog({ settings, onClose, onSave }: Props) {
         llmBaseUrl: draft.llmBaseUrl,
         llmModel: draft.llmModel,
         marketUrl: draft.marketUrl,
+        msClientId: draft.msClientId,
         marketPublicKey: draft.marketPublicKey,
       })
     } finally {
@@ -132,6 +183,41 @@ export function SettingsDialog({ settings, onClose, onSave }: Props) {
             <span>发送匿名使用统计（设备随机 ID，不含账号与文件路径）</span>
           </label>
           <p className="field-hint">关掉后本地事件仍记录，但不会上传。</p>
+
+          <div className="field">
+            <span className="field-label">微软账号（正版登录）</span>
+            <div className="account-row">
+              <span className={`account-name ${account?.type === 'microsoft' ? 'is-ms' : ''}`}>
+                {account ? `${account.type === 'microsoft' ? '微软' : '离线'} · ${account.name}` : '读取中…'}
+              </span>
+              {account?.type === 'microsoft' ? (
+                <button type="button" className="ghost tiny" onClick={() => void logoutMicrosoft()} disabled={authBusy}>
+                  退出
+                </button>
+              ) : (
+                <button type="button" className="primary" onClick={() => void loginMicrosoft()} disabled={authBusy}>
+                  {authBusy ? '登录中…' : '登录微软账号'}
+                </button>
+              )}
+            </div>
+            {device ? (
+              <div className="device-code">
+                在浏览器打开 <strong>{device.verificationUri}</strong>，输入代码 <strong>{device.userCode}</strong>
+              </div>
+            ) : null}
+            {authError ? <span className="field-hint">{authError}</span> : null}
+          </div>
+
+          <label className="field">
+            <span className="field-label">微软登录 client_id</span>
+            <input
+              value={draft.msClientId}
+              onChange={(event) => update('msClientId', event.target.value)}
+              placeholder="Azure 应用（公共客户端）的 Application ID"
+              spellCheck={false}
+            />
+            <span className="field-hint">留空 = 只能离线登录。令牌只存本机 account.json，不上传。</span>
+          </label>
 
           <label className="field">
             <span className="field-label">插件市场 feed 地址</span>

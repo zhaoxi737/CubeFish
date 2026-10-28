@@ -1,5 +1,5 @@
 import electron from 'electron'
-import type { BrowserWindow } from 'electron'
+import { dialog, type BrowserWindow } from 'electron'
 import { CH, EVT } from '../../shared/channels'
 import type {
   AppInfo,
@@ -158,6 +158,27 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle(CH.chatClear, () => {
       chat.clearHistory()
       return { ok: true }
+    })
+    handle(CH.dialogPickFile, async (kind?: 'pack' | 'zip') => {
+      // 自动化测试钩子：设置 QDOQMC_PICK_FILE 时跳过原生对话框
+      const override = process.env.QDOQMC_PICK_FILE
+      if (override) return override
+      const win = config.getWindow()
+      if (!win) return null
+      const filters =
+        kind === 'zip'
+          ? [{ name: '导出包', extensions: ['zip'] }]
+          : [{ name: '整合包', extensions: ['zip', 'mrpack'] }]
+      const result = await dialog.showOpenDialog(win, { properties: ['openFile'], filters })
+      return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
+    })
+    handle(CH.dialogPickSave, async (defaultName: string) => {
+      const override = process.env.QDOQMC_SAVE_FILE
+      if (override) return override
+      const win = config.getWindow()
+      if (!win) return null
+      const result = await dialog.showSaveDialog(win, { defaultPath: defaultName, filters: [{ name: 'Zip', extensions: ['zip'] }] })
+      return result.canceled || !result.filePath ? null : result.filePath
     })
     handle<AccountState>(CH.authState, () => auth.account())
     handle<DeviceCodeInfo>(CH.authBegin, () => auth.beginLogin())

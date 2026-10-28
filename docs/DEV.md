@@ -517,7 +517,20 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 > 导出名默认 `<data>/exports/<id>-<ts>.zip`；导入默认名 `原实例名（导入）`，避免重名混淆。
 > 导出体积只包含实例私有文件（mods/config/存档），不含全局 libraries/assets（那些由启动器按版本重新装）。
 
-## 30. 已知限制 / 待办
+## 30. P24 验收（已实测，2026-10-29）：系统文件选择器
+
+| 验收项 | 结果 |
+|---|---|
+| 整合包选文件 | ✅ 模组面板 → 整合包 → 「选择文件…」→ 输入框自动填入路径（smoke 读到 `pickedPath`） |
+| 导入实例选文件 | ✅ 新建实例对话框 → 「选择…」→ 导入路径自动填入（`importPicker.picked`） |
+| 导出另存为 | ✅ 「导出」改走保存对话框；smoke 指定路径后 `EXPORT_RESULT` 落到 `out/smoke-export.zip`（32.9MB） |
+| 对话框过滤 | ✅ 整合包过滤 `zip/mrpack`；导出包过滤 `zip` |
+| 自动化钩子 | ✅ `QDOQMC_PICK_FILE` / `QDOQMC_SAVE_FILE` 环境变量可跳过原生对话框（仅测试用） |
+| 回归 | ✅ 整合包预览/安装、实例导入、日志抽屉、冲突检查全部正常（smoke 35.5s / 打包版通过） |
+
+> 原生对话框无法在自动化里点击，所以 IPC 层保留了环境变量旁路；正式运行时两个环境变量都不设置，走真正的 `dialog.showOpenDialog/showSaveDialog`。
+
+## 31. 已知限制 / 待办
 
 - **更新**：只支持便携版（解压替换）；NSIS 安装包升级未做。
 - **签名**：便携版未做代码签名，Windows SmartScreen 会提示未知发布者。
@@ -531,14 +544,14 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 - **实例**：支持创建/切换/删除/导出/导入；实例图标、跨设备同步未做。
 - **登录**：微软正版登录已通（设备码 + Xbox Live + Minecraft Services，mock 全链路验证）；需要用户自备 Azure client_id；令牌用 DPAPI 加密存本机，支持多账号切换。
 
-## 31. 下一步（P24：补账）
+## 32. 下一步（P25：补账）
 
 1. **插件网络白名单**：Node permission model 不管网络，考虑 vm/代理层限制 outbound。
-2. **系统文件选择器**：导出/导入与整合包都改走 dialog.showOpenDialog（当前走路径输入）。
+2. **多实例独立账号绑定**（当前账号是全局的）。
 3. **账号头像/到期提醒** 与多实例独立账号绑定。
 4. **体验**：多会话记忆、更多修复动作（切 Java/换加载器）、安装包体积优化。
 
-## 32. 测试用 mock LLM
+## 33. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

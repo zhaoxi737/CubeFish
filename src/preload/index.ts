@@ -87,6 +87,10 @@ const api: QdoApi = {
       }
     },
   },
+  dialog: {
+    pickFile: (kind) => ipcRenderer.invoke(CH.dialogPickFile, kind),
+    pickSave: (defaultName) => ipcRenderer.invoke(CH.dialogPickSave, defaultName),
+  },
   auth: {
     state: () => ipcRenderer.invoke(CH.authState),
     accounts: () => ipcRenderer.invoke(CH.authAccounts),

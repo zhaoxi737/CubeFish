@@ -121,6 +121,12 @@ export interface QdoApi {
     /** 订阅流式增量；返回取消订阅函数 */
     onDelta(callback: (text: string) => void): () => void
   }
+  dialog: {
+    /** 系统文件选择器；kind 决定文件类型过滤 */
+    pickFile(kind?: 'pack' | 'zip'): Promise<string | null>
+    /** 系统保存对话框；返回目标路径或 null */
+    pickSave(defaultName: string): Promise<string | null>
+  }
   auth: {
     state(): Promise<AccountState>
     accounts(): Promise<AccountSummary[]>

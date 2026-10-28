@@ -213,6 +213,17 @@ export function ModsDialog({ instance, onClose, onNotify, onRefresh }: Props) {
                 placeholder="粘贴本机整合包路径（.mrpack / CurseForge .zip）"
                 spellCheck={false}
               />
+              <button
+                type="button"
+                className="ghost"
+                onClick={async () => {
+                  const picked = await window.qdo.dialog.pickFile('pack')
+                  if (picked) setPackPath(picked)
+                }}
+                disabled={packBusy}
+              >
+                选择文件…
+              </button>
               <button type="button" className="ghost" onClick={() => void previewPack()} disabled={packBusy}>
                 {packBusy ? '处理中…' : '预览'}
               </button>

@@ -14,6 +14,8 @@ export const CH = {
   instancesActivate: 'instances:activate',
   instancesExport: 'instances:export',
   instancesImport: 'instances:import',
+  dialogPickFile: 'dialog:pick-file',
+  dialogPickSave: 'dialog:pick-save',
   chatSend: 'chat:send',
   chatDelta: 'chat:delta',
   authState: 'auth:state',

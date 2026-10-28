@@ -245,7 +245,10 @@ export function App() {
   const exportInstance = useCallback(async () => {
     if (!hasApi || !instance) return
     try {
-      const result = await window.qdo.instances.export(instance.id)
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+      const dest = await window.qdo.dialog.pickSave(`${instance.id}-${stamp}.zip`)
+      if (!dest) return
+      const result = await window.qdo.instances.export(instance.id, dest)
       if (!result.ok) notify(`导出失败：${result.error ?? '未知错误'}`)
       else notify(`已导出到 ${result.path}（${result.files} 个文件，${Math.round((result.bytes ?? 0) / 1024)} KB）`)
     } catch (err) {
@@ -474,7 +477,7 @@ export function App() {
         <div className="brand">
           <span className="brand-mark">QDOQMC</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P23 · 实例导入导出</span>
+          <span className="brand-tag">P24 · 文件选择器</span>
         </div>
         <div className="titlebar-actions">
           <button type="button" className="ghost" onClick={() => setShowMods(true)} disabled={!instance}>
@@ -727,12 +730,24 @@ export function App() {
               </label>
               <label className="field">
                 <span className="field-label">或从导出包导入</span>
-                <input
-                  value={importPath}
-                  onChange={(event) => setImportPath(event.target.value)}
-                  placeholder="粘贴 .zip 路径（上面名称留空则用包内实例名）"
-                  spellCheck={false}
-                />
+                <div className="pack-row">
+                  <input
+                    value={importPath}
+                    onChange={(event) => setImportPath(event.target.value)}
+                    placeholder="粘贴 .zip 路径（上面名称留空则用包内实例名）"
+                    spellCheck={false}
+                  />
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={async () => {
+                      const picked = await window.qdo.dialog.pickFile('zip')
+                      if (picked) setImportPath(picked)
+                    }}
+                  >
+                    选择…
+                  </button>
+                </div>
               </label>
             </div>
             <div className="dialog-foot">

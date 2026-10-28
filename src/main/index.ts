@@ -1,6 +1,6 @@
 import electron from 'electron'
 import type { BrowserWindow as BrowserWindowType } from 'electron'
-import { mkdirSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import AdmZip from 'adm-zip'
 import { fileURLToPath } from 'node:url'
@@ -243,7 +243,9 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
       await wait(2400)
       const firstShot = await shot('smoke.png')
 
-      // 实例导出：点主页「导出」按钮，记录 toast 与产物
+      // 实例导出：点主页「导出」按钮（保存对话框用环境变量跳过，便于自动化）
+      process.env.QDOQMC_SAVE_FILE = path.join(dir, 'smoke-export.zip')
+      // 记录 toast 与产物
       await win.webContents.executeJavaScript(
         `(() => { const btn = [...document.querySelectorAll('.instances-line button')].find((b) => b.textContent?.trim() === '导出'); btn?.click(); return 'export-clicked' })()`,
       )
@@ -257,6 +259,14 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
         exportFiles = readdirSync(exportDir)
       } catch {
         exportFiles = []
+      }
+
+      let exportFromDialog = { exists: false, bytes: 0 }
+      try {
+        const saved = path.join(dir, 'smoke-export.zip')
+        exportFromDialog = { exists: existsSync(saved), bytes: statSync(saved).size }
+      } catch {
+        exportFromDialog = { exists: false, bytes: 0 }
       }
 
       // AI 对话：发一条自然语言，验证「模型 → 工具 → 回答」轨迹（需要 mock 或真实 LLM 环境变量）
@@ -467,6 +477,14 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
         `(() => { const tab = [...document.querySelectorAll('.kind-tab')].find((b) => b.textContent?.trim() === '整合包'); tab?.click(); return 'pack-tab' })()`,
       )
       await wait(900)
+      process.env.QDOQMC_PICK_FILE = packPath
+      await win.webContents.executeJavaScript(
+        `(() => { const pick = [...document.querySelectorAll('.pack-row button')].find((x) => x.textContent?.trim() === '选择文件…'); pick?.click(); return 'pick-clicked' })()`,
+      )
+      await wait(700)
+      const pickedPath = (await win.webContents.executeJavaScript(
+        `document.querySelector('.pack-row input')?.value ?? ''`,
+      )) as string
       await win.webContents.executeJavaScript(
         `(() => {
           const input = document.querySelector('.pack-row input')
@@ -511,6 +529,22 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
         }
       }
 
+      // 导入对话框：验证「选择…」把路径填进输入框
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.instances-line button')].find((b) => b.textContent?.trim() === '+ 新建'); btn?.click(); return 'new-instance-open' })()`,
+      )
+      await wait(600)
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.dialog .pack-row button')].find((b) => b.textContent?.trim() === '选择…'); btn?.click(); return 'import-pick' })()`,
+      )
+      await wait(700)
+      const importPicked = (await win.webContents.executeJavaScript(
+        `document.querySelector('.dialog .pack-row input')?.value ?? ''`,
+      )) as string
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.dialog-foot button')].find((b) => b.textContent?.trim() === '取消'); btn?.click(); return 'cancel' })()`,
+      )
+      await wait(400)
       console.log('SMOKE_STEP pack-done')
       const info = k.ctx.get('appMeta') as { version?: string } | undefined
       console.log(
@@ -529,9 +563,10 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           resourcepack: JSON.parse(rpInfo),
           modpack: JSON.parse(modpackInfo),
           conflict: JSON.parse(conflictInfo),
-          pack: { preview: JSON.parse(packInfo), done: JSON.parse(packDone), screenshot: packShot, doneScreenshot: packDoneShot },
+          pack: { preview: JSON.parse(packInfo), done: JSON.parse(packDone), screenshot: packShot, doneScreenshot: packDoneShot, pickedPath },
+          importPicker: { picked: importPicked },
           gameLog: { info: JSON.parse(gameLogInfo), screenshot: gameLogShot },
-          instanceExport: { info: JSON.parse(exportInfo), files: exportFiles },
+          instanceExport: { info: JSON.parse(exportInfo), files: exportFiles, saved: exportFromDialog },
           chatStatus: chat,
         })}`,
       )

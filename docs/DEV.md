@@ -1,4 +1,4 @@
-﻿# 开发手册（P0–P10）
+# 开发手册（P0–P25）
 
 ## 1. 环境
 
@@ -559,12 +559,15 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 - **实例**：支持创建/切换/删除/导出/导入/独立账号绑定；实例图标、跨设备同步未做。
 - **登录**：微软正版登录已通（设备码 + Xbox Live + Minecraft Services，mock 全链路验证）；需要用户自备 Azure client_id；令牌用 DPAPI 加密存本机，支持多账号切换。
 
-## 33. 下一步（P26：收尾）
+## 33. 后续方向（P26 之后）
 
-1. **插件网络白名单**：Node permission model 不管网络，考虑 vm/代理层限制 outbound。
-2. **实例账号 UI**：目前只有 CLI/AI 绑定，界面只能看 chip 不能选。
-3. **账号头像/到期提醒** 与多实例独立账号绑定。
-4. **体验**：多会话记忆、更多修复动作（切 Java/换加载器）、安装包体积优化。
+P0–P25 的交付已经收口，下面是仍值得做、但优先级低于「能玩、能装、能修」的事项：
+
+1. **代码签名 + NSIS 安装包**：需要代码签名证书（当前只能发便携版 zip）。
+2. **更老的 Forge（1.12.2 等）**：需要 Java 8 运行时与旧版 installer 兼容验证。
+3. **插件网络白名单**：Node permission model 不管网络，需要 vm/代理层限制 outbound。
+4. **实例账号 UI**：目前绑定账号只能走 CLI / AI，界面只能展示 chip。
+5. **多会话 AI 记忆、CurseForge 文件选择器集成、实例云同步**。
 
 ## 34. 测试用 mock LLM
 
@@ -579,3 +582,36 @@ node_modules/.bin/electron . --chat="帮我检查下这个实例有没有冲突"
 ```
 
 会打印 `CHAT_RESULT`（含 text 与 trace）。`npm run smoke` 在同样的环境变量下会截图 `out/smoke-ai.png` 并输出 `ai.trace`。
+
+## 35. 总验收矩阵（P0–P25，全部真机运行 / 截图 / 日志取证）
+
+| 阶段 | 交付 | 关键证据 |
+|---|---|---|
+| P0 | 骨架 / 插件内核 / 极简 UI / 日志 / 设置 / 抽象服务 / 更新检查 / 埋点 | 6 张截图，内核 0 失败 |
+| P1 | 原版安装 + Java 匹配 + 一键启动 | 1.21.11 进主菜单，7 项启动标记 |
+| P2 | Fabric + Modrinth 模组一键安装 | Fabric 0.20.1；sodium 落盘并启动 |
+| P3 | 冲突静态分析 / 崩溃归因 / 模组启停 | 坏模组精确报「缺 missing-lib」 |
+| P4 | AI 工具调用（自然语言驱动） | mock LLM 跑通「模型→工具→回答」 |
+| P5 | 插件宿主（注册 AI 工具/命令） | 示例插件 `/hello` + `plugin_hello` |
+| P6 | 便携版打包 + 更新清单 | 138MB zip + latest.json（sha256） |
+| P7 | 自动更新下载 / 退出替换 / 重启 | 0.1.0 → 0.2.0 真机实升 |
+| P8 | 多实例 + 资源包 / 光影 | 测试实例装资源包/光影，默认实例零污染 |
+| P9 | 插件市场（Ed25519 签名） | 篡改 feed / sha256 均被拒 |
+| P10 | .mrpack 整合包安装 | 本地包 + Fabulously Optimized 索引解析 |
+| P11 | NeoForge 安装 + 启动 | 窗口 `Minecraft NeoForge* 1.21.11` |
+| P12 | AI 流式输出 + 会话记忆 | 15 个增量片段；msgs 4→6 证明历史注入 |
+| P13 | 崩溃一键修复 | 真实坏模组崩溃 → 退出卡片 → 修复按钮 |
+| P14 | Forge 1.20.1 安装 + 启动 | 窗口 `Minecraft* Forge 1.20.1`；Java 17 自动下载 |
+| P15 | 插件沙箱（utilityProcess） | 插件 process.exit(3) 被隔离，宿主存活 |
+| P16 | 整合包补全（NeoForge/Forge 依赖） | 两种依赖包都能生成可启动实例 |
+| P17 | 微软登录（设备码全链路） | mock 授权服务器 → MockPlayer 账号落盘 |
+| P18 | 令牌 DPAPI 加密 + 多账号 | accounts.json 无明文；切换/移除生效 |
+| P19 | 插件能力沙箱（Node permission model） | 越权读/写/子进程全部 ERR_ACCESS_DENIED |
+| P20 | CurseForge `.zip` 整合包 | mock CF API 解析 → 下载 → 落盘 |
+| P21 | 整合包 UI（预览 + 安装） | UI 预览卡片 + toast，实例 loader=fabric |
+| P22 | 游戏日志查看 | 日志抽屉双标签，ERROR 高亮，7 行实测 |
+| P23 | 实例导出 / 导入 | 导出 54 文件；导入实例启动 7 项标记 |
+| P24 | 系统文件选择器 | 导出另存 32.9MB；选择文件自动填路径 |
+| P25 | 多实例独立账号 | 全局 SecondPlayer 时，绑定实例用 MockPlayer 启动 |
+
+> 汇总口径：每阶段都跑过 `npm run smoke` 与打包版 `--smoke`；涉及游戏启动的阶段有真实窗口标题与启动标记日志。

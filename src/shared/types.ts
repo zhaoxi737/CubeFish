@@ -57,8 +57,10 @@ export interface UpdateState {
 export interface InstanceSummary {
   id: string
   name: string
-  /** 已选定的游戏版本（Mojang 版本 id） */
+  /** 已选定的游戏版本（Mojang 版本 id 或加载器 profile id） */
   versionId?: string
+  /** 底层游戏版本（加载器实例也指向原版版本号，如 1.21.11） */
+  gameVersion?: string
   mcVersion: string
   loader: string
   loaderVersion?: string
@@ -208,4 +210,65 @@ export interface GameStateEvent {
   crashReport?: string
   hint?: string
 }
+
+/* ---------- P2：加载器 / 内容（Modrinth） ---------- */
+
+export interface SearchHit {
+  projectId: string
+  slug: string
+  title: string
+  description: string
+  projectType: string
+  categories: string[]
+  downloads: number
+  iconUrl?: string
+  versions: string[]
+}
+
+export interface ContentVersionInfo {
+  id: string
+  projectId: string
+  versionNumber: string
+  gameVersions: string[]
+  loaders: string[]
+  versionType: string
+  datePublished: string
+  fileName: string
+  fileUrl: string
+  fileSize: number
+  sha1: string
+  dependencies: { projectId?: string; versionId?: string; dependencyType: string }[]
+}
+
+export interface InstalledContent {
+  projectId: string
+  slug?: string
+  title?: string
+  versionId: string
+  versionNumber: string
+  fileName: string
+  kind: string
+  sha1: string
+  installedAt: number
+}
+
+export interface ContentInstallResult {
+  ok: boolean
+  projectId: string
+  title?: string
+  versionNumber?: string
+  files: string[]
+  dependenciesInstalled: number
+  error?: string
+}
+
+export interface FabricInstallResult {
+  ok: boolean
+  gameVersion: string
+  versionId?: string
+  loaderVersion?: string
+  libraries?: number
+  error?: string
+}
+
 

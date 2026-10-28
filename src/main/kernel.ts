@@ -3,12 +3,14 @@ import { errorMessage, type LauncherPlugin } from './plugin-kit'
 import { createAppPlugin } from './plugins/app'
 import { createChatPlugin } from './plugins/chat'
 import { createCloudPlugin } from './plugins/cloud'
+import { createContentPlugin } from './plugins/content'
 import { createEntitlementPlugin } from './plugins/entitlement'
 import { createIdentityPlugin } from './plugins/identity'
 import { createInstancesPlugin } from './plugins/instances'
 import { createIpcPlugin, type WindowProvider } from './plugins/ipc'
 import { createJavaPlugin } from './plugins/java'
 import { createLaunchPlugin } from './plugins/launch'
+import { createLoadersPlugin } from './plugins/loaders'
 import { createLoggerPlugin, type LogService } from './plugins/logger'
 import { createMojangPlugin } from './plugins/mojang'
 import { createPathsPlugin } from './plugins/paths'
@@ -70,6 +72,8 @@ export async function bootKernel(options: KernelOptions): Promise<Kernel> {
     createMojangPlugin(),
     createJavaPlugin(),
     createInstancesPlugin(),
+    createLoadersPlugin(),
+    createContentPlugin(),
     createLaunchPlugin(),
     createChatPlugin(),
     createIpcPlugin({ getWindow: options.getWindow, summary }),

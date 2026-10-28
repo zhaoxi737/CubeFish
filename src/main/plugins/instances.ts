@@ -24,7 +24,7 @@ export interface InstancesService {
   get(id: string): InstanceSummary | undefined
   ensureDefault(): InstanceSummary
   gameDir(id: string): string
-  setVersion(id: string, versionId: string, mcVersion: string): InstanceSummary
+  setVersion(id: string, versionId: string, mcVersion: string, gameVersion?: string, loader?: string): InstanceSummary
   setMemory(id: string, memoryMb: number): void
   setPlayerName(id: string, playerName: string): void
   dryRun(id?: string): Promise<LaunchDryRun>
@@ -34,6 +34,7 @@ interface InstanceFile {
   id: string
   name: string
   versionId?: string
+  gameVersion?: string
   mcVersion: string
   loader: string
   loaderVersion?: string
@@ -68,6 +69,7 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
         id: file.id,
         name: file.name,
         versionId,
+        gameVersion: file.gameVersion ?? (file.loader === 'vanilla' ? versionId : undefined),
         mcVersion: file.mcVersion,
         loader: file.loader,
         loaderVersion: file.loaderVersion,
@@ -141,15 +143,23 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
       return file ? toSummary(file) : undefined
     }
 
-    const setVersion = (id: string, versionId: string, mcVersion: string): InstanceSummary => {
+    const setVersion = (
+      id: string,
+      versionId: string,
+      mcVersion: string,
+      gameVersion?: string,
+      loader?: string,
+    ): InstanceSummary => {
       const file = read(id) ?? (() => {
         throw new Error(`实例不存在: ${id}`)
       })()
       file.versionId = versionId
       file.mcVersion = mcVersion
+      if (gameVersion) file.gameVersion = gameVersion
+      file.loader = loader ?? (versionId.startsWith('fabric-loader') ? 'fabric' : 'vanilla')
       write(file)
-      telemetry.record('instance:set-version', { id, versionId })
-      log.info('instances', '实例已绑定版本', { id, versionId })
+      telemetry.record('instance:set-version', { id, versionId, gameVersion, loader: file.loader })
+      log.info('instances', '实例已绑定版本', { id, versionId, gameVersion, loader: file.loader })
       return toSummary(file)
     }
 

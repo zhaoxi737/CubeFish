@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { bootKernel, type Kernel } from './kernel'
-import { runInstallCli, runLaunchTest } from './cli'
+import { runFabricCli, runInstallCli, runLaunchTest, runModCli } from './cli'
 
 const { app, BrowserWindow, shell } = electron
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -18,6 +18,8 @@ function argValue(name: string): string | undefined {
 
 const installTarget = argValue('install')
 const launchTarget = argValue('launch')
+const fabricTarget = argValue('fabric')
+const modTarget = argValue('mod')
 const waitMs = Number(argValue('wait') ?? 60000)
 
 let mainWindow: BrowserWindowType | null = null
@@ -87,6 +89,16 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
         `window.qdo.chat.send('/status').then((r) => r.text)`,
       )) as string
 
+      // 打开「模组」市场，截一张真实 Modrinth 搜索结果的图
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.titlebar-actions button')].find((b) => b.textContent?.trim() === '模组'); btn?.click(); return 'mods' })()`,
+      )
+      await wait(2600)
+      const modsShot = await shot('smoke-mods.png')
+      const modsInfo = (await win.webContents.executeJavaScript(
+        `JSON.stringify({ rows: document.querySelectorAll('.mod-row').length, first: document.querySelector('.mod-title')?.textContent ?? '' })`,
+      )) as string
+
       const info = k.ctx.get('appMeta') as { version?: string } | undefined
       console.log(
         `SMOKE_RESULT ${JSON.stringify({
@@ -95,8 +107,9 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           version: info?.version ?? app.getVersion(),
           plugins: k.summary.plugins,
           failed: k.summary.failed,
-          screenshots: [firstShot],
+          screenshots: [firstShot, modsShot],
           ui: JSON.parse(uiText),
+          mods: JSON.parse(modsInfo),
           chatStatus: chat,
         })}`,
       )
@@ -135,6 +148,16 @@ if (!gotLock) {
 
       if (installTarget) {
         const code = await runInstallCli(kernel, installTarget)
+        app.exit(code)
+        return
+      }
+      if (fabricTarget) {
+        const code = await runFabricCli(kernel, fabricTarget)
+        app.exit(code)
+        return
+      }
+      if (modTarget) {
+        const code = await runModCli(kernel, modTarget)
         app.exit(code)
         return
       }

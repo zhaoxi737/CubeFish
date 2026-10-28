@@ -16,6 +16,11 @@ export const CH = {
   javaList: 'java:list',
   launchStart: 'launch:start',
   launchStop: 'launch:stop',
+  contentSearch: 'content:search',
+  contentVersions: 'content:versions',
+  contentInstall: 'content:install',
+  contentInstalled: 'content:installed',
+  loaderFabric: 'loader:fabric',
 } as const
 
 /** 主进程 → 渲染进程的推送通道 */

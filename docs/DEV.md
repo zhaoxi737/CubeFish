@@ -1,4 +1,4 @@
-# 开发手册（P0–P1）
+# 开发手册（P0–P2）
 
 ## 1. 环境
 
@@ -35,7 +35,7 @@ node_modules/.bin/electron . --launch=default --wait=50000
 
 ## 3. 架构
 
-主进程 = **Cordis 容器**（`@deepseek-ai/cordis`，与 Harness 同一内核）+ 16 个启动器插件。
+主进程 = **Cordis 容器**（`@deepseek-ai/cordis`，与 Harness 同一内核）+ 18 个启动器插件。
 
 插件按固定顺序装配（`src/main/kernel.ts`），每个插件通过 `ctx.provide(name, value)` 暴露服务，
 后续插件用 `use<T>(ctx, name)` 取用。任何一个插件加载失败都不会阻塞其它插件，
@@ -56,9 +56,11 @@ node_modules/.bin/electron . --launch=default --wait=50000
 | 11 | mojang | `mojang` | 版本清单 / 版本 JSON / 原版安装（client+libraries+assets+logging） |
 | 12 | java | `java` | Java 探测 / 按 major 匹配 / 下载 Mojang 运行时 |
 | 13 | instances | `instances` | 实例 / 版本隔离目录 / 绑定版本 |
-| 14 | launch | `launch` | 版本合并 / natives / classpath / 参数展开 / 进程与退出归因 |
-| 15 | chat | `chat` | 本地命令路由（P4 升级为 AI 工具调用） |
-| 16 | ipc | — | IPC 通道注册 + 进度与游戏状态推送 |
+| 14 | loaders | `loaders` | 加载器安装（Fabric meta 合并） |
+| 15 | content | `content` | Modrinth 搜索 / 版本匹配 / 依赖 / 安装 |
+| 16 | launch | `launch` | 版本合并 / natives / classpath / 参数展开 / 进程与退出归因 |
+| 17 | chat | `chat` | 本地命令路由（P4 升级为 AI 工具调用） |
+| 18 | ipc | — | IPC 通道注册 + 进度与游戏状态推送 |
 
 渲染进程只通过 `window.qdo`（preload 的 contextBridge）访问主进程，契约见 `src/shared/api.ts`。
 
@@ -131,20 +133,35 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 | 正常退出与退出码归因 | ✅ `Stopping!` → 退出码 0，无 crash-report |
 | 实例绑定与版本隔离 | ✅ `instances/default/.minecraft`，全局 assets/libraries 复用 |
 
-## 8. 已知限制 / 待办
+## 8. P2 验收（已实测，2026-10-29）
+
+| 验收项 | 结果 |
+|---|---|
+| Fabric 加载器安装（meta API 纯合并，无安装器进程） | ✅ Fabric Loader 0.20.1 for 1.21.11，8 个库 |
+| 加载器版本启动（inheritsFrom 合并 + 原版 jar 定位） | ✅ `LAUNCH_START ok`，527ms 起进程 |
+| Modrinth 搜索 | ✅ UI 一次返回 12 条真实结果（Fabric API / Sodium / Iris / Entity Culling…） |
+| 版本匹配（game_version + loader facet） | ✅ Sodium 正确选到 `mc1.21.11-0.8.14-fabric`（修复前误选 neoforge 版） |
+| 一键安装到实例 | ✅ `mods/fabric-api-0.141.6+1.21.11.jar`、`mods/sodium-fabric-0.8.14+mc1.21.11.jar` |
+| 安装清单（content.json，回滚/冲突分析用） | ✅ 记录 projectId/versionId/fileName/sha1 |
+| 装完后游戏真的加载模组 | ✅ 日志：`Loading Minecraft 1.21.11 with Fabric Loader 0.20.1` / `Loading 49 mods` / `- fabric-api 0.141.6` / `- sodium 0.8.14` |
+| Sodium 实际生效 | ✅ `Loaded configuration file for Sodium: 36 options available`，Mixin 子系统加载 |
+| 无崩溃 | ✅ 无 crash-report，正常进主菜单（Realms JWT 报错是离线模式预期） |
+
+## 9. 已知限制 / 待办
 
 - **慢网**：本机到 Mojang 单连接仅 ~50KB/s，并发 16 约 200KB/s，432MB 资源耗时 18 分钟。BMCLAPI 镜像是同速，镜像回退待接入（设置里预留了位置）。
+- **加载器**：Fabric 已通；NeoForge/Forge（processors 执行引擎）未做，Quilt 不做。
+- **内容**：mod/资源包/光影的搜索安装已通；`.mrpack` 整合包、依赖图完整求解（只做了 required 依赖递归）未完成。
 - **老版本**：legacy/pre-1.6 资源物化已实现但未实测；Java 8 运行时自动下载未实测。
-- **加载器**：Fabric/NeoForge/Forge 未实现（P2）。
-- **实例**：只有默认实例；多实例创建/切换在 P2 前后补。
-- **登录**：仅离线（正版 OAuth 在 P2）。
+- **实例**：只有默认实例；多实例创建/切换待补。
+- **登录**：仅离线（正版 OAuth 未做）。
 - **更新**：只到「检查」环节（P5 做下载替换与签名）。
 - **打包**：尚未打包（P5 做 electron-builder + 签名）。
 
-## 9. 下一步（P2）
+## 10. 下一步（P3：能治 / 能装补全）
 
-1. Fabric 安装（meta API 纯合并，无安装器进程）。
-2. NeoForge（install_profile processors 执行引擎，最脏的一块）。
-3. Modrinth 搜索 / 版本匹配 / 依赖求解 / 一键装 mod、资源包、光影。
-4. `.mrpack` 整合包一键安装。
-5. 下载前冲突预检 + 静态冲突分析（P3 再接日志归因）。
+1. 静态冲突分析：解析 `fabric.mod.json` 的 depends/breaks、重复 modid、loader 不匹配。
+2. 崩溃归因：`crash-reports` / `latest.log` 解析 + 常见崩溃签名库。
+3. 模组管理 UI：启用/禁用、卸载、按实例查看。
+4. NeoForge/Forge processors 引擎（P2 遗留的最脏一块）。
+5. `.mrpack` 整合包一键安装。

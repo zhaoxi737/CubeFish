@@ -13,6 +13,7 @@ import type {
 import { ChatPanel } from './components/ChatPanel'
 import { SettingsDialog } from './components/SettingsDialog'
 import { LogDrawer } from './components/LogDrawer'
+import { ModsDialog } from './components/ModsDialog'
 
 const FALLBACK_INFO: AppInfo = {
   name: 'QDOQMC',
@@ -75,6 +76,8 @@ export function App() {
   const [toast, setToast] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [showLogs, setShowLogs] = useState(false)
+  const [showMods, setShowMods] = useState(false)
+  const [fabricBusy, setFabricBusy] = useState(false)
   const listening = useRef(false)
 
   const hasApi = typeof window !== 'undefined' && typeof window.qdo !== 'undefined'
@@ -145,9 +148,8 @@ export function App() {
           if (cancelled) return
           setVersions(list)
           setInstalled(installedList)
-          const preferred = instances[0]?.versionId && list.versions.some((v) => v.id === instances[0]?.versionId)
-            ? instances[0].versionId
-            : list.latest.release
+          const bound = instances[0]?.gameVersion ?? instances[0]?.versionId
+          const preferred = bound && list.versions.some((v) => v.id === bound) ? bound : list.latest.release
           setSelected(preferred)
         } catch (err) {
           if (!cancelled) notify(`版本清单获取失败：${err instanceof Error ? err.message : String(err)}`)
@@ -215,6 +217,27 @@ export function App() {
     notify(result.forced ? '已强制结束游戏进程' : '已请求结束游戏')
   }, [hasApi, notify])
 
+  const installFabric = useCallback(async () => {
+    if (!hasApi || fabricBusy) return
+    const gameVersion = instance?.gameVersion ?? selected
+    if (!gameVersion || !installed.includes(gameVersion)) {
+      notify('先安装对应的原版版本，再装 Fabric')
+      return
+    }
+    setFabricBusy(true)
+    try {
+      const result = await window.qdo.loaders.fabric(gameVersion)
+      if (!result.ok) notify(`Fabric 安装失败：${result.error ?? '未知错误'}`)
+      else notify(`Fabric ${result.loaderVersion} 已安装（${result.libraries} 个库）`)
+      await refreshInstalled()
+    } catch (err) {
+      notify(`Fabric 安装失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setFabricBusy(false)
+      setProgress(null)
+    }
+  }, [fabricBusy, hasApi, instance?.gameVersion, installed, notify, refreshInstalled, selected])
+
   const onSaveSettings = useCallback(
     async (patch: SettingsPatch) => {
       if (!hasApi) return
@@ -237,9 +260,12 @@ export function App() {
         <div className="brand">
           <span className="brand-mark">QDOQMC</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P1 · 能玩</span>
+          <span className="brand-tag">P2 · 能装</span>
         </div>
         <div className="titlebar-actions">
+          <button type="button" className="ghost" onClick={() => setShowMods(true)} disabled={!instance}>
+            模组
+          </button>
           <button type="button" className="ghost" onClick={() => void checkUpdate()}>
             检查更新
           </button>
@@ -256,7 +282,8 @@ export function App() {
         <section className="stage">
           <div className="instances-line">
             <span className="instance-name">{instance?.name ?? '默认实例'}</span>
-            <span className="chip">{instance?.versionId || '未选版本'}</span>
+            <span className="chip">{instance?.gameVersion ?? instance?.versionId ?? '未选版本'}</span>
+            <span className="chip">{instance?.loader ?? 'vanilla'}</span>
             <span className="chip">{instance?.memoryMb ?? 0} MB</span>
             <span className="chip">{instance?.playerName ?? 'Player'}</span>
             <span className="chip subtle">版本隔离</span>
@@ -283,6 +310,14 @@ export function App() {
               disabled={installing || !selected || installed.includes(selected)}
             >
               {installing ? '安装中…' : installed.includes(selected) ? '已安装' : '安装选定版本'}
+            </button>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => void installFabric()}
+              disabled={fabricBusy || installing || !selected || !installed.includes(selected)}
+            >
+              {fabricBusy ? '装 Fabric…' : instance?.loader === 'fabric' ? 'Fabric 已装' : '装 Fabric'}
             </button>
           </div>
 
@@ -357,6 +392,9 @@ export function App() {
       </footer>
 
       {toast ? <div className="toast">{toast}</div> : null}
+      {showMods && instance ? (
+        <ModsDialog instance={instance} onClose={() => setShowMods(false)} onNotify={notify} />
+      ) : null}
       {showSettings && settings ? (
         <SettingsDialog settings={settings} onClose={() => setShowSettings(false)} onSave={onSaveSettings} />
       ) : null}

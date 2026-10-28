@@ -5,12 +5,17 @@ import type {
   AppInfo,
   AppMeta,
   ChatReply,
+  ContentInstallResult,
+  ContentVersionInfo,
   EventSummary,
+  FabricInstallResult,
   InstanceSummary,
+  InstalledContent,
   JavaRuntimeInfo,
   LaunchDryRun,
   LaunchResult,
   LogRecord,
+  SearchHit,
   SettingsPatch,
   SettingsShape,
   TaskProgress,
@@ -20,11 +25,13 @@ import type {
 } from '../../shared/types'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { ChatService } from './chat'
+import type { ContentService } from './content'
 import type { EntitlementService } from './entitlement'
 import type { IdentityService } from './identity'
 import type { InstancesService } from './instances'
 import type { JavaService } from './java'
 import type { LaunchService } from './launch'
+import type { LoadersService } from './loaders'
 import type { LogService } from './logger'
 import type { MojangService } from './mojang'
 import type { PathsService } from './paths'
@@ -56,6 +63,8 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     const mojang = use<MojangService>(ctx, 'mojang')
     const java = use<JavaService>(ctx, 'java')
     const launch = use<LaunchService>(ctx, 'launch')
+    const loaders = use<LoadersService>(ctx, 'loaders')
+    const content = use<ContentService>(ctx, 'content')
 
     const push = (channel: string, payload: unknown): void => {
       const win = config.getWindow()
@@ -64,6 +73,7 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
 
     mojang.setProgressSink((progress: TaskProgress) => push(EVT.progress, progress))
     java.setProgressSink((progress: TaskProgress) => push(EVT.progress, progress))
+    loaders.setProgressSink((progress: TaskProgress) => push(EVT.progress, progress))
     launch.setGameStateSink((state) => push(EVT.gameState, state))
 
     const handle = <T>(channel: string, handler: (...args: any[]) => T | Promise<T>): void => {
@@ -109,6 +119,34 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle<JavaRuntimeInfo[]>(CH.javaList, () => java.detect())
     handle<LaunchResult>(CH.launchStart, (instanceId?: string) => launch.start(instanceId ?? 'default'))
     handle(CH.launchStop, () => launch.stop())
+
+    handle<SearchHit[]>(
+      CH.contentSearch,
+      (query: string, opts?: { type?: string; mcVersion?: string; loader?: string; limit?: number }) =>
+        content.search(query, {
+          type: opts?.type as never,
+          mcVersion: opts?.mcVersion,
+          loader: opts?.loader,
+          limit: opts?.limit,
+        }),
+    )
+    handle<ContentVersionInfo[]>(
+      CH.contentVersions,
+      (projectId: string, opts?: { mcVersion?: string; loader?: string }) => content.versions(projectId, opts),
+    )
+    handle<ContentInstallResult>(
+      CH.contentInstall,
+      (instanceId: string, projectId: string, opts?: { mcVersion?: string; loader?: string }) =>
+        content.install(instanceId, projectId, opts),
+    )
+    handle<InstalledContent[]>(CH.contentInstalled, (instanceId: string) => content.installed(instanceId))
+    handle<FabricInstallResult>(CH.loaderFabric, async (gameVersion: string) => {
+      const result = await loaders.installFabric(gameVersion)
+      if (result.ok && result.versionId) {
+        instances.setVersion('default', result.versionId, gameVersion, gameVersion, 'fabric')
+      }
+      return result
+    })
 
     log.info('ipc', 'IPC 通道已注册', { count: Object.keys(CH).length })
   })

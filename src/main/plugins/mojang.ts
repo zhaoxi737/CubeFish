@@ -126,6 +126,14 @@ export function createMojangPlugin(): LauncherPlugin<void> {
     }
 
     async function versionJson(versionId: string): Promise<VersionJson> {
+      // 1) 本地已安装版本（原版或加载器 profile）优先：加载器版本不在 Mojang 清单里
+      const installedFile = path.join(paths.versions, versionId, `${versionId}.json`)
+      if (existsSync(installedFile)) {
+        const local = await readJson<VersionJson | undefined>(installedFile, undefined)
+        if (local?.libraries) return local
+      }
+
+      // 2) Mojang 清单 → 下载并缓存
       const list = await manifest()
       const entry = list.versions.find((v) => v.id === versionId)
       if (!entry) throw new Error(`未知版本: ${versionId}`)

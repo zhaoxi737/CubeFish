@@ -30,6 +30,8 @@ export interface LaunchService {
 
 interface ResolvedVersion {
   id: string
+  /** 继承链最底层的原版版本 id（客户端 jar 在这里） */
+  baseVersionId: string
   mainClass: string
   type: string
   assetIndexId?: string
@@ -123,8 +125,11 @@ export function createLaunchPlugin(): LauncherPlugin<void> {
         }
       }
 
+      const topGameArgs = top.arguments?.game ?? []
+      const baseGameArgs = base.arguments?.game ?? []
       return {
         id: top.id,
+        baseVersionId: base.id,
         mainClass: top.mainClass ?? base.mainClass,
         type: top.type ?? base.type ?? 'release',
         assetIndexId: top.assetIndex?.id ?? base.assetIndex?.id,
@@ -132,7 +137,7 @@ export function createLaunchPlugin(): LauncherPlugin<void> {
         javaComponent: top.javaVersion?.component ?? base.javaVersion?.component,
         logging: top.logging ?? base.logging,
         libraries: [...merged.values()],
-        gameArgs: top.arguments?.game ?? base.arguments?.game ?? [],
+        gameArgs: topGameArgs.length > 0 ? topGameArgs : baseGameArgs,
         jvmArgs: chain.flatMap((v) => v.arguments?.jvm ?? []),
         minecraftArguments: top.minecraftArguments ?? base.minecraftArguments,
       }
@@ -203,8 +208,9 @@ export function createLaunchPlugin(): LauncherPlugin<void> {
 
       try {
         const resolved = await resolve(instance.versionId)
-        const versionJar = path.join(paths.versions, instance.versionId, `${instance.versionId}.jar`)
-        if (!existsSync(versionJar)) throw new Error(`缺少客户端 jar（重新安装 ${instance.versionId}）`)
+        const jarVersion = resolved.baseVersionId
+        const versionJar = path.join(paths.versions, jarVersion, `${jarVersion}.jar`)
+        if (!existsSync(versionJar)) throw new Error(`缺少客户端 jar（重新安装 ${jarVersion}）`)
 
         const taskId = `launch-${Date.now()}`
         const javaInfo = resolved.javaComponent

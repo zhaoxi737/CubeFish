@@ -1,15 +1,20 @@
 import type {
   AppInfo,
   ChatReply,
+  ContentInstallResult,
+  ContentVersionInfo,
   EntitlementItem,
   EventSummary,
+  FabricInstallResult,
   GameStateEvent,
   InstanceSummary,
+  InstalledContent,
   InstallResult,
   JavaRuntimeInfo,
   LaunchDryRun,
   LaunchResult,
   LogRecord,
+  SearchHit,
   SettingsPatch,
   SettingsShape,
   TaskProgress,
@@ -45,6 +50,18 @@ export interface QdoApi {
   }
   java: {
     list(): Promise<JavaRuntimeInfo[]>
+  }
+  content: {
+    search(
+      query: string,
+      opts?: { type?: string; mcVersion?: string; loader?: string; limit?: number },
+    ): Promise<SearchHit[]>
+    versions(projectId: string, opts?: { mcVersion?: string; loader?: string }): Promise<ContentVersionInfo[]>
+    install(instanceId: string, projectId: string, opts?: { mcVersion?: string; loader?: string }): Promise<ContentInstallResult>
+    installed(instanceId: string): Promise<InstalledContent[]>
+  }
+  loaders: {
+    fabric(gameVersion: string): Promise<FabricInstallResult>
   }
   chat: {
     send(text: string): Promise<ChatReply>

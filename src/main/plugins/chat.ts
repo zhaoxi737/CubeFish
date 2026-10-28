@@ -3,6 +3,7 @@ import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { EntitlementService } from './entitlement'
 import type { IdentityService } from './identity'
 import type { InstancesService } from './instances'
+import type { ContentService } from './content'
 import type { JavaService } from './java'
 import type { LogService } from './logger'
 import type { SettingsService } from './settings'
@@ -34,6 +35,7 @@ export function createChatPlugin(): LauncherPlugin<void> {
     const updater = use<UpdaterService>(ctx, 'updater')
     const instances = use<InstancesService>(ctx, 'instances')
     const java = use<JavaService>(ctx, 'java')
+    const content = use<ContentService>(ctx, 'content')
     const settings = use<SettingsService>(ctx, 'settings')
     const identity = use<IdentityService>(ctx, 'identity')
     const entitlement = use<EntitlementService>(ctx, 'entitlement')
@@ -147,6 +149,37 @@ export function createChatPlugin(): LauncherPlugin<void> {
           `本机 Java（${runtimes.length} 个）：`,
           ...runtimes.map((r) => `- Java ${r.major} · ${r.version} · ${r.path}`),
         ].join('\n')
+      },
+    })
+
+    register({
+      name: 'mod',
+      description: '搜索/安装模组：/mod search <关键词> | /mod install <slug>',
+      run: async (args) => {
+        const sub = (args[0] ?? '').toLowerCase()
+        const text = args.slice(1).join(' ').trim()
+        if (!sub || !text) return '用法：/mod search sodium 或 /mod install sodium'
+        const instance = instances.list()[0]
+        if (!instance) return '没有可用实例。'
+        const opts = {
+          mcVersion: instance.gameVersion ?? undefined,
+          loader: instance.loader === 'fabric' ? 'fabric' : undefined,
+        }
+        if (sub === 'search') {
+          const hits = await content.search(text, { ...opts, type: 'mod', limit: 5 })
+          if (hits.length === 0) return `没有搜到「${text}」`
+          return [
+            `搜索「${text}」（${instance.gameVersion ?? '不限版本'} / ${instance.loader}）：`,
+            ...hits.map((hit) => `- ${hit.slug} · ${hit.title} · ${Math.round(hit.downloads / 1000)}k 下载`),
+            '用 /mod install <slug> 安装',
+          ].join('\n')
+        }
+        if (sub === 'install') {
+          const result = await content.install(instance.id, text, opts)
+          if (!result.ok) return `安装失败：${result.error}`
+          return `已安装 ${result.title ?? text} ${result.versionNumber ?? ''} → ${result.files.join(', ')}`
+        }
+        return '用法：/mod search <关键词> 或 /mod install <slug>'
       },
     })
   })

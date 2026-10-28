@@ -31,6 +31,15 @@ const api: QdoApi = {
   java: {
     list: () => ipcRenderer.invoke(CH.javaList),
   },
+  content: {
+    search: (query, opts) => ipcRenderer.invoke(CH.contentSearch, query, opts),
+    versions: (projectId, opts) => ipcRenderer.invoke(CH.contentVersions, projectId, opts),
+    install: (instanceId, projectId, opts) => ipcRenderer.invoke(CH.contentInstall, instanceId, projectId, opts),
+    installed: (instanceId) => ipcRenderer.invoke(CH.contentInstalled, instanceId),
+  },
+  loaders: {
+    fabric: (gameVersion) => ipcRenderer.invoke(CH.loaderFabric, gameVersion),
+  },
   chat: {
     send: (text) => ipcRenderer.invoke(CH.chatSend, text),
   },

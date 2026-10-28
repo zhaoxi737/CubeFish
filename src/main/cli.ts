@@ -6,8 +6,10 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import type { Kernel } from './kernel'
+import type { ContentService } from './plugins/content'
 import type { InstancesService } from './plugins/instances'
 import type { LaunchService } from './plugins/launch'
+import type { LoadersService } from './plugins/loaders'
 import type { MojangService } from './plugins/mojang'
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -30,6 +32,32 @@ export async function runInstallCli(kernel: Kernel, versionId: string): Promise<
     instances.setVersion('default', versionId, versionId)
   }
   console.log(`INSTALL_RESULT ${JSON.stringify(result)}`)
+  return result.ok ? 0 : 1
+}
+
+export async function runFabricCli(kernel: Kernel, gameVersion: string): Promise<number> {
+  const loaders = kernel.ctx.get('loaders') as LoadersService
+  const instances = kernel.ctx.get('instances') as InstancesService
+  loaders.setProgressSink((p) => console.log(`[fabric] ${p.stage} ${p.done}/${p.total} ${p.message ?? ''}`))
+  const result = await loaders.installFabric(gameVersion)
+  if (result.ok && result.versionId) {
+    instances.setVersion('default', result.versionId, gameVersion, gameVersion, 'fabric')
+  }
+  console.log(`FABRIC_RESULT ${JSON.stringify(result)}`)
+  return result.ok ? 0 : 1
+}
+
+export async function runModCli(kernel: Kernel, slug: string): Promise<number> {
+  const content = kernel.ctx.get('content') as ContentService
+  const instances = kernel.ctx.get('instances') as InstancesService
+  const instance = instances.get('default')
+  const result = await content.install('default', slug, {
+    mcVersion: instance?.gameVersion ?? undefined,
+    loader: instance?.loader === 'fabric' ? 'fabric' : undefined,
+  })
+  console.log(`MOD_RESULT ${JSON.stringify(result)}`)
+  const list = await content.installed('default')
+  console.log(`MOD_LIST ${JSON.stringify(list)}`)
   return result.ok ? 0 : 1
 }
 

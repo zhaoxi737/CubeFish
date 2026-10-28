@@ -87,6 +87,7 @@ export function App() {
   const [showPlugins, setShowPlugins] = useState(false)
   const [fabricBusy, setFabricBusy] = useState(false)
   const [neoforgeBusy, setNeoforgeBusy] = useState(false)
+  const [forgeBusy, setForgeBusy] = useState(false)
   const [instances, setInstances] = useState<InstanceSummary[]>([])
   const [newInstanceOpen, setNewInstanceOpen] = useState(false)
   const [newInstanceName, setNewInstanceName] = useState('')
@@ -375,6 +376,27 @@ export function App() {
     }
   }, [hasApi, instance?.gameVersion, installed, neoforgeBusy, notify, refreshInstalled, selected])
 
+  const installForge = useCallback(async () => {
+    if (!hasApi || forgeBusy) return
+    const gameVersion = instance?.gameVersion ?? selected
+    if (!gameVersion || !installed.includes(gameVersion)) {
+      notify('先安装对应的原版版本，再装 Forge')
+      return
+    }
+    setForgeBusy(true)
+    try {
+      const result = await window.qdo.loaders.forge(gameVersion)
+      if (!result.ok) notify(`Forge 安装失败：${result.error ?? '未知错误'}`)
+      else notify(`Forge ${result.loaderVersion} 已安装`)
+      await refreshInstalled()
+    } catch (err) {
+      notify(`Forge 安装失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setForgeBusy(false)
+      setProgress(null)
+    }
+  }, [forgeBusy, hasApi, instance?.gameVersion, installed, notify, refreshInstalled, selected])
+
   const onSaveSettings = useCallback(
     async (patch: SettingsPatch) => {
       if (!hasApi) return
@@ -421,7 +443,7 @@ export function App() {
         <div className="brand">
           <span className="brand-mark">QDOQMC</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P13 · 一键修复</span>
+          <span className="brand-tag">P14 · Forge</span>
         </div>
         <div className="titlebar-actions">
           <button type="button" className="ghost" onClick={() => setShowMods(true)} disabled={!instance}>
@@ -536,6 +558,14 @@ export function App() {
               disabled={neoforgeBusy || installing || !selected || !installed.includes(selected)}
             >
               {neoforgeBusy ? '装 NeoForge…' : instance?.loader === 'neoforge' ? 'NeoForge 已装' : '装 NeoForge'}
+            </button>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => void installForge()}
+              disabled={forgeBusy || installing || !selected || !installed.includes(selected)}
+            >
+              {forgeBusy ? '装 Forge…' : instance?.loader === 'forge' ? 'Forge 已装' : '装 Forge'}
             </button>
           </div>
 

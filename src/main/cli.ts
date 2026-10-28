@@ -211,6 +211,20 @@ export async function runInspectModpackCli(kernel: Kernel, source: string): Prom
   return result.ok ? 0 : 1
 }
 
+export async function runForgeCli(kernel: Kernel, mcVersion: string): Promise<number> {
+  const loaders = kernel.ctx.get('loaders') as LoadersService
+  const instances = kernel.ctx.get('instances') as InstancesService
+  loaders.setProgressSink((progress) => {
+    console.log(`[forge] ${progress.stage} ${progress.done}/${progress.total} ${progress.message ?? ''}`)
+  })
+  const result = await loaders.installForge(mcVersion)
+  if (result.ok && result.versionId) {
+    instances.setVersion(instances.active().id, result.versionId, mcVersion, mcVersion, 'forge')
+  }
+  console.log(`FORGE_RESULT ${JSON.stringify(result)}`)
+  return result.ok ? 0 : 1
+}
+
 export async function runFixesCli(kernel: Kernel): Promise<number> {
   const diagnose = kernel.ctx.get('diagnose') as DiagnoseService
   const instances = kernel.ctx.get('instances') as InstancesService

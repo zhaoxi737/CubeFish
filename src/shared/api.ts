@@ -89,6 +89,7 @@ export interface QdoApi {
   loaders: {
     fabric(gameVersion: string): Promise<FabricInstallResult>
     neoforge(gameVersion: string): Promise<NeoForgeInstallResult>
+    forge(gameVersion: string): Promise<NeoForgeInstallResult>
   }
   plugins: {
     list(): Promise<PluginInfo[]>

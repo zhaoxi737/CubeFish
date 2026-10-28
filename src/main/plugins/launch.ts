@@ -239,7 +239,11 @@ export function createLaunchPlugin(): LauncherPlugin<void> {
           seen.add(key)
           cp.push(libPath)
         }
-        cp.push(versionJar)
+        // Forge (BootstrapLauncher) / NeoForge (fml.startup) 会从 -DlibraryDirectory
+        // 自己加载 patched client jar；把原版 jar 放进 classpath 会变成自动模块
+        // `_1._20._1` 并与 Forge 的 `minecraft` 模块抢包（ResolutionException）。
+        const bootstrapLoader = /bootstraplauncher|fml\.startup/i.test(resolved.mainClass ?? '')
+        if (!bootstrapLoader) cp.push(versionJar)
         const classpath = cp.join(path.delimiter)
 
         const playerName = instance.playerName || settings.get('playerName') || 'Player'

@@ -38,10 +38,13 @@ export interface LoadersService {
   installFabric(gameVersion: string): Promise<FabricInstallResult>
   neoforgeVersions(gameVersion: string): Promise<string[]>
   installNeoForge(gameVersion: string, versionOverride?: string): Promise<NeoForgeInstallResult>
+  installForge(gameVersion: string): Promise<NeoForgeInstallResult>
   setProgressSink(sink: ((progress: TaskProgress) => void) | null): void
 }
 
 const NEOFORGE_MAVEN = 'https://maven.neoforged.net/releases/net/neoforged/neoforge'
+const FORGE_MAVEN = 'https://maven.minecraftforge.net/net/minecraftforge/forge'
+const FORGE_PROMOS = 'https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json'
 
 /** 1.21.11 → "21.11."；1.20.1 及更早没有 neoforge 客户端构建 */
 function neoforgePrefix(mcVersion: string): string | undefined {
@@ -268,11 +271,89 @@ export function createLoadersPlugin(): LauncherPlugin<void> {
       }
     }
 
+    async function installForge(gameVersion: string): Promise<NeoForgeInstallResult> {
+      const started = Date.now()
+      const taskId = `forge-${gameVersion}-${Date.now()}`
+      const emit = (stage: string, done: number, total: number, message?: string) =>
+        sink?.({ taskId, kind: 'install', stage, done, total, bytes: 0, message })
+
+      try {
+        emit('version', 0, 1, `查询 Forge ${gameVersion} 版本`)
+        const res = await fetch(FORGE_PROMOS, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(20_000) })
+        if (!res.ok) return { ok: false, gameVersion, error: `Forge 版本列表获取失败：HTTP ${res.status}` }
+        const promos = (await res.json()) as { promos?: Record<string, string> }
+        const table = promos.promos ?? {}
+        const forgeVersion = table[`${gameVersion}-recommended`] ?? table[`${gameVersion}-latest`]
+        if (!forgeVersion) {
+          return { ok: false, gameVersion, error: `Forge 没有支持 ${gameVersion} 的版本（查看 forge 官网支持列表）` }
+        }
+
+        const installerName = `forge-${gameVersion}-${forgeVersion}-installer.jar`
+        const installerPath = path.join(paths.cache, 'installers', installerName)
+        if (!existsSync(installerPath)) {
+          emit('libraries', 0, 1, '下载 Forge 安装器')
+          await new Downloader({ cacheDir: paths.downloads, concurrency: 1 }).fetchOne({
+            url: `${FORGE_MAVEN}/${gameVersion}-${forgeVersion}/${installerName}`,
+            dest: installerPath,
+            label: installerName,
+          })
+        }
+
+        // 原版与 Java
+        const vanillaJson = path.join(paths.versions, gameVersion, `${gameVersion}.json`)
+        const vanillaJar = path.join(paths.versions, gameVersion, `${gameVersion}.jar`)
+        if (!existsSync(vanillaJson) || !existsSync(vanillaJar)) {
+          emit('version', 0, 1, `先安装原版 ${gameVersion}（含资源，可能较久）`)
+          const base = await mojang.install(gameVersion, taskId)
+          if (!base.ok) return { ok: false, gameVersion, error: `原版安装失败：${base.error}` }
+        }
+        const baseVersionJson = await mojang.versionJson(gameVersion)
+        const major = baseVersionJson.javaVersion?.majorVersion ?? 17
+        const component = baseVersionJson.javaVersion?.component
+        const javaInfo = component
+          ? await java.ensure(component, major, taskId)
+          : (await java.select(major)) ?? (await java.ensure('java-runtime-delta', major, taskId))
+
+        const profilesFile = path.join(paths.data, 'launcher_profiles.json')
+        if (!existsSync(profilesFile)) {
+          await writeJsonAtomic(profilesFile, {
+            profiles: {},
+            settings: { enableSnapshots: false, keepLauncherOpen: false },
+            version: 3,
+          })
+        }
+
+        emit('legacy', 0, 1, '执行 Forge 官方安装器（跑 processors）')
+        const installed = await runOfficialInstaller({
+          installerPath,
+          dataRoot: paths.data,
+          javaPath: javaInfo.path,
+          log: (message) => log.info('loaders', message),
+        })
+        if (!installed) return { ok: false, gameVersion, error: 'Forge 官方安装器执行失败（详见日志）' }
+
+        const versionId = `${gameVersion}-forge-${forgeVersion}`
+        if (!existsSync(path.join(paths.versions, versionId, `${versionId}.json`))) {
+          return { ok: false, gameVersion, error: `安装器未写入版本文件：versions/${versionId}` }
+        }
+        emit('done', 1, 1, `Forge ${forgeVersion} 安装完成`)
+        telemetry.record('loader:forge', { gameVersion, forgeVersion, versionId, ms: Date.now() - started })
+        log.info('loaders', 'Forge 安装完成', { versionId, forgeVersion, ms: Date.now() - started })
+        return { ok: true, gameVersion, versionId, loaderVersion: forgeVersion }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        log.error('loaders', 'Forge 安装失败', { gameVersion, error: message })
+        telemetry.record('loader:forge:error', { gameVersion, error: message })
+        return { ok: false, gameVersion, error: message }
+      }
+    }
+
     ctx.provide('loaders', {
       fabricVersions,
       installFabric,
       neoforgeVersions,
       installNeoForge,
+      installForge,
       readProfile,
       setProgressSink: (next) => {
         sink = next

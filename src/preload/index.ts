@@ -57,6 +57,7 @@ const api: QdoApi = {
   loaders: {
     fabric: (gameVersion) => ipcRenderer.invoke(CH.loaderFabric, gameVersion),
     neoforge: (gameVersion) => ipcRenderer.invoke(CH.loaderNeoForge, gameVersion),
+    forge: (gameVersion) => ipcRenderer.invoke(CH.loaderForge, gameVersion),
   },
   plugins: {
     list: () => ipcRenderer.invoke(CH.pluginsList),

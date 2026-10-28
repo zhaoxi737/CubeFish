@@ -38,6 +38,7 @@ export const CH = {
   diagnoseApplyFix: 'diagnose:apply-fix',
   loaderFabric: 'loader:fabric',
   loaderNeoForge: 'loader:neoforge',
+  loaderForge: 'loader:forge',
   pluginsList: 'plugins:list',
   pluginsToggle: 'plugins:toggle',
   pluginsReload: 'plugins:reload',

@@ -272,7 +272,29 @@ export async function runOfficialInstaller(options: {
   dataRoot: string
   javaPath: string
   log: (message: string) => void
+  /** 网络不稳时重试次数（已下载的库会命中缓存，重试通常能补齐） */
+  attempts?: number
 }): Promise<boolean> {
+  const attempts = Math.max(1, options.attempts ?? 3)
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const ok = await runInstallerOnce(options, attempt > 1)
+    if (ok) return true
+    if (attempt < attempts) {
+      options.log(`安装器第 ${attempt} 次失败，准备重试（${attempt + 1}/${attempts}）`)
+    }
+  }
+  return false
+}
+
+function runInstallerOnce(
+  options: {
+    installerPath: string
+    dataRoot: string
+    javaPath: string
+    log: (message: string) => void
+  },
+  retry: boolean,
+): Promise<boolean> {
   return new Promise((resolve) => {
     const child = spawn(options.javaPath, ['-jar', options.installerPath, '--installClient', options.dataRoot], {
       cwd: options.dataRoot,
@@ -300,7 +322,7 @@ export async function runOfficialInstaller(options: {
       const lines = tail.split(/\r?\n/).filter(Boolean)
       for (const line of lines.slice(-6)) options.log(`[installer] ${line}`)
       if (code !== 0) {
-        options.log(`官方安装器退出码 ${code}`)
+        if (retry) options.log(`官方安装器退出码 ${code}（重试中）`)
         resolve(false)
         return
       }

@@ -23,6 +23,7 @@ import {
   runModpackCli,
   runInspectModpackCli,
   runNeoForgeCli,
+  runForgeCli,
   runFixesCli,
   runApplyFixCli,
   runToolsCli,
@@ -60,6 +61,7 @@ const marketInstallTarget = argValue('market-install')
 const modpackTarget = argValue('modpack')
 const inspectModpackTarget = argValue('inspect-modpack')
 const neoforgeTarget = argValue('neoforge')
+const forgeTarget = argValue('forge')
 const fixesMode = process.argv.includes('--fixes')
 const applyFixTarget = argValue('apply-fix')
 const createInstanceTarget = argValue('create-instance')
@@ -445,6 +447,11 @@ if (!gotLock) {
       }
       if (neoforgeTarget) {
         const code = await runNeoForgeCli(kernel, neoforgeTarget)
+        app.exit(code)
+        return
+      }
+      if (forgeTarget) {
+        const code = await runForgeCli(kernel, forgeTarget)
         app.exit(code)
         return
       }

@@ -216,6 +216,14 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
       return result
     })
 
+    handle(CH.loaderForge, async (gameVersion: string) => {
+      const result = await loaders.installForge(gameVersion)
+      if (result.ok && result.versionId) {
+        instances.setVersion(instances.active().id, result.versionId, gameVersion, gameVersion, 'forge')
+      }
+      return result
+    })
+
     log.info('ipc', 'IPC 通道已注册', { count: Object.keys(CH).length })
   })
 }

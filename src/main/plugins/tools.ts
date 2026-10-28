@@ -264,6 +264,21 @@ export function createToolsPlugin(): LauncherPlugin<void> {
     })
 
     register({
+      name: 'install_forge',
+      description: '给当前原版版本安装 Forge 加载器（1.20.1 等经典版本，需先装对应原版）。',
+      parameters: EMPTY_PARAMS,
+      async handler() {
+        const inst = instance()
+        const gameVersion = inst?.gameVersion
+        if (!gameVersion) return { ok: false, summary: '实例还没有绑定游戏版本，先装原版' }
+        const result = await loaders.installForge(gameVersion)
+        if (!result.ok) return { ok: false, summary: `Forge 安装失败：${result.error}` }
+        instances.setVersion(activeId(), result.versionId!, gameVersion, gameVersion, 'forge')
+        return { ok: true, summary: `已安装 Forge ${result.loaderVersion}` }
+      },
+    })
+
+    register({
       name: 'install_neoforge',
       description: '给当前原版版本安装 NeoForge 加载器（支持 1.20.2 及以上，需 Java 17/21）。',
       parameters: EMPTY_PARAMS,

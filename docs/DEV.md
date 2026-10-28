@@ -352,28 +352,45 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 > 注：Fabric 依赖解析失败时会弹「崩溃窗口」并**保持进程存活**，所以自动化测试里先结束进程再验证退出卡片；
 > 真实用户在关掉该窗口后同样会看到这张卡片。
 
-## 20. 已知限制 / 待办
+## 20. P14 验收（已实测，2026-10-29）：Forge 1.20.1
+
+| 验收项 | 结果 |
+|---|---|
+| 版本解析 | ✅ `promotions_slim.json` → `1.20.1-recommended = 47.4.28` |
+| 安装器 | ✅ 官方 installer `--installClient`，失败自动重试 3 次（网络抖动时第二次补齐 31 个库） |
+| 原版依赖 | ✅ 自动安装 1.20.1（101 秒）并按 `javaVersion` 自动下载 Java 17 运行时（`java-runtime-gamma` 17.0.15） |
+| 安装产物 | ✅ `versions/1.20.1-forge-47.4.28/` + `forge-1.20.1-47.4.28-client.jar`（patched client） |
+| **启动** | ✅ 窗口标题 `Minecraft* Forge 1.20.1`；日志 `Setting user` / `Backend library: LWJGL 3.3.1` / `OpenAL initialized` / `Sound engine started` |
+| BootstrapLauncher 兼容 | ✅ 修复：bootstrap 类加载器（Forge/NeoForge）不再把原版 jar 放进 classpath，改由 `-DlibraryDirectory` 加载 patched jar |
+| NeoForge 回归 | ✅ 同样 7 项启动标记全中（去掉原版 jar 后仍正常） |
+| UI / AI / CLI | ✅ 主界面「装 Forge」按钮、`install_forge` 工具、`--forge=<mcVersion>` |
+
+> **关键坑**：Forge 1.20.1 报 `ResolutionException: Module minecraft contains package net.minecraft.server, module _1._20._1 exports …`。
+> 原因是我们把原版客户端 jar 放进了 classpath，JDK 把它当成自动模块 `_1._20_1`，与 Forge 的 `minecraft` 模块抢包。
+> 修复：`mainClass` 命中 `bootstraplauncher` / `fml.startup` 时不加原版 jar。
+
+## 21. 已知限制 / 待办
 
 - **更新**：只支持便携版（解压替换）；NSIS 安装包升级未做。
 - **签名**：便携版未做代码签名，Windows SmartScreen 会提示未知发布者。
 - **插件安全**：主进程内加载（Node 全权限），权限字段是提示性的；真正沙箱未做。
 - **插件市场**：feed 与签名链路已通；缺少审核、版本更新检测、分类与评分。
 - **慢网**：本机到 Mojang 单连接仅 ~50KB/s，并发 16 约 200KB/s，432MB 资源耗时 18 分钟。镜像回退待接入。
-- **加载器**：Fabric、NeoForge（1.20.2+）已通并可启动；Forge（含 1.20.1 及更老）、Quilt 未做。NeoForge 安装需 launcher_profiles.json（缺失时自动创建）。
+- **加载器**：Fabric、NeoForge（1.20.2+）、Forge（1.20.1 实测）已通并可启动；更老的 Forge（1.12.2 等）未验证，Quilt 未做。Forge/NeoForge 安装需 launcher_profiles.json（缺失时自动创建）。
 - **整合包**：`.mrpack` 已通（Fabric/原版）；NeoForge/Forge 整合包会明确报错。CurseForge `.zip` 整合包不支持。
 - **AI**：真实模型调用需用户自填 Key（本机验证用 mock LLM）；已支持流式输出、会话记忆与崩溃一键修复；多会话/跨实例记忆未做。
 - **老版本**：legacy/pre-1.6 资源物化已实现但未实测；Java 8 运行时自动下载未实测。
 - **实例**：支持创建/切换/删除；实例复制、导入导出、图标未做。
 - **登录**：仅离线（正版 OAuth 未做）。
 
-## 21. 下一步（P14：补账）
+## 22. 下一步（P15：补账）
 
-1. **Forge 支持**：复用 `lib/forge-installer.ts` 的 processor 引擎，先做 1.20.1（继承链 + BootstrapLauncher）。
+1. **插件沙箱**：utilityProcess + 受限 API，替代当前进程内加载（当前最大安全短板）。
 2. **插件沙箱**：utilityProcess + 受限 API + 权限确认，替代当前进程内加载。
 3. **微软正版登录**：需要 Azure 应用 id（用户提供或授权申请流程）。
 4. **体验**：多会话记忆、CurseForge zip 整合包、更多修复动作（切 Java/换加载器）。
 
-## 22. 测试用 mock LLM
+## 23. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

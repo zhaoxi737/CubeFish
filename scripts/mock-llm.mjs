@@ -58,10 +58,44 @@ const server = http.createServer((req, res) => {
     const choice = decide(lastUser?.content ?? '', lastTool ? (lastTool.content ?? '') : undefined)
 
     console.log(
-      `[mock-llm] tools=${(payload.tools ?? []).length} model=${payload.model} user="${String(lastUser?.content ?? '').slice(0, 40)}" -> ${
+      `[mock-llm] msgs=${messages.length} tools=${(payload.tools ?? []).length} model=${payload.model} stream=${Boolean(payload.stream)} user="${String(lastUser?.content ?? '').slice(0, 40)}" -> ${
         choice.tool_calls.length > 0 ? choice.tool_calls.map((call) => call.function.name).join(',') : 'final'
       }`,
     )
+
+    if (payload.stream) {
+      res.writeHead(200, {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+      })
+      const send = (delta) => {
+        res.write(`data: ${JSON.stringify({ id: 'mock-chunk', object: 'chat.completion.chunk', model: payload.model ?? 'mock-model', choices: [{ index: 0, delta }] })}\n\n`)
+      }
+      if (choice.tool_calls.length > 0) {
+        send({
+          role: 'assistant',
+          tool_calls: choice.tool_calls.map((call, index) => ({
+            index,
+            id: call.id,
+            type: 'function',
+            function: call.function,
+          })),
+        })
+        res.write('data: [DONE]\n\n')
+        res.end()
+        return
+      }
+      const text = choice.content ?? ''
+      const step = 8
+      for (let i = 0; i < text.length; i += step) {
+        send({ role: 'assistant', content: text.slice(i, i + step) })
+      }
+      send({ content: '' })
+      res.write('data: [DONE]\n\n')
+      res.end()
+      return
+    }
 
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(

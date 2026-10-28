@@ -110,7 +110,15 @@ export async function runChatCli(kernel: Kernel, text: string): Promise<number> 
   console.log(
     `CHAT_CONFIG ${JSON.stringify({ available: llm.available(), baseUrl: llm.baseUrl(), model: llm.model() })}`,
   )
+  let deltas = 0
+  let streamedText = ''
+  chat.setStreamSink((chunk) => {
+    deltas += 1
+    streamedText += chunk
+  })
   const reply = await chat.send(text)
+  chat.setStreamSink(null)
+  console.log(`CHAT_STREAM ${JSON.stringify({ deltas, streamedLength: streamedText.length })}`)
   console.log(`CHAT_RESULT ${JSON.stringify(reply)}`)
   return reply.ok ? 0 : 1
 }

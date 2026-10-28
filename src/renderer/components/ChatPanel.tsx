@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChatMessage, ToolCallTrace } from '../../shared/types'
 
-type Message = ChatMessage & { trace?: ToolCallTrace[] }
+type Message = ChatMessage & { trace?: ToolCallTrace[]; streaming?: boolean }
 
 const WELCOME: Message = {
   role: 'assistant',
@@ -15,16 +15,52 @@ export function ChatPanel() {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const listRef = useRef<HTMLDivElement | null>(null)
+  const streamRef = useRef('')
 
   useEffect(() => {
     const el = listRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [messages])
 
+  // 恢复会话记忆（重启后还能接着聊）
+  useEffect(() => {
+    if (typeof window.qdo === 'undefined') return
+    void window.qdo.chat
+      .history()
+      .then((entries) => {
+        if (!entries.length) return
+        setMessages((prev) => [
+          prev[0],
+          ...entries.map((entry, index) => ({
+            role: entry.role,
+            text: entry.text,
+            ts: Date.now() + index,
+          })),
+        ])
+      })
+      .catch(() => undefined)
+  }, [])
+
+  // 流式增量
+  useEffect(() => {
+    if (typeof window.qdo === 'undefined') return
+    const off = window.qdo.chat.onDelta((chunk) => {
+      streamRef.current += chunk
+      const text = streamRef.current
+      setMessages((prev) => {
+        const last = prev[prev.length - 1]
+        if (last?.streaming) return [...prev.slice(0, -1), { ...last, text }]
+        return [...prev, { role: 'assistant', text, ts: Date.now(), streaming: true }]
+      })
+    })
+    return off
+  }, [])
+
   const send = useCallback(async () => {
     const text = input.trim()
     if (!text || sending) return
     setInput('')
+    streamRef.current = ''
     setMessages((prev) => [...prev, { role: 'user', text, ts: Date.now() }])
     if (typeof window.qdo === 'undefined') {
       setMessages((prev) => [
@@ -37,7 +73,7 @@ export function ChatPanel() {
     try {
       const reply = await window.qdo.chat.send(text)
       setMessages((prev) => [
-        ...prev,
+        ...prev.filter((msg) => !msg.streaming),
         {
           role: reply.ok ? 'assistant' : 'system',
           text: reply.text,
@@ -47,7 +83,7 @@ export function ChatPanel() {
       ])
     } catch (err) {
       setMessages((prev) => [
-        ...prev,
+        ...prev.filter((msg) => !msg.streaming),
         { role: 'system', text: `请求失败：${err instanceof Error ? err.message : String(err)}`, ts: Date.now() },
       ])
     } finally {
@@ -55,15 +91,28 @@ export function ChatPanel() {
     }
   }, [input, sending])
 
+  const clear = useCallback(async () => {
+    try {
+      await window.qdo.chat.clear()
+    } catch {
+      /* 忽略 */
+    }
+    streamRef.current = ''
+    setMessages([WELCOME])
+  }, [])
+
   return (
     <aside className="chat">
       <div className="chat-head">
         <span className="chat-title">AI 助手</span>
         <span className="chat-badge">工具调用</span>
+        <button type="button" className="chat-clear" onClick={() => void clear()} title="清空对话记忆">
+          清空
+        </button>
       </div>
       <div className="chat-list" ref={listRef}>
         {messages.map((msg, index) => (
-          <div key={`${msg.ts}-${index}`} className={`bubble bubble-${msg.role}`}>
+          <div key={`${msg.ts}-${index}`} className={`bubble bubble-${msg.role}${msg.streaming ? ' bubble-streaming' : ''}`}>
             <pre>{msg.text}</pre>
             {msg.trace && msg.trace.length > 0 ? (
               <div className="trace-list">
@@ -77,7 +126,7 @@ export function ChatPanel() {
             ) : null}
           </div>
         ))}
-        {sending ? (
+        {sending && !messages.some((msg) => msg.streaming) ? (
           <div className="bubble bubble-assistant bubble-typing">
             <span />
             <span />
@@ -102,7 +151,7 @@ export function ChatPanel() {
           发送
         </button>
       </form>
-      <div className="chat-foot">API Key 只存本地 · 工具调用有审计日志</div>
+      <div className="chat-foot">API Key 只存本地 · 工具调用有审计日志 · 对话记忆保存在本机</div>
     </aside>
   )
 }

@@ -127,7 +127,25 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle<InstanceSummary>(CH.instancesCreate, (name: string) => instances.create(name))
     handle(CH.instancesRemove, (id: string) => instances.remove(id))
     handle<InstanceSummary>(CH.instancesActivate, (id: string) => instances.setActive(id))
-    handle<ChatReply>(CH.chatSend, (text: string) => chat.send(text))
+    handle<ChatReply>(CH.chatSend, async (text: string) => {
+      const win = config.getWindow()
+      if (win && !win.isDestroyed()) {
+        chat.setStreamSink((chunk) => {
+          const target = config.getWindow()
+          if (target && !target.isDestroyed()) target.webContents.send(CH.chatDelta, { text: chunk })
+        })
+      }
+      try {
+        return await chat.send(text)
+      } finally {
+        chat.setStreamSink(null)
+      }
+    })
+    handle(CH.chatHistory, () => chat.history())
+    handle(CH.chatClear, () => {
+      chat.clearHistory()
+      return { ok: true }
+    })
     handle(CH.entitlements, () => entitlement.list())
     handle<EventSummary>(CH.eventsSummary, () => telemetry.summary())
 

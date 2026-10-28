@@ -97,6 +97,10 @@ export interface QdoApi {
   }
   chat: {
     send(text: string): Promise<ChatReply>
+    history(): Promise<{ role: 'user' | 'assistant'; text: string }[]>
+    clear(): Promise<{ ok: boolean }>
+    /** 订阅流式增量；返回取消订阅函数 */
+    onDelta(callback: (text: string) => void): () => void
   }
   entitlement: {
     list(): Promise<EntitlementItem[]>

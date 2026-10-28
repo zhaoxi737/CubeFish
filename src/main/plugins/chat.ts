@@ -1,3 +1,4 @@
+import path from 'node:path'
 import type { ChatReply } from '../../shared/types'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { EntitlementService } from './entitlement'
@@ -10,7 +11,9 @@ import type { DiagnoseService } from './diagnose'
 import type { JavaService } from './java'
 import type { LogService } from './logger'
 import type { SettingsService } from './settings'
+import type { StorageService } from './storage'
 import type { TelemetryService } from './telemetry'
+import type { PathsService } from './paths'
 import type { UpdaterService } from './updater'
 
 /**
@@ -31,6 +34,10 @@ export interface ChatService {
   register(spec: CommandSpec): void
   unregister(name: string): void
   commands(): { name: string; description: string }[]
+  /** 流式增量回调（主进程 → 渲染进程） */
+  setStreamSink(sink: ((text: string) => void) | null): void
+  history(): { role: 'user' | 'assistant'; text: string }[]
+  clearHistory(): void
 }
 
 export function createChatPlugin(): LauncherPlugin<void> {
@@ -47,8 +54,32 @@ export function createChatPlugin(): LauncherPlugin<void> {
     const identity = use<IdentityService>(ctx, 'identity')
     const entitlement = use<EntitlementService>(ctx, 'entitlement')
     const telemetry = use<TelemetryService>(ctx, 'telemetry')
+    const storage = use<StorageService>(ctx, 'storage')
+    const paths = use<PathsService>(ctx, 'paths')
 
     const registry = new Map<string, CommandSpec>()
+    let streamSink: ((text: string) => void) | null = null
+
+    interface HistoryEntry {
+      role: 'user' | 'assistant'
+      text: string
+      ts: number
+    }
+    const HISTORY_FILE = path.join(paths.data, 'chat-history.json')
+    const MAX_HISTORY = 20
+
+    const loadHistory = (): HistoryEntry[] => storage.readJson<HistoryEntry[]>(HISTORY_FILE, [])
+    const saveHistory = (entries: HistoryEntry[]): void => {
+      storage.writeJson(HISTORY_FILE, entries.slice(-MAX_HISTORY))
+    }
+    const appendHistory = (role: 'user' | 'assistant', text: string): void => {
+      const trimmed = text.trim()
+      if (!trimmed) return
+      saveHistory([...loadHistory(), { role, text: trimmed.slice(0, 2000), ts: Date.now() }])
+    }
+    const clearHistory = (): void => {
+      saveHistory([])
+    }
 
     const register = (spec: CommandSpec) => {
       registry.set(spec.name.toLowerCase(), spec)
@@ -69,7 +100,17 @@ export function createChatPlugin(): LauncherPlugin<void> {
               text: '还没有配置模型 API Key（设置 → 模型 API Key）。\n配置后可以直接说人话让我干活，例如“装个 sodium”“看看为什么崩了”“最近有什么优化模组”。\n没配置时可以用 /help 看本地命令。',
             }
           }
-          return agent.run(raw)
+          // 会话记忆：把最近几轮带进上下文
+          const history = loadHistory().map((entry) => ({ role: entry.role, content: entry.text }) as const)
+          const reply = await agent.run(raw, {
+            history: [...history],
+            onDelta: (chunk) => streamSink?.(chunk),
+          })
+          if (reply.ok) {
+            appendHistory('user', raw)
+            appendHistory('assistant', reply.text)
+          }
+          return { ...reply, streamed: true }
         }
 
         const [head, ...args] = raw.slice(1).split(/\s+/)
@@ -89,6 +130,11 @@ export function createChatPlugin(): LauncherPlugin<void> {
         registry.delete(name.toLowerCase())
       },
       commands: () => [...registry.values()].map((c) => ({ name: c.name, description: c.description })),
+      setStreamSink: (sink) => {
+        streamSink = sink
+      },
+      history: () => loadHistory().map((entry) => ({ role: entry.role, text: entry.text })),
+      clearHistory,
     } satisfies ChatService)
 
     register({

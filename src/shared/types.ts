@@ -119,6 +119,8 @@ export interface ChatReply {
   text: string
   kind?: 'text' | 'action' | 'error' | 'agent'
   trace?: ToolCallTrace[]
+  /** 文本是否通过流式增量推送过（渲染层避免重复拼接） */
+  streamed?: boolean
 }
 
 export interface SettingsShape {

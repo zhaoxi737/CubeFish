@@ -22,9 +22,16 @@ const SYSTEM_PROMPT = `你是 QDOQMC（Minecraft 启动器）里的助手，直�
 7. 不要把 JSON、工具参数、内部实现细节展示给用户。
 8. 当前没有正版登录，只能离线游玩；不要建议用户去官网登录。`
 
+export interface AgentRunOptions {
+  /** 历史对话（不含 system），用于会话记忆 */
+  history?: LlmMessage[]
+  /** 流式增量回调（每收到一段文本调用一次） */
+  onDelta?: (text: string) => void
+}
+
 export interface AgentService {
   available(): boolean
-  run(text: string): Promise<ChatReply>
+  run(text: string, options?: AgentRunOptions): Promise<ChatReply>
 }
 
 export function createAgentPlugin(): LauncherPlugin<void> {
@@ -34,7 +41,7 @@ export function createAgentPlugin(): LauncherPlugin<void> {
     const log = use<LogService>(ctx, 'log')
     const telemetry = use<TelemetryService>(ctx, 'telemetry')
 
-    async function run(userText: string): Promise<ChatReply> {
+    async function run(userText: string, options?: AgentRunOptions): Promise<ChatReply> {
       if (!llm.available()) {
         return {
           ok: false,
@@ -45,6 +52,7 @@ export function createAgentPlugin(): LauncherPlugin<void> {
 
       const messages: LlmMessage[] = [
         { role: 'system', content: SYSTEM_PROMPT },
+        ...(options?.history ?? []),
         { role: 'user', content: userText },
       ]
       const trace: ToolCallTrace[] = []
@@ -52,7 +60,9 @@ export function createAgentPlugin(): LauncherPlugin<void> {
 
       try {
         for (let round = 0; round < MAX_ROUNDS; round += 1) {
-          const response = await llm.chat(messages, tools.specs())
+          const response = options?.onDelta
+            ? await llm.chatStream(messages, tools.specs(), options.onDelta)
+            : await llm.chat(messages, tools.specs())
 
           if (response.toolCalls.length === 0) {
             const text = (response.content ?? '').trim()

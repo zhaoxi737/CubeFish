@@ -320,7 +320,23 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 > 另一处坑：FML 要求 `-DlibraryDirectory` 与 patched client jar 就位；用官方安装器注入 profile 后 FML 正确进入
 > `CLIENT in PROD` 模式（自研 processor 路径会停在 DEV 模式，因此 NeoForge 安装改走官方 installer）。
 
-## 18. 已知限制 / 待办
+## 18. P12 验收（已实测，2026-10-29）：AI 流式输出 + 会话记忆
+
+| 验收项 | 结果 |
+|---|---|
+| 流式输出 | ✅ CLI `CHAT_STREAM {"deltas":15,"streamedLength":113}`，逐段回调而非一次性返回 |
+| 工具调用 + 流式 | ✅ 首轮 tool_calls 分片聚合，第二轮文本流式返回 |
+| 会话记忆 | ✅ 同一实例两轮对话，mock 日志 `msgs=4` → `msgs=6`（历史被带入） |
+| 记忆持久化 | ✅ `%APPDATA%\QDOQMC\chat-history.json`，重启后 UI 自动恢复历史消息 |
+| 清空对话 | ✅ 聊天头部「清空」按钮 + `/clear` 命令 |
+| 降级 | ✅ 服务端不支持 SSE 时自动退回一次性响应 |
+| mock LLM | ✅ `scripts/mock-llm.mjs` 支持 `stream:true` 的 SSE 分片 |
+| 打包版 | ✅ `--smoke` 通过，AI 气泡含工具调用轨迹 |
+
+> 实现：`llm.chatStream` 解析 SSE（content 增量 + tool_calls 分片聚合）→ `agent.run` 透传 `onDelta` →
+> chat 插件 `setStreamSink` → IPC `chat:delta` 事件 → 渲染层流式气泡；记忆存 `chat-history.json`（最多 20 条）。
+
+## 19. 已知限制 / 待办
 
 - **更新**：只支持便携版（解压替换）；NSIS 安装包升级未做。
 - **签名**：便携版未做代码签名，Windows SmartScreen 会提示未知发布者。
@@ -329,20 +345,19 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 - **慢网**：本机到 Mojang 单连接仅 ~50KB/s，并发 16 约 200KB/s，432MB 资源耗时 18 分钟。镜像回退待接入。
 - **加载器**：Fabric、NeoForge（1.20.2+）已通并可启动；Forge（含 1.20.1 及更老）、Quilt 未做。NeoForge 安装需 launcher_profiles.json（缺失时自动创建）。
 - **整合包**：`.mrpack` 已通（Fabric/原版）；NeoForge/Forge 整合包会明确报错。CurseForge `.zip` 整合包不支持。
-- **AI**：真实模型调用需用户自填 Key（本机验证用 mock LLM）；流式输出、会话记忆未做。
+- **AI**：真实模型调用需用户自填 Key（本机验证用 mock LLM）；已支持流式输出与会话记忆（20 条上限）；多会话/跨实例记忆未做。
 - **老版本**：legacy/pre-1.6 资源物化已实现但未实测；Java 8 运行时自动下载未实测。
 - **实例**：支持创建/切换/删除；实例复制、导入导出、图标未做。
 - **登录**：仅离线（正版 OAuth 未做）。
 
-## 19. 下一步（P12：补账）
+## 20. 下一步（P13：补账）
 
-1. **Forge 支持**：复用 lib/forge-installer.ts 的 processor 引擎，先做 1.20.1（继承链 + BootstrapLauncher）。
-2. **插件沙箱化**：utilityProcess + 受限 API + 权限确认。
-3. **登录**：微软正版 OAuth（需要 Azure 应用 id）。
-4. **体验**：流式 AI 输出、会话记忆、崩溃一键修复。
-5. **整合包补全**：CurseForge zip、安装前预览清单与体积。
+1. **Forge 支持**：复用 `lib/forge-installer.ts` 的 processor 引擎，先做 1.20.1（继承链 + BootstrapLauncher）。
+2. **插件沙箱**：utilityProcess + 受限 API + 权限确认，替代当前进程内加载。
+3. **微软正版登录**：需要 Azure 应用 id（用户提供或授权申请流程）。
+4. **体验**：崩溃一键修复动作、多会话记忆、CurseForge zip 整合包。
 
-## 20. 测试用 mock LLM
+## 21. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

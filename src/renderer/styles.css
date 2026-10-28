@@ -1315,3 +1315,29 @@ code {
 .field-textarea:focus {
   border-color: rgba(74, 222, 128, 0.45);
 }
+
+.chat-clear {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 3px 10px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.chat-clear:hover {
+  color: var(--text);
+  border-color: #2d3f52;
+}
+
+.bubble-streaming pre::after {
+  content: '▋';
+  margin-left: 2px;
+  animation: blink 1s steps(2, start) infinite;
+}
+
+@keyframes blink {
+  to { visibility: hidden; }
+}

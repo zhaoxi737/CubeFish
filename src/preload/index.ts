@@ -67,6 +67,15 @@ const api: QdoApi = {
   },
   chat: {
     send: (text) => ipcRenderer.invoke(CH.chatSend, text),
+    history: () => ipcRenderer.invoke(CH.chatHistory),
+    clear: () => ipcRenderer.invoke(CH.chatClear),
+    onDelta: (callback) => {
+      const listener = (_event: unknown, payload: { text?: string }) => callback(payload?.text ?? '')
+      ipcRenderer.on(CH.chatDelta, listener)
+      return () => {
+        ipcRenderer.removeListener(CH.chatDelta, listener)
+      }
+    },
   },
   entitlement: {
     list: () => ipcRenderer.invoke(CH.entitlements),

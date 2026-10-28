@@ -477,7 +477,7 @@ export function App() {
         <div className="brand">
           <span className="brand-mark">QDOQMC</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P24 · 文件选择器</span>
+          <span className="brand-tag">P25 · 实例账号</span>
         </div>
         <div className="titlebar-actions">
           <button type="button" className="ghost" onClick={() => setShowMods(true)} disabled={!instance}>
@@ -533,7 +533,9 @@ export function App() {
             <span className="chip">{instance?.gameVersion ?? instance?.versionId ?? '未选版本'}</span>
             <span className="chip">{instance?.loader ?? 'vanilla'}</span>
             <span className="chip">{instance?.memoryMb ?? 0} MB</span>
-            <span className="chip">{instance?.playerName ?? 'Player'}</span>
+            <span className="chip" title={instance?.accountId ? `已绑定账号 ${instance.accountName}` : '跟随全局账号'}>
+              {instance?.accountName ?? instance?.playerName ?? 'Player'}
+            </span>
             <span className="chip subtle">版本隔离</span>
           </div>
 

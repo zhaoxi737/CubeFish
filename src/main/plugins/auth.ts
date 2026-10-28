@@ -50,6 +50,10 @@ export interface AuthService {
   accounts(): AccountSummary[]
   /** 启动前调用：过期则用 refresh_token 续期 */
   ensureAccount(): Promise<AccountState>
+  /** 按 UUID 取账号（不刷新） */
+  accountById(uuid: string): AccountState | undefined
+  /** 按 UUID 取账号并保证令牌有效（必要时刷新） */
+  ensureAccountById(uuid: string): Promise<AccountState | undefined>
   isMicrosoft(): boolean
   clientId(): string
   beginLogin(): Promise<DeviceCodeInfo>
@@ -237,19 +241,16 @@ export function createAuthPlugin(): LauncherPlugin<void> {
       return toState(stored)
     }
 
-    async function ensureAccount(): Promise<AccountState> {
-      const data = load()
-      const stored = activeAccount(data)
-      if (!stored) return offline()
+    async function ensureStored(stored: StoredAccount): Promise<AccountState> {
       const token = decryptSecret(stored.accessToken)
       if (!token) {
         log.warn('auth', '账号令牌解密失败（可能换了 Windows 用户）', { name: stored.name })
         return offline()
       }
-      if (stored.expiresAt > Date.now() + 60_000) return { type: 'microsoft', name: stored.name, uuid: stored.uuid, accessToken: token, expiresAt: stored.expiresAt }
+      if (stored.expiresAt > Date.now() + 60_000) return { type: `microsoft`, name: stored.name, uuid: stored.uuid, accessToken: token, expiresAt: stored.expiresAt }
       const refreshToken = decryptSecret(stored.refreshToken)
       if (!refreshToken || !clientId()) {
-        return { type: 'microsoft', name: stored.name, uuid: stored.uuid, accessToken: token, expiresAt: stored.expiresAt }
+        return { type: `microsoft`, name: stored.name, uuid: stored.uuid, accessToken: token, expiresAt: stored.expiresAt }
       }
       try {
         const body = new URLSearchParams({
@@ -269,6 +270,21 @@ export function createAuthPlugin(): LauncherPlugin<void> {
         log.warn('auth', '刷新令牌失败，继续用旧令牌', { error: err instanceof Error ? err.message : String(err) })
         return toState(stored)
       }
+    }
+
+    async function ensureAccount(): Promise<AccountState> {
+      const stored = activeAccount()
+      return stored ? ensureStored(stored) : offline()
+    }
+
+    function accountById(uuid: string): AccountState | undefined {
+      const stored = load().accounts.find((entry) => entry.uuid === uuid)
+      return stored ? toState(stored) : undefined
+    }
+
+    async function ensureAccountById(uuid: string): Promise<AccountState | undefined> {
+      const stored = load().accounts.find((entry) => entry.uuid === uuid)
+      return stored ? ensureStored(stored) : undefined
     }
 
     async function beginLogin(): Promise<DeviceCodeInfo> {
@@ -377,6 +393,8 @@ export function createAuthPlugin(): LauncherPlugin<void> {
       account,
       accounts,
       ensureAccount,
+      accountById,
+      ensureAccountById,
       isMicrosoft: () => Boolean(activeAccount()),
       clientId,
       beginLogin,

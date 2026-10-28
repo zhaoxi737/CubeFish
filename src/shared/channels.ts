@@ -13,6 +13,7 @@ export const CH = {
   instancesRemove: 'instances:remove',
   instancesActivate: 'instances:activate',
   instancesExport: 'instances:export',
+  instancesAccount: 'instances:account',
   instancesImport: 'instances:import',
   dialogPickFile: 'dialog:pick-file',
   dialogPickSave: 'dialog:pick-save',

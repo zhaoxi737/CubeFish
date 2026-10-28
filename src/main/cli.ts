@@ -328,6 +328,26 @@ export async function runImportInstanceCli(kernel: Kernel, zipPath: string): Pro
   return result.ok ? 0 : 1
 }
 
+
+export async function runBindAccountCli(kernel: Kernel, accountId: string | undefined, instanceId?: string): Promise<number> {
+  const instances = kernel.ctx.get('instances') as InstancesService
+  const auth = kernel.ctx.get('auth') as AuthService
+  const target = instanceId || instances.active().id
+  if (!accountId) {
+    instances.setAccount(target)
+    console.log(`BIND_RESULT ${JSON.stringify({ instanceId: target, accountId: null, instance: instances.get(target) })}`)
+    return 0
+  }
+  const account = auth.accountById(accountId)
+  if (!account) {
+    console.log(`BIND_RESULT ${JSON.stringify({ ok: false, error: `账号不存在：${accountId}` })}`)
+    return 1
+  }
+  instances.setAccount(target, account.uuid, account.name)
+  console.log(`BIND_RESULT ${JSON.stringify({ instanceId: target, accountId: account.uuid, accountName: account.name, instance: instances.get(target) })}`)
+  return 0
+}
+
 export async function runCallToolCli(kernel: Kernel, spec: string): Promise<number> {
   const tools = kernel.ctx.get('tools') as ToolsService
   const [name, ...rest] = spec.split('::')

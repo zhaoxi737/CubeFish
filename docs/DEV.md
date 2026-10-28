@@ -530,7 +530,22 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 
 > 原生对话框无法在自动化里点击，所以 IPC 层保留了环境变量旁路；正式运行时两个环境变量都不设置，走真正的 `dialog.showOpenDialog/showSaveDialog`。
 
-## 31. 已知限制 / 待办
+## 31. P25 验收（已实测，2026-10-29）：多实例独立账号
+
+| 验收项 | 结果 |
+|---|---|
+| 实例绑定账号 | ✅ `BIND_RESULT {"instanceId":"default","accountId":"f9dca6df…","accountName":"MockPlayer"}` |
+| 启动按实例账号 | ✅ 全局当前账号是 SecondPlayer 时，绑定 MockPlayer 的实例启动 `playerName=MockPlayer` |
+| 解绑回全局 | ✅ `--unbind-account` 后同一实例启动 `playerName=SecondPlayer` |
+| 列表展示 | ✅ `--instances` 返回 `accountId/accountName`；主页 chip 显示绑定账号名 |
+| 多实例并存 | ✅ 实例 `b` 绑定 SecondPlayer，default 绑定 MockPlayer，互不影响 |
+| 令牌有效 | ✅ `ensureAccountById` 解密 + 按需刷新（复用 P18 的 DPAPI 加密令牌） |
+| CLI / AI | ✅ `--bind-account=<uuid> [--bind-instance=<id>]`、`--unbind-account`、工具 `bind_instance_account` |
+
+> 设计：实例的 `accountId` 为空时跟随「全局当前账号」（auth.accounts 的 active），
+> 非空时用该账号的加密令牌启动；`accountName` 是展示用快照，账号被删就回退全局。
+
+## 32. 已知限制 / 待办
 
 - **更新**：只支持便携版（解压替换）；NSIS 安装包升级未做。
 - **签名**：便携版未做代码签名，Windows SmartScreen 会提示未知发布者。
@@ -541,17 +556,17 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 - **整合包**：`.mrpack` 与 CurseForge `.zip` 均支持（Fabric / NeoForge / Forge / 原版）；Quilt 明确报错；CF 需自备 API Key（离线包免 Key）。
 - **AI**：真实模型调用需用户自填 Key（本机验证用 mock LLM）；已支持流式输出、会话记忆与崩溃一键修复；多会话/跨实例记忆未做。
 - **老版本**：legacy/pre-1.6 资源物化已实现但未实测；Java 8 运行时自动下载未实测。
-- **实例**：支持创建/切换/删除/导出/导入；实例图标、跨设备同步未做。
+- **实例**：支持创建/切换/删除/导出/导入/独立账号绑定；实例图标、跨设备同步未做。
 - **登录**：微软正版登录已通（设备码 + Xbox Live + Minecraft Services，mock 全链路验证）；需要用户自备 Azure client_id；令牌用 DPAPI 加密存本机，支持多账号切换。
 
-## 32. 下一步（P25：补账）
+## 33. 下一步（P26：收尾）
 
 1. **插件网络白名单**：Node permission model 不管网络，考虑 vm/代理层限制 outbound。
-2. **多实例独立账号绑定**（当前账号是全局的）。
+2. **实例账号 UI**：目前只有 CLI/AI 绑定，界面只能看 chip 不能选。
 3. **账号头像/到期提醒** 与多实例独立账号绑定。
 4. **体验**：多会话记忆、更多修复动作（切 Java/换加载器）、安装包体积优化。
 
-## 33. 测试用 mock LLM
+## 34. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

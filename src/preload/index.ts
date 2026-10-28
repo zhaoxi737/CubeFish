@@ -28,6 +28,7 @@ const api: QdoApi = {
     remove: (id) => ipcRenderer.invoke(CH.instancesRemove, id),
     activate: (id) => ipcRenderer.invoke(CH.instancesActivate, id),
     export: (id, dest) => ipcRenderer.invoke(CH.instancesExport, id, dest),
+    bindAccount: (id, accountId, accountName) => ipcRenderer.invoke(CH.instancesAccount, id, accountId, accountName),
     import: (zipPath, name) => ipcRenderer.invoke(CH.instancesImport, zipPath, name),
   },
   versions: {

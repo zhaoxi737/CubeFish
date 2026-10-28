@@ -33,6 +33,8 @@ export interface InstancesService {
   setVersion(id: string, versionId: string, mcVersion: string, gameVersion?: string, loader?: string): InstanceSummary
   setMemory(id: string, memoryMb: number): void
   setPlayerName(id: string, playerName: string): void
+  /** 绑定/解绑实例账号（accountId 为空 = 跟随全局账号） */
+  setAccount(id: string, accountId?: string, accountName?: string): void
   dryRun(id?: string): Promise<LaunchDryRun>
   /** 导出实例为 zip（mods/config/存档 等，跳过日志与缓存） */
   exportInstance(id?: string, dest?: string): Promise<{ ok: boolean; path?: string; bytes?: number; files?: number; error?: string }>
@@ -50,6 +52,8 @@ interface InstanceFile {
   loaderVersion?: string
   memoryMb: number
   playerName?: string
+  accountId?: string
+  accountName?: string
   createdAt: number
 }
 
@@ -90,6 +94,8 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
         loaderVersion: file.loaderVersion,
         memoryMb: file.memoryMb,
         playerName: file.playerName ?? settings.get('playerName'),
+        accountId: file.accountId,
+        accountName: file.accountName,
         createdAt: file.createdAt,
         installed: Boolean(versionId && existsSync(path.join(paths.versions, versionId, `${versionId}.json`))),
         path: dirOf(file.id),
@@ -371,6 +377,21 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
       }
     }
 
+    const setAccount = (id: string, accountId?: string, accountName?: string): void => {
+      const file = read(id)
+      if (!file) return
+      if (accountId) {
+        file.accountId = accountId
+        file.accountName = accountName
+      } else {
+        delete file.accountId
+        delete file.accountName
+      }
+      write(file)
+      telemetry.record('instance:account', { id, accountId: accountId ?? '' })
+      log.info('instances', accountId ? '实例已绑定账号' : '实例已解绑账号', { id, accountId, accountName })
+    }
+
     ctx.provide('instances', {
       list,
       get,
@@ -383,6 +404,7 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
       setVersion,
       setMemory,
       setPlayerName,
+      setAccount,
       dryRun,
       exportInstance,
       importInstance,

@@ -14,6 +14,7 @@ import type { InstancesService } from './instances'
 import type { JavaService } from './java'
 import type { LaunchService } from './launch'
 import type { LlmToolSpec } from './llm'
+import type { AuthService } from './auth'
 import type { LoadersService } from './loaders'
 import type { LogService } from './logger'
 import type { MojangService } from './mojang'
@@ -59,6 +60,7 @@ export function createToolsPlugin(): LauncherPlugin<void> {
     const mojang = use<MojangService>(ctx, 'mojang')
     const java = use<JavaService>(ctx, 'java')
     const loaders = use<LoadersService>(ctx, 'loaders')
+    const auth = use<AuthService>(ctx, 'auth')
     const content = use<ContentService>(ctx, 'content')
     const conflict = use<ConflictService>(ctx, 'conflict')
     const diagnose = use<DiagnoseService>(ctx, 'diagnose')
@@ -293,6 +295,28 @@ export function createToolsPlugin(): LauncherPlugin<void> {
         const result = await instances.importInstance(source)
         if (!result.ok || !result.instance) return { ok: false, summary: `导入失败：${result.error ?? '未知错误'}` }
         return { ok: true, summary: `已导入实例「${result.instance.name}」（${result.instance.id}）` }
+      },
+    })
+
+    register({
+      name: 'bind_instance_account',
+      description: '把当前实例绑定到某个微软账号（传 uuid）；不传 uuid 则解绑，回到跟随全局账号。',
+      parameters: {
+        type: 'object',
+        properties: { uuid: { type: 'string', description: '微软账号 UUID（auth.accounts 里可查）' } },
+        required: [],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const uuid = str(args.uuid).trim()
+        if (!uuid) {
+          instances.setAccount(activeId())
+          return { ok: true, summary: '已解绑：该实例将跟随全局当前账号' }
+        }
+        const account = auth.accountById(uuid)
+        if (!account) return { ok: false, summary: `账号不存在：${uuid}` }
+        instances.setAccount(activeId(), account.uuid, account.name)
+        return { ok: true, summary: `已把当前实例绑定到「${account.name}」` }
       },
     })
 

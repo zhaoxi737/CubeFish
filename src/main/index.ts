@@ -28,6 +28,7 @@ import {
   runFixesCli,
   runApplyFixCli,
   runCallToolCli,
+  runBindAccountCli,
   runExportInstanceCli,
   runImportInstanceCli,
   runGameLogCli,
@@ -81,6 +82,9 @@ const forgeTarget = argValue('forge')
 const fixesMode = process.argv.includes('--fixes')
 const applyFixTarget = argValue('apply-fix')
 const callToolTarget = argValue('call-tool')
+const bindAccountTarget = argValue('bind-account')
+const bindInstanceTarget = argValue('bind-instance')
+const unbindAccountMode = process.argv.includes('--unbind-account')
 const exportInstanceTarget = argValue('export-instance')
 const exportToTarget = argValue('export-to')
 const importInstanceTarget = argValue('import-instance')
@@ -711,6 +715,11 @@ if (!gotLock) {
       }
       if (callToolTarget) {
         const code = await runCallToolCli(kernel, callToolTarget)
+        app.exit(code)
+        return
+      }
+      if (bindAccountTarget || unbindAccountMode) {
+        const code = await runBindAccountCli(kernel, unbindAccountMode ? undefined : bindAccountTarget, bindInstanceTarget)
         app.exit(code)
         return
       }

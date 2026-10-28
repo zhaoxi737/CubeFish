@@ -79,6 +79,10 @@ export interface InstanceSummary {
   loaderVersion?: string
   memoryMb: number
   playerName: string
+  /** 绑定的微软账号 UUID；空 = 跟随全局当前账号 */
+  accountId?: string
+  /** 绑定账号的显示名（快照） */
+  accountName?: string
   createdAt: number
   installed: boolean
   path: string

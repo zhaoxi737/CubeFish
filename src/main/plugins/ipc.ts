@@ -139,6 +139,10 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle(CH.instancesRemove, (id: string) => instances.remove(id))
     handle<InstanceSummary>(CH.instancesActivate, (id: string) => instances.setActive(id))
     handle(CH.instancesExport, (id?: string, dest?: string) => instances.exportInstance(id, dest))
+    handle<InstanceSummary>(CH.instancesAccount, (id: string, accountId?: string, accountName?: string) => {
+      instances.setAccount(id, accountId, accountName)
+      return instances.get(id) ?? instances.active()
+    })
     handle(CH.instancesImport, (zipPath: string, name?: string) => instances.importInstance(zipPath, { name }))
     handle<ChatReply>(CH.chatSend, async (text: string) => {
       const win = config.getWindow()

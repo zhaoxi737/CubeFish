@@ -64,6 +64,8 @@ export interface QdoApi {
     remove(id: string): Promise<{ ok: boolean; error?: string }>
     activate(id: string): Promise<InstanceSummary>
     export(id?: string, dest?: string): Promise<{ ok: boolean; path?: string; bytes?: number; files?: number; error?: string }>
+    /** 绑定/解绑实例账号（accountId 为空 = 跟随全局账号） */
+    bindAccount(id: string, accountId?: string, accountName?: string): Promise<InstanceSummary>
     import(zipPath: string, name?: string): Promise<{ ok: boolean; instance?: InstanceSummary; error?: string }>
   }
   versions: {

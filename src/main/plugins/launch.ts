@@ -249,7 +249,9 @@ export function createLaunchPlugin(): LauncherPlugin<void> {
         const classpath = cp.join(path.delimiter)
 
         // 账号：微软已登录则用正版令牌，否则离线
-        const account = await auth.ensureAccount()
+        const account = instance.accountId
+          ? ((await auth.ensureAccountById(instance.accountId)) ?? (await auth.ensureAccount()))
+          : await auth.ensureAccount()
         const microsoft = account.type === 'microsoft'
         const playerName = microsoft ? account.name : instance.playerName || settings.get('playerName') || 'Player'
         const uuid = microsoft ? account.uuid : offlineUuid(playerName)

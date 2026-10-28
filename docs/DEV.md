@@ -502,7 +502,22 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 > 之前的日志抽屉只有启动器的结构化 JSONL；现在玩家/客服排查时可以直接在应用里看到游戏自己的 latest.log，
 > 不用去翻 `%APPDATA%\QDOQMC\instances\<id>\.minecraft\logs`。
 
-## 29. 已知限制 / 待办
+## 29. P23 验收（已实测，2026-10-29）：实例导出 / 导入
+
+| 验收项 | 结果 |
+|---|---|
+| 导出 | ✅ `EXPORT_RESULT {"ok":true,"files":54,"bytes":32889896}`；包内 `mods/*.jar`、`config/*`、`instance.json`，跳过 logs/crash-reports/.cache |
+| 导入 | ✅ `IMPORT_RESULT` 返回新实例，`versionId/loader/memoryMb/playerName` 全部还原 |
+| 导入实例可启动 | ✅ 启动导入的实例：7 项启动标记全中（fabric 1.21.11），mods 里两个 jar 都在 |
+| UI 导出 | ✅ 主页实例行「导出」按钮 → toast「已导出到 …\exports\default-….zip（54 个文件，32119 KB）」 |
+| UI 导入 | ✅ 「+ 新建」对话框新增「或从导出包导入」路径输入 + 导入按钮 |
+| 安全 | ✅ 解压时拒绝 `..` 路径穿越；只写实例 gameDir |
+| CLI / AI | ✅ `--export-instance=<id> [--export-to=<zip>]`、`--import-instance=<zip>`、工具 `export_instance` / `import_instance` |
+
+> 导出名默认 `<data>/exports/<id>-<ts>.zip`；导入默认名 `原实例名（导入）`，避免重名混淆。
+> 导出体积只包含实例私有文件（mods/config/存档），不含全局 libraries/assets（那些由启动器按版本重新装）。
+
+## 30. 已知限制 / 待办
 
 - **更新**：只支持便携版（解压替换）；NSIS 安装包升级未做。
 - **签名**：便携版未做代码签名，Windows SmartScreen 会提示未知发布者。
@@ -513,17 +528,17 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 - **整合包**：`.mrpack` 与 CurseForge `.zip` 均支持（Fabric / NeoForge / Forge / 原版）；Quilt 明确报错；CF 需自备 API Key（离线包免 Key）。
 - **AI**：真实模型调用需用户自填 Key（本机验证用 mock LLM）；已支持流式输出、会话记忆与崩溃一键修复；多会话/跨实例记忆未做。
 - **老版本**：legacy/pre-1.6 资源物化已实现但未实测；Java 8 运行时自动下载未实测。
-- **实例**：支持创建/切换/删除；实例复制、导入导出、图标未做。
+- **实例**：支持创建/切换/删除/导出/导入；实例图标、跨设备同步未做。
 - **登录**：微软正版登录已通（设备码 + Xbox Live + Minecraft Services，mock 全链路验证）；需要用户自备 Azure client_id；令牌用 DPAPI 加密存本机，支持多账号切换。
 
-## 30. 下一步（P23：补账）
+## 31. 下一步（P24：补账）
 
 1. **插件网络白名单**：Node permission model 不管网络，考虑 vm/代理层限制 outbound。
-2. **整合包文件选择器**：接系统对话框（当前走路径输入）。
+2. **系统文件选择器**：导出/导入与整合包都改走 dialog.showOpenDialog（当前走路径输入）。
 3. **账号头像/到期提醒** 与多实例独立账号绑定。
 4. **体验**：多会话记忆、更多修复动作（切 Java/换加载器）、安装包体积优化。
 
-## 31. 测试用 mock LLM
+## 32. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

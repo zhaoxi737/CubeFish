@@ -313,6 +313,21 @@ export async function runGameLogCli(kernel: Kernel, instanceId?: string): Promis
   return result.error ? 1 : 0
 }
 
+
+export async function runExportInstanceCli(kernel: Kernel, id: string, dest?: string): Promise<number> {
+  const instances = kernel.ctx.get('instances') as InstancesService
+  const result = await instances.exportInstance(id, dest)
+  console.log(`EXPORT_RESULT ${JSON.stringify({ id, ...result })}`)
+  return result.ok ? 0 : 1
+}
+
+export async function runImportInstanceCli(kernel: Kernel, zipPath: string): Promise<number> {
+  const instances = kernel.ctx.get('instances') as InstancesService
+  const result = await instances.importInstance(zipPath)
+  console.log(`IMPORT_RESULT ${JSON.stringify(result)}`)
+  return result.ok ? 0 : 1
+}
+
 export async function runCallToolCli(kernel: Kernel, spec: string): Promise<number> {
   const tools = kernel.ctx.get('tools') as ToolsService
   const [name, ...rest] = spec.split('::')

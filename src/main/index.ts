@@ -1,6 +1,6 @@
 import electron from 'electron'
 import type { BrowserWindow as BrowserWindowType } from 'electron'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import AdmZip from 'adm-zip'
 import { fileURLToPath } from 'node:url'
@@ -28,6 +28,8 @@ import {
   runFixesCli,
   runApplyFixCli,
   runCallToolCli,
+  runExportInstanceCli,
+  runImportInstanceCli,
   runGameLogCli,
   runCursePackCli,
   runInspectCursePackCli,
@@ -79,6 +81,9 @@ const forgeTarget = argValue('forge')
 const fixesMode = process.argv.includes('--fixes')
 const applyFixTarget = argValue('apply-fix')
 const callToolTarget = argValue('call-tool')
+const exportInstanceTarget = argValue('export-instance')
+const exportToTarget = argValue('export-to')
+const importInstanceTarget = argValue('import-instance')
 const gameLogTarget = argValue('game-log')
 const cursePackTarget = argValue('curse-pack')
 const inspectCurseTarget = argValue('inspect-curse-pack')
@@ -237,6 +242,22 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
     try {
       await wait(2400)
       const firstShot = await shot('smoke.png')
+
+      // 实例导出：点主页「导出」按钮，记录 toast 与产物
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.instances-line button')].find((b) => b.textContent?.trim() === '导出'); btn?.click(); return 'export-clicked' })()`,
+      )
+      await wait(1200)
+      const exportInfo = (await win.webContents.executeJavaScript(
+        `JSON.stringify({ toast: document.querySelector('.toast')?.textContent ?? '' })`,
+      )) as string
+      const exportDir = path.join(process.env.APPDATA ?? '', 'QDOQMC', 'exports')
+      let exportFiles: string[] = []
+      try {
+        exportFiles = readdirSync(exportDir)
+      } catch {
+        exportFiles = []
+      }
 
       // AI 对话：发一条自然语言，验证「模型 → 工具 → 回答」轨迹（需要 mock 或真实 LLM 环境变量）
       const sent = (await win.webContents.executeJavaScript(
@@ -510,6 +531,7 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           conflict: JSON.parse(conflictInfo),
           pack: { preview: JSON.parse(packInfo), done: JSON.parse(packDone), screenshot: packShot, doneScreenshot: packDoneShot },
           gameLog: { info: JSON.parse(gameLogInfo), screenshot: gameLogShot },
+          instanceExport: { info: JSON.parse(exportInfo), files: exportFiles },
           chatStatus: chat,
         })}`,
       )
@@ -654,6 +676,16 @@ if (!gotLock) {
       }
       if (callToolTarget) {
         const code = await runCallToolCli(kernel, callToolTarget)
+        app.exit(code)
+        return
+      }
+      if (exportInstanceTarget) {
+        const code = await runExportInstanceCli(kernel, exportInstanceTarget, exportToTarget)
+        app.exit(code)
+        return
+      }
+      if (importInstanceTarget) {
+        const code = await runImportInstanceCli(kernel, importInstanceTarget)
         app.exit(code)
         return
       }

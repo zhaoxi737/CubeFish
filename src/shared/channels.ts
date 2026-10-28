@@ -12,6 +12,8 @@ export const CH = {
   instancesCreate: 'instances:create',
   instancesRemove: 'instances:remove',
   instancesActivate: 'instances:activate',
+  instancesExport: 'instances:export',
+  instancesImport: 'instances:import',
   chatSend: 'chat:send',
   chatDelta: 'chat:delta',
   authState: 'auth:state',

@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import AdmZip from 'adm-zip'
 import type { InstanceSummary, LaunchDryRun, LaunchStep } from '../../shared/types'
 import { ensureDir, safeName } from '../lib/fsx'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
@@ -33,6 +34,10 @@ export interface InstancesService {
   setMemory(id: string, memoryMb: number): void
   setPlayerName(id: string, playerName: string): void
   dryRun(id?: string): Promise<LaunchDryRun>
+  /** 导出实例为 zip（mods/config/存档 等，跳过日志与缓存） */
+  exportInstance(id?: string, dest?: string): Promise<{ ok: boolean; path?: string; bytes?: number; files?: number; error?: string }>
+  /** 从 zip 导入为新实例 */
+  importInstance(zipPath: string, opts?: { name?: string }): Promise<{ ok: boolean; instance?: InstanceSummary; error?: string }>
 }
 
 interface InstanceFile {
@@ -279,6 +284,93 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
       return { ok: true, instance, steps, hint: '选中版本并安装后即可启动。' }
     }
 
+    /* ---------- P23：实例导出 / 导入 ---------- */
+
+    async function exportInstance(
+      id = 'default',
+      dest?: string,
+    ): Promise<{ ok: boolean; path?: string; bytes?: number; files?: number; error?: string }> {
+      const file = read(id)
+      if (!file) return { ok: false, error: `实例不存在：${id}` }
+      const root = gameDir(id)
+      if (!existsSync(root)) return { ok: false, error: '实例目录不存在' }
+      const zip = new AdmZip()
+      zip.addFile('instance.json', Buffer.from(JSON.stringify(file, null, 2), 'utf8'))
+
+      let files = 0
+      const skipDirs = new Set(['logs', 'crash-reports', '.cache'])
+      const walk = (absolute: string, relative: string): void => {
+        for (const entry of readdirSync(absolute, { withFileTypes: true })) {
+          const childAbs = path.join(absolute, entry.name)
+          const childRel = relative ? `${relative}/${entry.name}` : entry.name
+          if (entry.isDirectory()) {
+            if (!relative && skipDirs.has(entry.name)) continue
+            walk(childAbs, childRel)
+            continue
+          }
+          if (!entry.isFile()) continue
+          zip.addFile(childRel, readFileSync(childAbs))
+          files += 1
+        }
+      }
+      walk(root, '')
+
+      const target = dest ?? path.join(paths.data, 'exports', `${file.id}-${Date.now()}.zip`)
+      await ensureDir(path.dirname(target))
+      zip.writeZip(target)
+      const bytes = statSync(target).size
+      telemetry.record('instance:export', { id, files, bytes })
+      log.info('instances', '实例已导出', { id, path: target, files, bytes })
+      return { ok: true, path: target, bytes, files }
+    }
+
+    async function importInstance(zipPath: string, opts?: { name?: string }): Promise<{ ok: boolean; instance?: InstanceSummary; error?: string }> {
+      try {
+        if (!existsSync(zipPath)) return { ok: false, error: `文件不存在：${zipPath}` }
+        const zip = new AdmZip(zipPath)
+        const metaEntry = zip.getEntry('instance.json')
+        const meta = metaEntry
+          ? (JSON.parse(metaEntry.getData().toString('utf8')) as Partial<InstanceFile>)
+          : {}
+        const name = opts?.name ?? (meta.name ? `${meta.name}（导入）` : path.basename(zipPath, '.zip'))
+        const created = create(name)
+        const root = gameDir(created.id)
+
+        let files = 0
+        for (const entry of zip.getEntries()) {
+          if (entry.isDirectory) continue
+          const raw = entry.entryName.replace(/\\/g, '/')
+          if (raw === 'instance.json') continue
+          const parts = raw.split('/').filter(Boolean)
+          if (parts.length === 0 || parts.some((part) => part === '..' || part === '.')) continue
+          const target = path.join(root, ...parts)
+          await ensureDir(path.dirname(target))
+          writeFileSync(target, entry.getData())
+          files += 1
+        }
+
+        // 恢复实例元数据（版本绑定 / 内存 / 玩家名）
+        const restored = read(created.id)
+        if (restored) {
+          if (meta.versionId) restored.versionId = meta.versionId
+          if (meta.gameVersion) restored.gameVersion = meta.gameVersion
+          if (meta.mcVersion) restored.mcVersion = meta.mcVersion
+          if (meta.loader) restored.loader = meta.loader
+          if (meta.loaderVersion) restored.loaderVersion = meta.loaderVersion
+          if (typeof meta.memoryMb === 'number') restored.memoryMb = meta.memoryMb
+          if (meta.playerName) restored.playerName = meta.playerName
+          write(restored)
+        }
+        telemetry.record('instance:import', { id: created.id, files })
+        log.info('instances', '实例已导入', { id: created.id, name, files })
+        return { ok: true, instance: get(created.id) }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        log.error('instances', '实例导入失败', { zipPath, error: message })
+        return { ok: false, error: message }
+      }
+    }
+
     ctx.provide('instances', {
       list,
       get,
@@ -292,6 +384,8 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
       setMemory,
       setPlayerName,
       dryRun,
+      exportInstance,
+      importInstance,
     } satisfies InstancesService)
 
     ensureDefault()

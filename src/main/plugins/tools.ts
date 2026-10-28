@@ -264,6 +264,39 @@ export function createToolsPlugin(): LauncherPlugin<void> {
     })
 
     register({
+      name: 'export_instance',
+      description: '把当前实例导出成 zip（含 mods / config / 存档，跳过日志与缓存），方便备份或迁移。',
+      parameters: EMPTY_PARAMS,
+      async handler() {
+        const result = await instances.exportInstance(activeId())
+        if (!result.ok) return { ok: false, summary: `导出失败：${result.error}` }
+        return {
+          ok: true,
+          summary: `已导出到 ${result.path}（${result.files} 个文件，${Math.round((result.bytes ?? 0) / 1024)} KB）`,
+          data: result,
+        }
+      },
+    })
+
+    register({
+      name: 'import_instance',
+      description: '从导出包 zip 导入为新实例。参数是 zip 路径。',
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string', description: '导出包 zip 路径' } },
+        required: ['path'],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const source = str(args.path).trim()
+        if (!source) return { ok: false, summary: '需要 zip 路径' }
+        const result = await instances.importInstance(source)
+        if (!result.ok || !result.instance) return { ok: false, summary: `导入失败：${result.error ?? '未知错误'}` }
+        return { ok: true, summary: `已导入实例「${result.instance.name}」（${result.instance.id}）` }
+      },
+    })
+
+    register({
       name: 'install_curse_pack',
       description: '从本机 .zip 安装 CurseForge 整合包（需要 CurseForge API Key 才能下载清单里的模组；自带 mods 的包不需要）。参数是 zip 路径。',
       parameters: {

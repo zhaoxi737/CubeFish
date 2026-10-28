@@ -63,6 +63,8 @@ export interface QdoApi {
     create(name: string): Promise<InstanceSummary>
     remove(id: string): Promise<{ ok: boolean; error?: string }>
     activate(id: string): Promise<InstanceSummary>
+    export(id?: string, dest?: string): Promise<{ ok: boolean; path?: string; bytes?: number; files?: number; error?: string }>
+    import(zipPath: string, name?: string): Promise<{ ok: boolean; instance?: InstanceSummary; error?: string }>
   }
   versions: {
     list(): Promise<VersionList>

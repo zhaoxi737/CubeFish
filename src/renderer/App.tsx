@@ -91,6 +91,7 @@ export function App() {
   const [instances, setInstances] = useState<InstanceSummary[]>([])
   const [newInstanceOpen, setNewInstanceOpen] = useState(false)
   const [newInstanceName, setNewInstanceName] = useState('')
+  const [importPath, setImportPath] = useState('')
   const activeIdRef = useRef('default')
   const listening = useRef(false)
 
@@ -240,6 +241,36 @@ export function App() {
       notify(`创建实例失败：${err instanceof Error ? err.message : String(err)}`)
     }
   }, [hasApi, newInstanceName, notify, refreshInstalled])
+
+  const exportInstance = useCallback(async () => {
+    if (!hasApi || !instance) return
+    try {
+      const result = await window.qdo.instances.export(instance.id)
+      if (!result.ok) notify(`导出失败：${result.error ?? '未知错误'}`)
+      else notify(`已导出到 ${result.path}（${result.files} 个文件，${Math.round((result.bytes ?? 0) / 1024)} KB）`)
+    } catch (err) {
+      notify(`导出失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [hasApi, instance, notify])
+
+  const importInstance = useCallback(async () => {
+    const source = importPath.trim()
+    if (!hasApi || !source) return
+    try {
+      const result = await window.qdo.instances.import(source, newInstanceName.trim() || undefined)
+      if (!result.ok || !result.instance) {
+        notify(`导入失败：${result.error ?? '未知错误'}`)
+        return
+      }
+      setNewInstanceOpen(false)
+      setNewInstanceName('')
+      setImportPath('')
+      await refreshInstalled()
+      notify(`已导入实例「${result.instance.name}」`)
+    } catch (err) {
+      notify(`导入失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [hasApi, importPath, newInstanceName, notify, refreshInstalled])
 
   const deleteInstance = useCallback(
     async (id: string) => {
@@ -443,7 +474,7 @@ export function App() {
         <div className="brand">
           <span className="brand-mark">QDOQMC</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P22 · 游戏日志</span>
+          <span className="brand-tag">P23 · 实例导入导出</span>
         </div>
         <div className="titlebar-actions">
           <button type="button" className="ghost" onClick={() => setShowMods(true)} disabled={!instance}>
@@ -482,6 +513,9 @@ export function App() {
             </select>
             <button type="button" className="ghost tiny" onClick={() => setNewInstanceOpen(true)} disabled={Boolean(running)}>
               + 新建
+            </button>
+            <button type="button" className="ghost tiny" onClick={() => void exportInstance()} disabled={Boolean(running) || !instance}>
+              导出
             </button>
             {instance && instance.id !== 'default' ? (
               <button
@@ -691,10 +725,22 @@ export function App() {
                 />
                 <span className="field-hint">每个实例有独立的 mods / 存档 / 配置，但共享游戏资源与 Java。</span>
               </label>
+              <label className="field">
+                <span className="field-label">或从导出包导入</span>
+                <input
+                  value={importPath}
+                  onChange={(event) => setImportPath(event.target.value)}
+                  placeholder="粘贴 .zip 路径（上面名称留空则用包内实例名）"
+                  spellCheck={false}
+                />
+              </label>
             </div>
             <div className="dialog-foot">
               <button type="button" className="ghost" onClick={() => setNewInstanceOpen(false)}>
                 取消
+              </button>
+              <button type="button" className="ghost" onClick={() => void importInstance()} disabled={!importPath.trim()}>
+                导入
               </button>
               <button type="button" className="primary" onClick={() => void createInstance()} disabled={!newInstanceName.trim()}>
                 创建

@@ -164,6 +164,20 @@ export async function runMarketInstallCli(kernel: Kernel, id: string): Promise<n
   return result.ok ? 0 : 1
 }
 
+export async function runNeoForgeCli(kernel: Kernel, mcVersion: string): Promise<number> {
+  const loaders = kernel.ctx.get('loaders') as LoadersService
+  const instances = kernel.ctx.get('instances') as InstancesService
+  loaders.setProgressSink((progress) => {
+    console.log(`[neoforge] ${progress.stage} ${progress.done}/${progress.total} ${progress.message ?? ''}`)
+  })
+  const result = await loaders.installNeoForge(mcVersion)
+  if (result.ok && result.versionId) {
+    instances.setVersion(instances.active().id, result.versionId, mcVersion, mcVersion, 'neoforge')
+  }
+  console.log(`NEOFORGE_RESULT ${JSON.stringify(result)}`)
+  return result.ok ? 0 : 1
+}
+
 export async function runModpackCli(kernel: Kernel, source: string): Promise<number> {
   const content = kernel.ctx.get('content') as ContentService
   const inspect = await content.inspectModpack(source)

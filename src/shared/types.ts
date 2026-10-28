@@ -306,6 +306,16 @@ export interface FabricInstallResult {
   error?: string
 }
 
+export interface NeoForgeInstallResult {
+  ok: boolean
+  gameVersion: string
+  versionId?: string
+  loaderVersion?: string
+  libraries?: number
+  processors?: number
+  error?: string
+}
+
 /* ---------- P10：整合包（.mrpack） ---------- */
 
 export interface ModpackInstallResult {

@@ -22,6 +22,7 @@ import {
   runMarketInstallCli,
   runModpackCli,
   runInspectModpackCli,
+  runNeoForgeCli,
   runToolsCli,
   runUpdateApplyCli,
   runUpdateDownloadCli,
@@ -55,6 +56,7 @@ const marketMode = process.argv.includes('--market')
 const marketInstallTarget = argValue('market-install')
 const modpackTarget = argValue('modpack')
 const inspectModpackTarget = argValue('inspect-modpack')
+const neoforgeTarget = argValue('neoforge')
 const createInstanceTarget = argValue('create-instance')
 const activateInstanceTarget = argValue('activate-instance')
 const contentTarget = argValue('content')
@@ -372,6 +374,11 @@ if (!gotLock) {
       }
       if (inspectModpackTarget) {
         const code = await runInspectModpackCli(kernel, inspectModpackTarget)
+        app.exit(code)
+        return
+      }
+      if (neoforgeTarget) {
+        const code = await runNeoForgeCli(kernel, neoforgeTarget)
         app.exit(code)
         return
       }

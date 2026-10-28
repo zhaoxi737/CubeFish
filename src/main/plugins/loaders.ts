@@ -2,13 +2,16 @@
  * 加载器服务（P2）：Fabric。
  * 参照 docs/RESEARCH-P1-P2.md §3.1：meta API 纯合并，不跑安装器进程。
  */
-import { existsSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
-import type { FabricInstallResult, TaskProgress } from '../../shared/types'
+import type { FabricInstallResult, NeoForgeInstallResult, TaskProgress } from '../../shared/types'
 import { Downloader, type DownloadSpec } from '../lib/downloader'
+import { installForgeProfile } from '../lib/forge-installer'
 import { ensureDir, readJson, writeJsonAtomic } from '../lib/fsx'
 import { parseMaven } from '../lib/maven'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
+import type { JavaService } from './java'
 import type { LogService } from './logger'
 import type { MojangService } from './mojang'
 import type { PathsService } from './paths'
@@ -34,7 +37,22 @@ interface FabricProfile {
 export interface LoadersService {
   fabricVersions(gameVersion: string): Promise<{ version: string; stable: boolean }[]>
   installFabric(gameVersion: string): Promise<FabricInstallResult>
+  neoforgeVersions(gameVersion: string): Promise<string[]>
+  installNeoForge(gameVersion: string, versionOverride?: string): Promise<NeoForgeInstallResult>
   setProgressSink(sink: ((progress: TaskProgress) => void) | null): void
+}
+
+const NEOFORGE_MAVEN = 'https://maven.neoforged.net/releases/net/neoforged/neoforge'
+
+/** 1.21.11 → "21.11."；1.20.1 及更早没有 neoforge 客户端构建 */
+function neoforgePrefix(mcVersion: string): string | undefined {
+  const parts = mcVersion.split('.')
+  if (parts.length < 3 || parts[0] !== '1') return undefined
+  const minor = Number(parts[1])
+  const patch = Number(parts[2])
+  if (Number.isNaN(minor) || Number.isNaN(patch)) return undefined
+  if (minor < 20 || (minor === 20 && patch < 2)) return undefined
+  return `${minor}.${patch}.`
 }
 
 export function createLoadersPlugin(): LauncherPlugin<void> {
@@ -42,6 +60,7 @@ export function createLoadersPlugin(): LauncherPlugin<void> {
     const paths = use<PathsService>(ctx, 'paths')
     const log = use<LogService>(ctx, 'log')
     const mojang = use<MojangService>(ctx, 'mojang')
+    const java = use<JavaService>(ctx, 'java')
     const telemetry = use<TelemetryService>(ctx, 'telemetry')
 
     let sink: ((progress: TaskProgress) => void) | null = null
@@ -132,9 +151,152 @@ export function createLoadersPlugin(): LauncherPlugin<void> {
       return readJson<FabricProfile | undefined>(path.join(paths.versions, versionId, `${versionId}.json`), undefined)
     }
 
+    /* ---------- NeoForge ---------- */
+
+    async function neoforgeVersions(mcVersion: string): Promise<string[]> {
+      const prefix = neoforgePrefix(mcVersion)
+      if (!prefix) return []
+      const res = await fetch(`${NEOFORGE_MAVEN}/maven-metadata.xml`, {
+        headers: { 'user-agent': UA },
+        signal: AbortSignal.timeout(20_000),
+      })
+      if (!res.ok) throw new Error(`NeoForge 版本列表获取失败：HTTP ${res.status}`)
+      const xml = await res.text()
+      const all = [...xml.matchAll(/<version>([^<]+)<\/version>/g)].map((match) => match[1])
+      const numeric = (value: string) => value.split(/[.-]/).map((part) => Number.parseInt(part, 10) || 0)
+      return all
+        .filter((version) => version.startsWith(prefix) && !version.includes('-beta'))
+        .sort((a, b) => {
+          const pa = numeric(a)
+          const pb = numeric(b)
+          for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+            const diff = (pa[i] ?? 0) - (pb[i] ?? 0)
+            if (diff !== 0) return diff
+          }
+          return 0
+        })
+    }
+
+    async function installNeoForge(gameVersion: string, versionOverride?: string): Promise<NeoForgeInstallResult> {
+      const started = Date.now()
+      const taskId = `neoforge-${gameVersion}-${Date.now()}`
+      const emit = (stage: string, done: number, total: number, bytes = 0, message?: string) =>
+        sink?.({ taskId, kind: 'install', stage, done, total, bytes, message })
+
+      try {
+        const versions = await neoforgeVersions(gameVersion)
+        if (versions.length === 0) {
+          return {
+            ok: false,
+            gameVersion,
+            error: `NeoForge 没有支持 ${gameVersion} 的版本（1.20.1 及更早请用 Forge）`,
+          }
+        }
+        const loaderVersion = versionOverride ?? versions[versions.length - 1]
+
+        emit('version', 0, 1, 0, `准备 NeoForge ${loaderVersion}`)
+        const vanillaJson = path.join(paths.versions, gameVersion, `${gameVersion}.json`)
+        const vanillaJar = path.join(paths.versions, gameVersion, `${gameVersion}.jar`)
+        if (!existsSync(vanillaJson) || !existsSync(vanillaJar)) {
+          const base = await mojang.install(gameVersion, taskId)
+          if (!base.ok) return { ok: false, gameVersion, error: `原版安装失败：${base.error}` }
+        }
+
+        const installerName = `neoforge-${loaderVersion}-installer.jar`
+        const installerPath = path.join(paths.cache, 'installers', installerName)
+        if (!existsSync(installerPath)) {
+          emit('libraries', 0, 1, 0, '下载 NeoForge 安装器')
+          await new Downloader({ cacheDir: paths.downloads, concurrency: 1 }).fetchOne({
+            url: `${NEOFORGE_MAVEN}/${loaderVersion}/${installerName}`,
+            dest: installerPath,
+            label: installerName,
+          })
+        }
+
+        // Java：按原版版本的 javaVersion 选（1.21.x = 21）
+        const baseVersionJson = await mojang.versionJson(gameVersion)
+        const major = baseVersionJson.javaVersion?.majorVersion ?? 21
+        const component = baseVersionJson.javaVersion?.component
+        const javaInfo = component
+          ? await java.ensure(component, major, taskId)
+          : (await java.select(major)) ?? (await java.ensure('java-runtime-delta', major, taskId))
+
+        emit('legacy', 0, 1, 0, '执行安装器 processors（可能需要几分钟）')
+        const result = await installForgeProfile({
+          installerPath,
+          librariesDir: paths.libraries,
+          dataRoot: paths.data,
+          minecraftJar: vanillaJar,
+          mcVersion: gameVersion,
+          javaPath: javaInfo.path,
+          tmpDir: path.join(paths.tmp, `neoforge-${loaderVersion}`),
+          log: (message, data) => log.info('loaders', message, data),
+        })
+
+        const versionId = result.profileVersionId
+        const versionDir = path.join(paths.versions, versionId)
+        await ensureDir(versionDir)
+
+        // 关键：把 patched client jar 作为「合成库」写进版本 json，
+        // 否则 FML 在 classpath 上找不到 net/minecraft/*，原版混淆 jar 又会被标记为不可用。
+        const versionJson = result.versionJson as { libraries?: unknown[] }
+        if (result.patchedJarPath && existsSync(result.patchedJarPath)) {
+          const relative = path.relative(paths.libraries, result.patchedJarPath).split(path.sep).join('/')
+          const buffer = readFileSync(result.patchedJarPath)
+          const sha1 = createHash('sha1').update(buffer).digest('hex')
+          versionJson.libraries = [
+            ...(versionJson.libraries ?? []),
+            {
+              name: `net.minecraft:client:${gameVersion}:patched`,
+              downloads: {
+                artifact: { path: relative, sha1, size: buffer.byteLength },
+              },
+            },
+          ]
+        } else {
+          log.warn('loaders', 'NeoForge 安装后未找到 patched client jar，启动可能失败', { versionId })
+        }
+
+        await writeJsonAtomic(path.join(versionDir, `${versionId}.json`), versionJson)
+        emit('done', 1, 1, 0, `NeoForge ${loaderVersion} 安装完成`)
+
+        telemetry.record('loader:neoforge', {
+          gameVersion,
+          loaderVersion,
+          versionId,
+          libraries: result.libraries,
+          processors: result.processorsRun,
+          ms: Date.now() - started,
+        })
+        log.info('loaders', 'NeoForge 安装完成', {
+          versionId,
+          loaderVersion,
+          libraries: result.libraries,
+          processors: result.processorsRun,
+          ms: Date.now() - started,
+          patched: result.patchedJarPath,
+        })
+        return {
+          ok: true,
+          gameVersion,
+          versionId,
+          loaderVersion,
+          libraries: result.libraries,
+          processors: result.processorsRun,
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        log.error('loaders', 'NeoForge 安装失败', { gameVersion, error: message })
+        telemetry.record('loader:neoforge:error', { gameVersion, error: message })
+        return { ok: false, gameVersion, error: message }
+      }
+    }
+
     ctx.provide('loaders', {
       fabricVersions,
       installFabric,
+      neoforgeVersions,
+      installNeoForge,
       readProfile,
       setProgressSink: (next) => {
         sink = next

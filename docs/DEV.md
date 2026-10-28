@@ -1,4 +1,4 @@
-# 开发手册（P0–P10）
+﻿# 开发手册（P0–P10）
 
 ## 1. 环境
 
@@ -298,29 +298,45 @@ export function createHelloPlugin(): LauncherPlugin<void> {
 | UI 整合包标签 | ✅ 模组面板新增「整合包」分类，返回 12 条真实 Modrinth 整合包，一键安装 |
 | 25 个插件全部加载 | ✅ `failed: []` |
 
-## 17. 已知限制 / 待办
+## 17. P11 进展：NeoForge 安装器（已跑通 processor 链，启动待解决）
+
+| 环节 | 状态 |
+|---|---|
+| 版本解析（maven metadata → 21.11.48） | ✅ |
+| 安装器下载 | ✅ 4.2MB |
+| install_profile 解析（spec 1） | ✅ data / processors / libraries |
+| 变量占位符（4 种：坐标 / {KEY} / /data 文件 / '字面量'） | ✅ |
+| 依赖预下载（installertools、neoform 映射、31 个库） | ✅ |
+| processors 执行（跳过 server-only，跑 2 个） | ✅ 16 秒，退出码 0 |
+| patched client jar 产出 | ✅ `minecraft-client-patched-21.11.48.jar`（33MB，29191 条目） |
+| 版本 json 写入 + 绑定实例 | ✅ |
+| **启动** | ❌ FML 判定为 DEV 环境（patched jar 缺 `Minecraft-Dists`），手工补 manifest 后进入 joined 配置扫描阶段仍报错退出。下一个工作日继续定位 |
+
+> 已确认 FML 逻辑：`ProcessMinecraftJar` 在「joined（client+server 双输入）」时才写 `Minecraft-Dists: client server` 与每条目的 `Minecraft-Dist`；单 client 输入不写。下一轮方向：按官方式双输入生成 joined jar，或让 FML 以 production 模式接受单 client patched jar。
+
+## 18. 已知限制 / 待办
 
 - **更新**：只支持便携版（解压替换）；NSIS 安装包升级未做。
 - **签名**：便携版未做代码签名，Windows SmartScreen 会提示未知发布者。
 - **插件安全**：主进程内加载（Node 全权限），权限字段是提示性的；真正沙箱未做。
 - **插件市场**：feed 与签名链路已通；缺少审核、版本更新检测、分类与评分。
 - **慢网**：本机到 Mojang 单连接仅 ~50KB/s，并发 16 约 200KB/s，432MB 资源耗时 18 分钟。镜像回退待接入。
-- **加载器**：Fabric 已通；NeoForge/Forge（processors 执行引擎）未做，Quilt 不做。
+- **加载器**：Fabric 已通；NeoForge 安装器 processor 链已跑通，但启动被 FML 生产/开发环境校验拦住（见第 17 节），Forge 未做，Quilt 不做。
 - **整合包**：`.mrpack` 已通（Fabric/原版）；NeoForge/Forge 整合包会明确报错。CurseForge `.zip` 整合包不支持。
 - **AI**：真实模型调用需用户自填 Key（本机验证用 mock LLM）；流式输出、会话记忆未做。
 - **老版本**：legacy/pre-1.6 资源物化已实现但未实测；Java 8 运行时自动下载未实测。
 - **实例**：支持创建/切换/删除；实例复制、导入导出、图标未做。
 - **登录**：仅离线（正版 OAuth 未做）。
 
-## 18. 下一步（P11：补账）
+## 19. 下一步（P12：补账）
 
-1. **NeoForge/Forge processors 引擎**（最大功能缺口，也解锁对应整合包）。
+1. **NeoForge 启动链修复**（patched jar 的 dist 语义），再补 Forge。
 2. **插件沙箱化**：utilityProcess + 受限 API + 权限确认。
 3. **登录**：微软正版 OAuth（需要 Azure 应用 id）。
 4. **体验**：流式 AI 输出、会话记忆、崩溃一键修复。
 5. **整合包补全**：CurseForge zip、安装前预览清单与体积。
 
-## 19. 测试用 mock LLM
+## 20. 测试用 mock LLM
 
 ```bash
 node scripts/mock-llm.mjs          # 监听 127.0.0.1:18080

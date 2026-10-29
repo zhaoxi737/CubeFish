@@ -19,6 +19,7 @@ import { LogDrawer } from './components/LogDrawer'
 import { VersionManager } from './components/VersionManager'
 import { MascotImage } from './components/MascotImage'
 import { PluginsDialog } from './components/PluginsDialog'
+import { PluginButtons } from './components/PluginButtons'
 import { DownloadCenter, type DownloadTab } from './components/DownloadCenter'
 
 const FALLBACK_INFO: AppInfo = {
@@ -453,6 +454,7 @@ export function App() {
           <span className="brand-tag">P34 · 自扩展</span>
         </div>
         <div className="titlebar-actions">
+          <PluginButtons onNotify={notify} />
           <button
             type="button"
             className="ghost nav-strong"

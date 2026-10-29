@@ -14,8 +14,8 @@ import { rm } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import path from 'node:path'
 import { fork, type ChildProcess } from 'node:child_process'
-import type { PluginInfo, PluginManifest, PluginPermission } from '../../shared/types'
-import type { SandboxCommandDef, SandboxToolDef, SandboxWorkerMessage } from '../../shared/plugin-sandbox'
+import type { PluginInfo, PluginManifest, PluginPermission, PluginUiButton } from '../../shared/types'
+import type { SandboxButtonDef, SandboxCommandDef, SandboxToolDef, SandboxWorkerMessage } from '../../shared/plugin-sandbox'
 import { writeJsonAtomic, writeTextAtomic, stripBom } from '../lib/fsx'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { ChatService, CommandSpec } from './chat'
@@ -48,6 +48,7 @@ interface LoadedPlugin {
   dir: string
   tools: string[]
   commands: string[]
+  buttons: SandboxButtonDef[]
   worker?: ChildProcess
   pid?: number
   pending: Map<number, PendingCall>
@@ -83,6 +84,10 @@ export interface PluginHostService {
   }): Promise<PluginInfo>
   /** P32：卸载并删除插件目录 */
   remove(id: string): Promise<{ ok: boolean; error?: string }>
+  /** P34：所有插件注册的界面按钮 */
+  buttons(): PluginUiButton[]
+  /** P34：点击某个插件按钮（执行插件里的 run） */
+  press(pluginId: string, buttonId: string): Promise<{ ok: boolean; summary: string }>
   /** 等待启动时的自动加载全部结束（内核 boot 后调用） */
   init(): Promise<PluginInfo[]>
   /** 应用退出前调用：把 worker 退出视为预期，避免误报崩溃 */
@@ -183,17 +188,19 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
       send(state, { type: 'response', callId, ok, result, error })
     }
 
-    const invoke = <T,>(state: LoadedPlugin, kind: 'invoke-tool' | 'invoke-command', name: string, payload: unknown): Promise<T> => {
+    const invoke = <T,>(state: LoadedPlugin, kind: 'invoke-tool' | 'invoke-command' | 'invoke-button', name: string, payload: unknown): Promise<T> => {
       if (!state.worker) return Promise.reject(new Error('插件沙箱未运行'))
       const callId = state.nextCallId++
       return new Promise<T>((resolve, reject) => {
         const timer = setTimeout(() => {
           state.pending.delete(callId)
-          reject(new Error(`插件执行超时（${kind === 'invoke-tool' ? '工具' : '命令'} ${name}）`))
+          reject(new Error(`插件执行超时（${kind === 'invoke-tool' ? '工具' : kind === 'invoke-button' ? '按钮' : '命令'} ${name}）`))
         }, TOOL_TIMEOUT_MS)
         state.pending.set(callId, { resolve: resolve as (value: unknown) => void, reject, timer })
         if (kind === 'invoke-tool') {
           send(state, { type: 'invoke-tool', callId, name, args: payload as Record<string, unknown> })
+        } else if (kind === 'invoke-button') {
+          send(state, { type: 'invoke-button', callId, name })
         } else {
           send(state, { type: 'invoke-command', callId, name, args: payload as string[] })
         }
@@ -275,6 +282,7 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
         state.readyResolve?.()
         for (const tool of message.tools) registerProxyTool(state, tool)
         for (const command of message.commands) registerProxyCommand(state, command)
+        state.buttons = message.buttons ?? []
         telemetry.record('plugin:load', { id, tools: state.tools.length, commands: state.commands.length, sandbox: true })
         log.info('plugin-host', '插件已加载（沙箱）', {
           id,
@@ -375,6 +383,7 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
         dir: entry.dir,
         tools: [],
         commands: [],
+        buttons: [],
         pending: new Map(),
         nextCallId: 1,
         disposing: false,
@@ -580,9 +589,43 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
       }
     }
 
+    /** P34：汇总所有已加载插件注册的界面按钮 */
+    const buttonsList = (): PluginUiButton[] => {
+      const items: PluginUiButton[] = []
+      for (const state of loaded.values()) {
+        for (const def of state.buttons) {
+          items.push({
+            pluginId: state.manifest.id,
+            pluginName: state.manifest.name,
+            id: def.id,
+            label: def.label,
+            description: def.description,
+          })
+        }
+      }
+      return items.sort((a, b) => a.label.localeCompare(b.label))
+    }
+
+    /** P34：按下某个插件按钮（执行插件 worker 里的 run） */
+    const press = async (pluginId: string, buttonId: string): Promise<{ ok: boolean; summary: string }> => {
+      const state = loaded.get(pluginId)
+      if (!state) return { ok: false, summary: `插件未加载：${pluginId}` }
+      if (!state.buttons.some((button) => button.id === buttonId)) {
+        return { ok: false, summary: `插件没有这个按钮：${buttonId}` }
+      }
+      try {
+        const text = await invoke<string>(state, 'invoke-button', buttonId, {})
+        return { ok: true, summary: String(text ?? '') }
+      } catch (err) {
+        return { ok: false, summary: err instanceof Error ? err.message : String(err) }
+      }
+    }
+
     ctx.provide('pluginHost', {
       dir: () => pluginsDir,
       list,
+      buttons: buttonsList,
+      press,
       load,
       unload,
       reload,

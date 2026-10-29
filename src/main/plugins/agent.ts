@@ -40,6 +40,7 @@ export function apply(api) {
 \`\`\`
 - api.registerTool：注册 AI 工具（name 用 snake_case；parameters 是 JSON Schema；handler 必须返回 { ok, summary, data? }）。
 - api.registerCommand({ name, description, async run(args) { return '文本' } })：注册聊天命令。
+- api.registerButton({ id, label, description, async run() { return '文本' } })：往启动器顶栏加一个按钮（这就是「改界面」的正确方式），点击执行 run，结果显示成提示。
 - 其他可用：api.log.info/warn/error、api.storage.get/set、api.callTool(内置工具名, args)、api.fetch(url, {method,headers,body})。
 - 插件运行在沙箱里：没有 window/document/全局 fetch，联网必须用 api.fetch（只允许 https）；也不能读启动器文件，只能通过 api.callTool 调内置工具。
 - id 用小写字母/数字/._- 且唯一；permissions 默认 []，需要联网才加 'net'。

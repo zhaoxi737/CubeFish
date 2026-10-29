@@ -36,6 +36,7 @@ import type {
   ModpackInstallResult,
   NeoForgeInstallResult,
   PluginInfo,
+  PluginUiButton,
   SearchHit,
   SettingsPatch,
   SettingsShape,
@@ -157,6 +158,10 @@ export interface QdoApi {
     list(): Promise<PluginInfo[]>
     setGranted(id: string, granted: boolean): Promise<PluginInfo>
     reload(id: string): Promise<PluginInfo>
+    /** P34：插件注册的界面按钮 */
+    buttons(): Promise<PluginUiButton[]>
+    /** P34：按下插件按钮 */
+    press(pluginId: string, buttonId: string): Promise<{ ok: boolean; summary: string }>
   }
   market: {
     list(force?: boolean): Promise<MarketListResult>

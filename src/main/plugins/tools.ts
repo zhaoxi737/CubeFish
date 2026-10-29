@@ -578,6 +578,39 @@ export function createToolsPlugin(): LauncherPlugin<void> {
     })
 
     register({
+      name: 'list_plugin_buttons',
+      description: '列出插件已经加到启动器界面（顶栏）的按钮。',
+      parameters: EMPTY_PARAMS,
+      async handler() {
+        const items = host().buttons()
+        if (items.length === 0) return { ok: true, summary: '目前没有插件往界面加按钮' }
+        return {
+          ok: true,
+          summary: items.map((item) => `${item.label}（插件 ${item.pluginId} / id ${item.id}）`).join('\n'),
+          data: items,
+        }
+      },
+    })
+
+    register({
+      name: 'press_plugin_button',
+      description: '执行某个插件界面按钮的动作（用于验证按钮可用）。',
+      parameters: {
+        type: 'object',
+        properties: {
+          pluginId: { type: 'string', description: '插件 id' },
+          buttonId: { type: 'string', description: '按钮 id' },
+        },
+        required: ['pluginId', 'buttonId'],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const result = await host().press(str(args.pluginId), str(args.buttonId))
+        return { ok: result.ok, summary: result.summary || (result.ok ? '按钮执行完成' : '按钮执行失败') }
+      },
+    })
+
+    register({
       name: 'read_file',
       description:
         '读取启动器目录里的文本文件（配置 / 日志 / 插件源码 / 崩溃报告 / options.txt 等）。传绝对路径，或相对当前实例游戏目录的路径。',

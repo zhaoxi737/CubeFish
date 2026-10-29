@@ -720,6 +720,15 @@ export interface PluginInfo {
   workerPid?: number
 }
 
+/** P34：插件往启动器界面加的一个按钮 */
+export interface PluginUiButton {
+  pluginId: string
+  pluginName: string
+  id: string
+  label: string
+  description?: string
+}
+
 /* ---------- P9：插件市场 ---------- */
 
 export interface MarketPlugin {

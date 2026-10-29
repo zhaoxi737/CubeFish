@@ -35,6 +35,7 @@ import type {
   LogRecord,
   MarketListResult,
   PluginInfo,
+  PluginUiButton,
   SearchHit,
   SettingsPatch,
   SettingsShape,
@@ -310,6 +311,10 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle<PluginInfo[]>(CH.pluginsList, () => pluginHost.list())
     handle<PluginInfo>(CH.pluginsToggle, (id: string, granted: boolean) => pluginHost.setGranted(id, granted))
     handle<PluginInfo>(CH.pluginsReload, (id: string) => pluginHost.reload(id))
+    handle<PluginUiButton[]>(CH.pluginsButtons, () => pluginHost.buttons())
+    handle<{ ok: boolean; summary: string }>(CH.pluginsPress, (pluginId: string, buttonId: string) =>
+      pluginHost.press(pluginId, buttonId),
+    )
     handle<MarketListResult>(CH.marketList, (force?: boolean) => market.list(Boolean(force)))
     handle(CH.marketInstall, (id: string) => market.install(id))
     handle<FabricInstallResult>(CH.loaderFabric, async (gameVersion: string) => {

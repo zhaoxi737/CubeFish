@@ -18,6 +18,13 @@ export interface SandboxCommandDef {
   description: string
 }
 
+/** P34：插件往启动器界面加一个按钮 */
+export interface SandboxButtonDef {
+  id: string
+  label: string
+  description?: string
+}
+
 /** 宿主 → worker */
 export type SandboxHostMessage =
   | {
@@ -29,12 +36,13 @@ export type SandboxHostMessage =
     }
   | { type: 'invoke-tool'; callId: number; name: string; args: Record<string, unknown> }
   | { type: 'invoke-command'; callId: number; name: string; args: string[] }
+  | { type: 'invoke-button'; callId: number; name: string }
   | { type: 'response'; callId: number; ok: boolean; result?: unknown; error?: string }
   | { type: 'dispose' }
 
 /** worker → 宿主 */
 export type SandboxWorkerMessage =
-  | { type: 'ready'; tools: SandboxToolDef[]; commands: SandboxCommandDef[] }
+  | { type: 'ready'; tools: SandboxToolDef[]; commands: SandboxCommandDef[]; buttons: SandboxButtonDef[] }
   | { type: 'request'; callId: number; method: 'storage.get' | 'storage.set' | 'tools.call' | 'net.fetch'; params: unknown }
   | { type: 'result'; callId: number; ok: boolean; result?: unknown; error?: string }
   | { type: 'log'; level: 'info' | 'warn' | 'error'; message: string }
@@ -64,6 +72,13 @@ export interface SandboxPluginApi {
     handler: (args: Record<string, unknown>) => unknown
   }): void
   registerCommand(spec: { name: string; description: string; run: (args: string[]) => unknown }): void
+  /** P34：注册一个启动器界面按钮（顶栏），点击执行 run */
+  registerButton(spec: {
+    id: string
+    label: string
+    description?: string
+    run: (args?: Record<string, unknown>) => unknown
+  }): void
   storage: {
     get<T>(key: string, fallback?: T): Promise<T | undefined>
     set(key: string, value: unknown): Promise<void>

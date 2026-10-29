@@ -64,6 +64,7 @@ type CommandHandler = (args: string[]) => unknown
 
 const tools = new Map<string, { name: string; description: string; parameters: Record<string, unknown>; handler: ToolHandler }>()
 const commands = new Map<string, { name: string; description: string; run: CommandHandler }>()
+const buttons = new Map<string, { id: string; label: string; description: string; run: (args?: Record<string, unknown>) => unknown }>()
 let disposer: (() => unknown) | undefined
 
 function toError(error: unknown): string {
@@ -100,6 +101,15 @@ function createApi(init: Extract<SandboxHostMessage, { type: 'init' }>): Sandbox
     registerCommand: (spec) => {
       if (!spec?.name) throw new Error('registerCommand 需要 name')
       commands.set(spec.name.toLowerCase(), { name: spec.name, description: spec.description ?? '', run: spec.run })
+    },
+    registerButton: (spec) => {
+      if (!spec?.id) throw new Error('registerButton 需要 id')
+      buttons.set(spec.id, {
+        id: spec.id,
+        label: spec.label ?? spec.id,
+        description: spec.description ?? '',
+        run: spec.run,
+      })
     },
     storage: {
       get: async <T,>(key: string, fallback?: T) => {
@@ -172,6 +182,7 @@ async function handle(message: SandboxHostMessage): Promise<void> {
         type: 'ready',
         tools: toolDefs,
         commands: [...commands.values()].map((command) => ({ name: command.name, description: command.description })),
+        buttons: [...buttons.values()].map((button) => ({ id: button.id, label: button.label, description: button.description })),
       })
     } catch (error) {
       send({ type: 'error', message: toError(error) })
@@ -208,6 +219,22 @@ async function handle(message: SandboxHostMessage): Promise<void> {
     try {
       const text = await command.run(message.args ?? [])
       send({ type: 'result', callId: message.callId, ok: true, result: String(text ?? '') })
+    } catch (error) {
+      send({ type: 'result', callId: message.callId, ok: false, error: toError(error) })
+    }
+    return
+  }
+
+  if (message.type === 'invoke-button') {
+    const button = buttons.get(message.name)
+    if (!button) {
+      send({ type: 'result', callId: message.callId, ok: false, error: `插件没有注册按钮 ${message.name}` })
+      return
+    }
+    try {
+      const result = (await button.run({})) as { ok?: boolean; summary?: string } | string | null | undefined
+      const summary = typeof result === 'string' ? result : (result?.summary ?? '')
+      send({ type: 'result', callId: message.callId, ok: typeof result === 'string' ? true : result?.ok !== false, result: String(summary) })
     } catch (error) {
       send({ type: 'result', callId: message.callId, ok: false, error: toError(error) })
     }

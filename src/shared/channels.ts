@@ -79,6 +79,8 @@ export const CH = {
   pluginsList: 'plugins:list',
   pluginsToggle: 'plugins:toggle',
   pluginsReload: 'plugins:reload',
+  pluginsButtons: 'plugins:buttons',
+  pluginsPress: 'plugins:press',
   marketList: 'market:list',
   marketInstall: 'market:install',
 } as const

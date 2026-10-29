@@ -4,8 +4,10 @@
  * 每个工具 = 权限点 + 审计点。P4 全部是用户级操作；后续插件市场的第三方工具走权限分级。
  */
 import { app } from 'electron'
+import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
+import { promisify } from 'node:util'
 import type { ToolCallTrace } from '../../shared/types'
 import { writeTextAtomic } from '../lib/fsx'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
@@ -22,7 +24,9 @@ import type { LogService } from './logger'
 import type { MojangService } from './mojang'
 import type { PathsService } from './paths'
 import type { PluginHostService } from './plugin-host'
+import type { SettingsService } from './settings'
 import type { TelemetryService } from './telemetry'
+import type { UpdaterService } from './updater'
 
 export interface ToolResult {
   ok: boolean
@@ -50,6 +54,41 @@ export interface ToolsService {
 
 const EMPTY_PARAMS = { type: 'object', properties: {}, additionalProperties: false }
 
+const execFileAsync = promisify(execFile)
+
+/** P33：只读诊断命令白名单（不接受任意参数，杜绝命令注入 / 任意代码执行） */
+const SAFE_COMMANDS: Record<string, { exe: string; args: string[]; label: string }> = {
+  java_version: { exe: 'java', args: ['-version'], label: 'Java 版本' },
+  where_java: { exe: 'where', args: ['java'], label: 'java.exe 路径' },
+  where_javaw: { exe: 'where', args: ['javaw'], label: 'javaw.exe 路径' },
+  gpu: { exe: 'nvidia-smi', args: [], label: '显卡信息' },
+  network: { exe: 'ipconfig', args: ['/all'], label: '网络配置' },
+  processes: { exe: 'tasklist', args: ['/FI', 'IMAGENAME eq javaw.exe'], label: 'Java 进程' },
+  git_version: { exe: 'git', args: ['--version'], label: 'git 版本' },
+  node_version: { exe: 'node', args: ['--version'], label: 'node 版本' },
+}
+
+/** P33：允许 AI 自己修改的设置键（不含敏感凭据之外的破坏性项） */
+const AI_SETTINGS_KEYS = [
+  'memoryMb',
+  'playerName',
+  'downloadSource',
+  'downloadThreads',
+  'isolatedMods',
+  'useHighPerformanceGpu',
+  'launchWindowWidth',
+  'launchWindowHeight',
+  'launchFullscreen',
+  'jvmArgs',
+  'themeAccent',
+  'customBackground',
+  'titleText',
+  'autoCheckUpdate',
+  'preferredJavaPath',
+  'llmBaseUrl',
+  'llmModel',
+] as const
+
 function str(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback
 }
@@ -70,6 +109,8 @@ export function createToolsPlugin(): LauncherPlugin<void> {
     const diagnose = use<DiagnoseService>(ctx, 'diagnose')
     const launch = use<LaunchService>(ctx, 'launch')
     const paths = use<PathsService>(ctx, 'paths')
+    const settings = use<SettingsService>(ctx, 'settings')
+    const updater = use<UpdaterService>(ctx, 'updater')
     const log = use<LogService>(ctx, 'log')
     const telemetry = use<TelemetryService>(ctx, 'telemetry')
 
@@ -633,6 +674,91 @@ export function createToolsPlugin(): LauncherPlugin<void> {
         app.relaunch()
         app.exit(0)
         return { ok: true, summary: '正在重启启动器…' }
+      },
+    })
+
+    register({
+      name: 'run_command',
+      description:
+        '运行一条只读诊断命令（白名单，不能执行任意命令）。可用：java_version / where_java / where_javaw / gpu / network / processes / git_version / node_version。',
+      parameters: {
+        type: 'object',
+        properties: { command: { type: 'string', enum: Object.keys(SAFE_COMMANDS), description: '命令名' } },
+        required: ['command'],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const key = str(args.command)
+        const spec = SAFE_COMMANDS[key]
+        if (!spec) return { ok: false, summary: `不支持的命令：${key}。可用：${Object.keys(SAFE_COMMANDS).join(', ')}` }
+        try {
+          const { stdout, stderr } = await execFileAsync(spec.exe, spec.args, {
+            timeout: 10_000,
+            windowsHide: true,
+            maxBuffer: 512 * 1024,
+          })
+          const text = `${stdout}\n${stderr}`.trim()
+          return { ok: true, summary: text.slice(0, 8000) || '（无输出）' }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          return { ok: false, summary: `命令执行失败（${spec.label}）：${message}` }
+        }
+      },
+    })
+
+    register({
+      name: 'update_settings',
+      description:
+        '修改启动器设置（主题色、标题、内存、下载源、版本隔离、显卡、启动选项等）。只允许改白名单键，参数是键值对象。',
+      parameters: {
+        type: 'object',
+        properties: {
+          patch: { type: 'object', description: '要改的设置，例如 {"themeAccent":"#ff3366","titleText":"我的启动器"}' },
+        },
+        required: ['patch'],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const raw = args.patch
+        if (!raw || typeof raw !== 'object') return { ok: false, summary: 'patch 必须是对象' }
+        const patch: Record<string, unknown> = {}
+        const ignored: string[] = []
+        for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+          if ((AI_SETTINGS_KEYS as readonly string[]).includes(key)) patch[key] = value
+          else ignored.push(key)
+        }
+        if (Object.keys(patch).length === 0) {
+          return { ok: false, summary: `没有可改的键（忽略：${ignored.join(', ') || '无'}）。可用：${AI_SETTINGS_KEYS.join(', ')}` }
+        }
+        const next = settings.patch(patch as never)
+        return { ok: true, summary: `已更新设置：${Object.keys(patch).join(', ')}`, data: next }
+      },
+    })
+
+    register({
+      name: 'check_update',
+      description: '检查启动器自身是否有新版本。',
+      parameters: EMPTY_PARAMS,
+      async handler() {
+        const state = await updater.check('chat')
+        return {
+          ok: true,
+          summary: `当前 v${state.current}，状态：${state.status}${state.latest ? `，最新 v${state.latest}` : ''}`,
+          data: state,
+        }
+      },
+    })
+
+    register({
+      name: 'apply_update',
+      description: '下载启动器更新（下载完成后重启生效）。只下载，不会在对话中途自动替换。',
+      parameters: EMPTY_PARAMS,
+      async handler() {
+        const state = await updater.download()
+        if (state.status === 'ready') {
+          return { ok: true, summary: `更新包 v${state.latest ?? '?'} 已下载，退出重启后生效。`, data: state }
+        }
+        return { ok: false, summary: state.message ?? '更新下载失败（可能没有配置更新地址）', data: state }
       },
     })
 

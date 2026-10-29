@@ -1395,6 +1395,66 @@ code {
   cursor: pointer;
 }
 
+/* P37：系统对接面板 */
+.system-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px 18px 20px;
+  overflow-y: auto;
+  max-height: min(70vh, 560px);
+}
+
+.system-body h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--blue);
+  letter-spacing: 0.02em;
+}
+
+.system-grid {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 6px 10px;
+  font-size: 12px;
+}
+
+.system-grid > span:nth-child(odd) {
+  color: var(--muted);
+}
+
+.system-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.system-row input {
+  flex: 1;
+  min-width: 0;
+  background: #0b1017;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--text);
+}
+
+.rec-rows {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.rec-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+  padding-bottom: 3px;
+}
+
 .bubble-streaming pre::after {
   content: '▋';
   margin-left: 2px;

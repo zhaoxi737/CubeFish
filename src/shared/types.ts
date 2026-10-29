@@ -109,6 +109,28 @@ export interface ChatMessage {
   ts: number
 }
 
+/** P37：系统信息（系统对接面板用） */
+export interface SystemInfo {
+  platform: string
+  arch: string
+  release: string
+  hostname: string
+  cpus: number
+  cpuModel: string
+  totalMemMb: number
+  freeMemMb: number
+  uptimeSec: number
+  electron: string
+  node: string
+}
+
+/** P37：一条麦克风录音 */
+export interface RecordingItem {
+  name: string
+  bytes: number
+  path: string
+}
+
 /** P36：一个对话会话（可多开） */
 export interface ChatSessionInfo {
   id: string

@@ -64,6 +64,7 @@ import type { MojangService } from './mojang'
 import type { PathsService } from './paths'
 import type { PluginHostService } from './plugin-host'
 import type { SettingsService } from './settings'
+import type { SystemService } from './system'
 import type { TelemetryService } from './telemetry'
 import type { UpdaterService } from './updater'
 
@@ -100,6 +101,15 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     const diagnose = use<DiagnoseService>(ctx, 'diagnose')
     const pluginHost = use<PluginHostService>(ctx, 'pluginHost')
     const market = use<MarketService>(ctx, 'market')
+    const system = use<SystemService>(ctx, 'system')
+
+    // P37：喇叭优先走渲染层 speechSynthesis（无进程开销），窗口不在时由 system 服务用 SAPI 兜底
+    system.setSpeaker((text) => {
+      const win = config.getWindow()
+      if (!win || win.isDestroyed()) return false
+      win.webContents.send(EVT.speak, { text })
+      return true
+    })
 
     const push = (channel: string, payload: unknown): void => {
       const win = config.getWindow()
@@ -202,6 +212,12 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle(CH.chatNewSession, () => chat.newSession())
     handle(CH.chatSwitchSession, (id: string) => ({ ok: chat.switchSession(id) }))
     handle(CH.chatDeleteSession, (id: string) => ({ ok: chat.deleteSession(id) }))
+    handle(CH.systemInfo, () => system.info())
+    handle(CH.systemSpeak, (text: string) => system.speak(text))
+    handle(CH.systemRecordSave, async (data: ArrayBuffer, ext?: string) =>
+      system.saveRecording(Buffer.from(data), ext),
+    )
+    handle(CH.systemRecordings, () => system.listRecordings())
     handle(CH.chatHistory, () => chat.history())
     handle(CH.chatClear, () => {
       chat.clearHistory()

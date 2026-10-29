@@ -25,6 +25,7 @@ import { createPathsPlugin } from './plugins/paths'
 import { createPluginHostPlugin } from './plugins/plugin-host'
 import { createSettingsPlugin } from './plugins/settings'
 import { createStoragePlugin } from './plugins/storage'
+import { createSystemPlugin } from './plugins/system'
 import { createTelemetryPlugin, type TelemetryService } from './plugins/telemetry'
 import { createToolsPlugin } from './plugins/tools'
 import { createUpdaterPlugin } from './plugins/updater'
@@ -96,6 +97,7 @@ export async function bootKernel(options: KernelOptions): Promise<Kernel> {
     createChatPlugin(),
     createPluginHostPlugin(),
     createMarketPlugin(),
+    createSystemPlugin(),
     createIpcPlugin({ getWindow: options.getWindow, summary }),
   ]
 

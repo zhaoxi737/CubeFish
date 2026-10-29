@@ -83,6 +83,30 @@ export function ChatPanel() {
     return off
   }, [])
 
+  // 主进程要求朗读（AI 调 speak_text 时）
+  useEffect(() => {
+    if (typeof window.qdo === 'undefined') return
+    const off = window.qdo.system.onSpeak((text) => {
+      try {
+        window.speechSynthesis.cancel()
+        window.speechSynthesis.speak(new SpeechSynthesisUtterance(text))
+      } catch {
+        /* 忽略 */
+      }
+    })
+    return off
+  }, [])
+
+  const speakReply = useCallback((text: string) => {
+    try {
+      if (window.localStorage.getItem('qdo:speakReplies') !== '1') return
+      window.speechSynthesis.cancel()
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(text.slice(0, 800)))
+    } catch {
+      /* 忽略 */
+    }
+  }, [])
+
   const send = useCallback(async () => {
     const text = input.trim()
     if (!text || sending) return
@@ -122,6 +146,7 @@ export function ChatPanel() {
       ])
       setLive([])
       void loadSessions()
+      if (reply.ok) speakReply(reply.text)
     } catch (err) {
       setMessages((prev) => [
         ...prev.filter((msg) => !msg.streaming),

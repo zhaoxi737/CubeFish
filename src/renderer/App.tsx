@@ -15,6 +15,7 @@ import type {
 } from '../shared/types'
 import { ChatPanel } from './components/ChatPanel'
 import { SettingsDialog } from './components/SettingsDialog'
+import { SystemPanel } from './components/SystemPanel'
 import { LogDrawer } from './components/LogDrawer'
 import { VersionManager } from './components/VersionManager'
 import { MascotImage } from './components/MascotImage'
@@ -93,6 +94,7 @@ export function App() {
   const [events, setEvents] = useState<EventSummary | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
+  const [showSystem, setShowSystem] = useState(false)
   const [showLogs, setShowLogs] = useState(false)
   const [showVersions, setShowVersions] = useState(false)
   const [showPlugins, setShowPlugins] = useState(false)
@@ -477,6 +479,9 @@ export function App() {
           <button type="button" className="ghost" onClick={() => setShowSettings(true)}>
             设置
           </button>
+          <button type="button" className="ghost" onClick={() => setShowSystem(true)} title="对接这台电脑：麦克风 / 喇叭 / 系统信息">
+            系统
+          </button>
         </div>
       </header>
 
@@ -774,6 +779,7 @@ export function App() {
         />
       ) : null}
       {showPlugins ? <PluginsDialog onClose={() => setShowPlugins(false)} onNotify={notify} /> : null}
+      {showSystem ? <SystemPanel onClose={() => setShowSystem(false)} onNotify={notify} /> : null}
       {showSettings && settings ? (
         <SettingsDialog settings={settings} onClose={() => setShowSettings(false)} onSave={onSaveSettings} onNotify={notify} />
       ) : null}

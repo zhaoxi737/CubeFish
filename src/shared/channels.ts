@@ -86,6 +86,10 @@ export const CH = {
   pluginsReload: 'plugins:reload',
   pluginsButtons: 'plugins:buttons',
   pluginsPress: 'plugins:press',
+  systemInfo: 'system:info',
+  systemSpeak: 'system:speak',
+  systemRecordSave: 'system:record-save',
+  systemRecordings: 'system:recordings',
   marketList: 'market:list',
   marketInstall: 'market:install',
 } as const
@@ -95,6 +99,7 @@ export const EVT = {
   progress: 'evt:progress',
   gameState: 'evt:game-state',
   chatProgress: 'evt:chat-progress',
+  speak: 'evt:speak',
 } as const
 
 export type ChannelName = (typeof CH)[keyof typeof CH]

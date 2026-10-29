@@ -123,6 +123,19 @@ const api: QdoApi = {
       }
     },
   },
+  system: {
+    info: () => ipcRenderer.invoke(CH.systemInfo),
+    speak: (text) => ipcRenderer.invoke(CH.systemSpeak, text),
+    saveRecording: (data, ext) => ipcRenderer.invoke(CH.systemRecordSave, data, ext),
+    recordings: () => ipcRenderer.invoke(CH.systemRecordings),
+    onSpeak: (callback) => {
+      const listener = (_event: unknown, payload: { text?: string }) => callback(payload?.text ?? '')
+      ipcRenderer.on(EVT.speak, listener)
+      return () => {
+        ipcRenderer.removeListener(EVT.speak, listener)
+      }
+    },
+  },
   dialog: {
     pickFile: (kind) => ipcRenderer.invoke(CH.dialogPickFile, kind),
     pickSave: (defaultName) => ipcRenderer.invoke(CH.dialogPickSave, defaultName),

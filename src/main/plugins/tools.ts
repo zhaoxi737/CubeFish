@@ -25,6 +25,7 @@ import type { MojangService } from './mojang'
 import type { PathsService } from './paths'
 import type { PluginHostService } from './plugin-host'
 import type { SettingsService } from './settings'
+import type { SystemService } from './system'
 import type { TelemetryService } from './telemetry'
 import type { UpdaterService } from './updater'
 
@@ -118,6 +119,13 @@ export function createToolsPlugin(): LauncherPlugin<void> {
     const host = (): PluginHostService => {
       const svc = ctx.get('pluginHost') as PluginHostService | undefined
       if (!svc) throw new Error('插件宿主尚未就绪')
+      return svc
+    }
+
+    // 懒取 system：它在 tools 之后注册
+    const sys = (): SystemService => {
+      const svc = ctx.get('system') as SystemService | undefined
+      if (!svc) throw new Error('系统服务尚未就绪')
       return svc
     }
 
@@ -607,6 +615,54 @@ export function createToolsPlugin(): LauncherPlugin<void> {
       async handler(args) {
         const result = await host().press(str(args.pluginId), str(args.buttonId))
         return { ok: result.ok, summary: result.summary || (result.ok ? '按钮执行完成' : '按钮执行失败') }
+      },
+    })
+
+    register({
+      name: 'system_info',
+      description: '查看这台电脑的系统信息（系统版本 / CPU / 内存 / 开机时长）。',
+      parameters: EMPTY_PARAMS,
+      async handler() {
+        const i = sys().info()
+        const hours = Math.round(i.uptimeSec / 3600)
+        return {
+          ok: true,
+          summary: `系统：${i.platform} ${i.release}（${i.arch}）· CPU：${i.cpuModel} ×${i.cpus} · 内存 ${i.freeMemMb}/${i.totalMemMb} MB 可用 · 已开机 ${hours} 小时`,
+          data: i,
+        }
+      },
+    })
+
+    register({
+      name: 'speak_text',
+      description: '用这台电脑的喇叭把一段文字读出来（语音播报）。适合播报结果、提醒。',
+      parameters: {
+        type: 'object',
+        properties: { text: { type: 'string', description: '要朗读的文字（不要太长）' } },
+        required: ['text'],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const text = str(args.text).trim()
+        if (!text) return { ok: false, summary: 'text 为空' }
+        const result = await sys().speak(text.slice(0, 500))
+        if (!result.ok) return { ok: false, summary: result.error ?? '朗读失败' }
+        return { ok: true, summary: `已用${result.how === 'renderer' ? '喇叭' : '系统语音'}朗读：${text.slice(0, 60)}` }
+      },
+    })
+
+    register({
+      name: 'list_recordings',
+      description: '列出用麦克风录过的音频文件（在启动器的 recordings 目录）。',
+      parameters: EMPTY_PARAMS,
+      async handler() {
+        const items = sys().listRecordings()
+        if (items.length === 0) return { ok: true, summary: '还没有录音。界面上点「系统」→ 开始录音。' }
+        return {
+          ok: true,
+          summary: items.map((item) => `${item.name}（${Math.round(item.bytes / 1024)} KB）`).join('\n'),
+          data: items,
+        }
       },
     })
 

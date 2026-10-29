@@ -46,7 +46,7 @@ import {
   runP32CheckCli,
 } from './cli'
 
-const { app, BrowserWindow, shell } = electron
+const { app, BrowserWindow, shell, session } = electron
 // 测试/多开隔离：QDOQMC_USER_DATA 指定独立的 Electron userData（同时改变单实例锁与日志目录）
 if (process.env.QDOQMC_USER_DATA) {
   try {
@@ -137,6 +137,11 @@ function createWindow(): BrowserWindowType {
   })
 
   win.once('ready-to-show', () => win.show())
+
+  // P37：允许页面使用麦克风（系统对接面板录音用）；其它权限一律拒绝
+  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) => {
+    callback(permission === 'media')
+  })
 
   // 安全边界：启动器不允许新开窗口或导航到外部页面
   win.webContents.setWindowOpenHandler(({ url }) => {

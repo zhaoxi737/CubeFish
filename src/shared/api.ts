@@ -6,6 +6,8 @@ import type {
   ChatReply,
   ChatSendOptions,
   ChatSessionInfo,
+  RecordingItem,
+  SystemInfo,
   DeviceCodeInfo,
   LoginStatus,
   ConflictReport,
@@ -185,6 +187,16 @@ export interface QdoApi {
     newSession(): Promise<ChatSessionInfo>
     switchSession(id: string): Promise<{ ok: boolean }>
     deleteSession(id: string): Promise<{ ok: boolean }>
+  }
+  system: {
+    info(): Promise<SystemInfo>
+    /** 用喇叭朗读一段文字（窗口在走 speechSynthesis，否则 SAPI 兜底） */
+    speak(text: string): Promise<{ ok: boolean; how: 'renderer' | 'sapi' | 'failed'; error?: string }>
+    /** 保存一段录音（麦克风录完的二进制） */
+    saveRecording(data: ArrayBuffer, ext?: string): Promise<{ ok: boolean; path?: string; error?: string }>
+    recordings(): Promise<RecordingItem[]>
+    /** 主进程要求朗读时触发；返回取消订阅 */
+    onSpeak(callback: (text: string) => void): () => void
   }
   dialog: {
     /** 系统文件选择器；kind 决定文件类型过滤 */

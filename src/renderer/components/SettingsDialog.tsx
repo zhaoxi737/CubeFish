@@ -466,7 +466,9 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
               placeholder="deepseek-chat"
               spellCheck={false}
             />
-            <span className="field-hint">常用：deepseek-chat（便宜快）/ deepseek-reasoner（更强、工具调用更稳、贵一些）。</span>
+            <span className="field-hint">
+              要让 AI 动手（写插件/读写文件/装模组）必须用支持工具调用的模型，推荐 deepseek-chat；deepseek-reasoner 可能不支持工具调用，只适合纯聊天。
+            </span>
           </label>
 
           <label className="field">
@@ -477,8 +479,8 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
                 if (event.target.value !== '__custom__') update('llmModel', event.target.value)
               }}
             >
-              <option value="deepseek-chat">deepseek-chat（便宜快）</option>
-              <option value="deepseek-reasoner">deepseek-reasoner（更强）</option>
+              <option value="deepseek-chat">deepseek-chat（支持工具调用，推荐）</option>
+              <option value="deepseek-reasoner">deepseek-reasoner（推理强，可能不支持工具调用）</option>
               <option value="__custom__">自定义（用上面的「模型名」）</option>
             </select>
           </label>

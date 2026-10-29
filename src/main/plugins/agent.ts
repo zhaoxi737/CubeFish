@@ -87,8 +87,13 @@ export function createAgentPlugin(): LauncherPlugin<void> {
     ])
     const CONFIRM_WORDS = ['确认', '确定', '同意', '执行吧', '是的']
     const ACTION_HINTS = ['帮我', '写', '装', '改', '删', '读', '查', '跑', '更新', '重启', '生成', '执行', '安装', '配置', '设置', '备份', '下载']
+    const CAPABILITY_HINTS = ['能做什么', '有什么功能', '有什么能力', '有没有', '能不能', '你会', '支持吗', '哪些工具', '你的功能', '有什么工具']
+    /** 模型常见的「我做不到」措辞（出现时说明它在瞎猜，需要纠正） */
+    const ABILITY_DENIALS = ['没有这个能力', '没有这个功能', '无法安装插件', '不能安装插件', '没有写文件', '无法写文件', '需要你手动', '没有安装插件']
     const userConfirmed = (text: string): boolean => CONFIRM_WORDS.some((word) => text.includes(word))
     const wantsAction = (text: string): boolean => ACTION_HINTS.some((word) => text.includes(word))
+    const capabilityQuestion = (text: string): boolean => CAPABILITY_HINTS.some((word) => text.includes(word))
+    const deniesAbility = (text: string): boolean => ABILITY_DENIALS.some((word) => text.includes(word))
 
     async function run(userText: string, options?: AgentRunOptions): Promise<ChatReply> {
       if (!llm.available()) {
@@ -115,17 +120,32 @@ export function createAgentPlugin(): LauncherPlugin<void> {
             : await llm.chat(messages, tools.specs())
 
           if (response.toolCalls.length === 0) {
-            // P34：模型只回了文字但用户明显要操作 → 提醒它调工具，再试一次
-            if (!nudged && wantsAction(userText)) {
+            const text = (response.content ?? '').trim()
+            // P34：模型只回了文字但用户明显要操作/在问能力/它在否认能力 → 纠正一次再试
+            const denies = ABILITY_DENIALS.some((word) => text.includes(word))
+            if (!nudged && (wantsAction(userText) || capabilityQuestion(userText) || denies)) {
               nudged = true
-              log.info('agent', '模型未调用工具，追加一次纠正提示', { rounds: round, userText: userText.slice(0, 40) })
+              log.info('agent', '模型未调用工具，追加一次纠正提示', {
+                rounds: round,
+                userText: userText.slice(0, 40),
+                denies,
+              })
               messages.push({
                 role: 'user',
-                content: '（系统提示：你刚才没有调用任何工具。要完成用户的要求，请先调用合适的工具，不要只回复文字。）',
+                content:
+                  '（系统提示：你其实拥有这些工具：write_plugin / write_file / read_file / list_dir / run_command / web_fetch / update_settings / check_update / apply_update / restart_self / list_plugins / reload_plugin / remove_plugin / delegate / delegate_many，以及装版本/装模组/启动/诊断等工具。不要说你没有这些功能。如果用户要操作，请直接调用对应工具；如果用户问你的能力，请先调用 list_tools 查看，再据实回答。）',
               })
               continue
             }
-            const text = (response.content ?? '').trim()
+            // 已经纠正过一次仍然不调工具：多半是当前模型不支持 function calling
+            if (nudged && (wantsAction(userText) || denies)) {
+              return {
+                ok: false,
+                kind: 'error',
+                text: `（这次模型没有调用任何工具，很可能是当前模型不支持工具调用。请在「设置 → AI 助手 → 模型名」换成 deepseek-chat 再试；deepseek-reasoner 可能不支持 function calling。）\n\n模型原话：${text.slice(0, 300)}`,
+                trace,
+              }
+            }
             telemetry.record('agent:answer', {
               rounds: round + 1,
               tools: trace.length,

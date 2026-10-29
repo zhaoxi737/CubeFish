@@ -450,7 +450,7 @@ export function App() {
           <span className="brand-mark">{settings?.titleText?.trim() || 'QDOQMC'}</span>
           <span className="brand-sub">大肥鱼开服</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P31 · 极简</span>
+          <span className="brand-tag">P34 · 自扩展</span>
         </div>
         <div className="titlebar-actions">
           <button

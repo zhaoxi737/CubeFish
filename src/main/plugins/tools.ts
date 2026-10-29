@@ -566,6 +566,18 @@ export function createToolsPlugin(): LauncherPlugin<void> {
     })
 
     register({
+      name: 'list_tools',
+      description:
+        '列出你现在实际拥有的全部工具（名称 + 说明）。用户问「你能做什么 / 有没有某功能 / 能不能写插件」时，先调这个再回答，不要凭印象说「没有这个功能」。',
+      parameters: EMPTY_PARAMS,
+      async handler() {
+        const names = [...registry.keys()]
+        const summary = names.map((name) => `- ${name}：${registry.get(name)?.description ?? ''}`).join('\n')
+        return { ok: true, summary: `共 ${names.length} 个工具：\n${summary}`, data: names }
+      },
+    })
+
+    register({
       name: 'read_file',
       description:
         '读取启动器目录里的文本文件（配置 / 日志 / 插件源码 / 崩溃报告 / options.txt 等）。传绝对路径，或相对当前实例游戏目录的路径。',

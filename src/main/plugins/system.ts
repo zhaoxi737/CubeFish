@@ -170,17 +170,23 @@ export function createSystemPlugin(): LauncherPlugin<void> {
         cpSync(outDir, target, { recursive: true })
       }
       log.info('system', '源码已回滚', { root, files: reverted.length })
-      setTimeout(() => {
-        try {
-          electronApp.relaunch()
-          electronApp.exit(0)
-        } catch {
-          /* 忽略 */
-        }
-      }, 800)
+      // CLI 模式下不自动重启（否则 --call-tool 会带着同样参数重启，形成循环）
+      const cliMode = process.argv.some(
+        (arg) => arg.startsWith('--call-tool') || arg.startsWith('--chat') || arg.includes('--smoke') || arg.startsWith('--check'),
+      )
+      if (!cliMode) {
+        setTimeout(() => {
+          try {
+            electronApp.relaunch()
+            electronApp.exit(0)
+          } catch {
+            /* 忽略 */
+          }
+        }, 800)
+      }
       return {
         ok: true,
-        message: `已回滚 ${reverted.length} 个源码文件并重新构建，正在重启…`,
+        message: `已回滚 ${reverted.length} 个源码文件并重新构建${cliMode ? '' : '，正在重启…'}`,
         reverted,
       }
     }

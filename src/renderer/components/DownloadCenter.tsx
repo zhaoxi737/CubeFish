@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   ConflictReport,
   ContentPreview,
@@ -170,6 +170,7 @@ export function DownloadCenter({
   const [hits, setHits] = useState<SearchHit[]>([])
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [source, setSource] = useState<'all' | 'modrinth' | 'curseforge'>('all')
   const [installed, setInstalled] = useState<InstalledContent[]>([])
   const [busyId, setBusyId] = useState<string | null>(null)
   const [preview, setPreview] = useState<ContentPreview | null>(null)
@@ -200,16 +201,20 @@ export function DownloadCenter({
           mcVersion,
           loader: loaderFilter,
           limit: 20,
+          source,
         })
         setHits(result)
-        if (result.length === 0) setError(`没有搜到${KIND_LABEL[contentKind]}（先确认实例已绑定游戏版本）`)
+        if (result.length === 0) {
+          const noKey = source !== 'modrinth' && !settings?.curseforgeApiKey
+          setError(noKey ? `${KIND_LABEL[contentKind]}没搜到：CurseForge 需要先在设置里填 API Key` : `没有搜到${KIND_LABEL[contentKind]}（先确认实例已绑定游戏版本）`)
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
       } finally {
         setSearching(false)
       }
     },
-    [contentKind, loaderFilter, mcVersion],
+    [contentKind, loaderFilter, mcVersion, settings?.curseforgeApiKey, source],
   )
 
   useEffect(() => {
@@ -220,6 +225,17 @@ export function DownloadCenter({
     void search('')
     void loadInstalled()
   }, [contentKind, loadInstalled, search])
+
+  // 切来源时用当前关键词重搜（不重置成空搜索）
+  const queryRef = useRef(query)
+  useEffect(() => {
+    queryRef.current = query
+  }, [query])
+  useEffect(() => {
+    if (!contentKind) return
+    void search(queryRef.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source])
 
   const installContent = useCallback(
     async (hit: SearchHit) => {
@@ -573,6 +589,16 @@ export function DownloadCenter({
                   <button type="button" className="primary" onClick={() => void search(query)} disabled={searching}>
                     {searching ? '搜索中…' : '搜索'}
                   </button>
+                  <select
+                    className="dc-source"
+                    value={source}
+                    onChange={(event) => setSource(event.target.value as 'all' | 'modrinth' | 'curseforge')}
+                    title="内容来源"
+                  >
+                    <option value="all">来源：全部</option>
+                    <option value="modrinth">Modrinth</option>
+                    <option value="curseforge">CurseForge</option>
+                  </select>
                   {contentKind === 'mod' ? (
                     <>
                       <button type="button" className="ghost" onClick={() => void checkUpdates()} disabled={checkingUpdates}>
@@ -607,6 +633,7 @@ export function DownloadCenter({
                         <div className="dc-item-main">
                           <div className="dc-item-title">
                             {hit.title} <span className="dc-item-slug">{hit.slug}</span>
+                            {hit.source === 'curseforge' ? <span className="dc-tag is-cf">CurseForge</span> : <span className="dc-tag is-mr">Modrinth</span>}
                           </div>
                           <div className="dc-item-desc">{hit.description}</div>
                           <div className="dc-item-tags">

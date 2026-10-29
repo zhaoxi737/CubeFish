@@ -16,6 +16,8 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
   const [authBusy, setAuthBusy] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
   const [accounts, setAccounts] = useState<AccountSummary[]>([])
+  const [cfTesting, setCfTesting] = useState(false)
+  const [cfResult, setCfResult] = useState<{ ok: boolean; text: string } | null>(null)
 
   const refreshAccounts = useCallback(async () => {
     if (typeof window.qdo === 'undefined') return
@@ -104,6 +106,7 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
         marketUrl: draft.marketUrl,
         msClientId: draft.msClientId,
         marketPublicKey: draft.marketPublicKey,
+        curseforgeApiKey: draft.curseforgeApiKey,
       })
     } finally {
       setSaving(false)
@@ -306,6 +309,49 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
           </label>
 
           <div className="settings-group-title">内容与插件市场</div>
+          <label className="field">
+            <span className="field-label">CurseForge API Key（只存本地）</span>
+            <input
+              type="password"
+              value={draft.curseforgeApiKey}
+              onChange={(event) => update('curseforgeApiKey', event.target.value)}
+              placeholder="$2a$10$...（在 console.curseforge.com → API Keys 创建）"
+              spellCheck={false}
+            />
+            <span className="field-hint">
+              填了才能在下载中心搜 CurseForge 的模组/资源包/光影，也能解析需要联网下载的 CurseForge 整合包。留空只影响这些，不影响装游戏。
+            </span>
+            <div className="pack-row">
+              <button
+                type="button"
+                className="ghost"
+                disabled={cfTesting}
+                onClick={async () => {
+                  setCfTesting(true)
+                  setCfResult(null)
+                  try {
+                    const result = await window.qdo.content.testCurseForge()
+                    const parts: string[] = []
+                    if (result.basicOk) parts.push('基础接口 OK')
+                    if (result.detailOk) parts.push('详情/文件 OK')
+                    if (result.searchOk) parts.push('搜索 OK')
+                    const prefix = result.ok ? 'Key 可用' : parts.length > 0 ? 'Key 部分可用' : 'Key 不可用'
+                    const detail = result.searchOk || !result.searchError ? '' : `；搜索不可用：${result.searchError}`
+                    const head = result.error ? `：${result.error}` : `：${parts.join(' / ') || '没有可用的接口'}${detail}`
+                    setCfResult({ ok: result.ok, text: `${prefix}${head}（${result.ms ?? 0}ms）` })
+                  } catch (err) {
+                    setCfResult({ ok: false, text: err instanceof Error ? err.message : String(err) })
+                  } finally {
+                    setCfTesting(false)
+                  }
+                }}
+              >
+                {cfTesting ? '测试中…' : '测试 Key'}
+              </button>
+              {cfResult ? <span className={`cf-test-result ${cfResult.ok ? 'is-ok' : 'is-warn'}`}>{cfResult.text}</span> : null}
+            </div>
+          </label>
+
           <label className="field">
             <span className="field-label">插件市场 feed 地址</span>
             <input

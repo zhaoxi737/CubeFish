@@ -338,6 +338,23 @@ export interface SearchHit {
   gameVersions?: string[]
   /** 'fabric' | 'forge' | 'neoforge' | 'quilt' */
   loaders?: string[]
+  /** P30：这条结果来自哪个源；不填按 modrinth 处理 */
+  source?: ContentSource
+}
+
+/** P30：内容来源 */
+export type ContentSource = 'modrinth' | 'curseforge'
+
+/** P30：CurseForge Key 连通性测试结果（三项分开报，区分「Key 无效」和「没有搜索权限」） */
+export interface CurseForgeTestResult {
+  ok: boolean
+  basicOk?: boolean
+  detailOk?: boolean
+  searchOk?: boolean
+  games?: number
+  ms?: number
+  error?: string
+  searchError?: string
 }
 
 export interface ContentVersionInfo {
@@ -367,6 +384,8 @@ export interface InstalledContent {
   installedAt: number
   /** 文件当前是否启用（.jar vs .jar.disabled） */
   enabled?: boolean
+  /** P30：这条内容来自哪个源；不填按 modrinth 处理 */
+  source?: ContentSource
 }
 
 export interface ContentInstallResult {

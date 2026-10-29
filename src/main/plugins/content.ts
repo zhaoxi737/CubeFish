@@ -9,8 +9,10 @@ import path from 'node:path'
 import type {
   ContentInstallResult,
   ContentPreview,
+  ContentSource,
   ContentUpdate,
   ContentVersionInfo,
+  CurseForgeTestResult,
   InstalledContent,
   CursePackInspectResult,
   CursePackInstallResult,
@@ -88,7 +90,14 @@ interface RawProject {
 export interface ContentService {
   search(
     query: string,
-    opts?: { type?: ContentKind; mcVersion?: string; loader?: string; limit?: number },
+    opts?: {
+      type?: ContentKind
+      mcVersion?: string
+      loader?: string
+      limit?: number
+      /** P30：内容源；默认 modrinth，'all' 会合并两个源 */
+      source?: ContentSource | 'all'
+    },
   ): Promise<SearchHit[]>
   versions(projectId: string, opts?: { mcVersion?: string; loader?: string }): Promise<ContentVersionInfo[]>
   pickVersion(projectId: string, opts?: { mcVersion?: string; loader?: string }): Promise<ContentVersionInfo | undefined>
@@ -128,6 +137,8 @@ export interface ContentService {
   preview(projectId: string, kind: ContentKind): Promise<ContentPreview>
   /** IPC 层注入，用于把内容安装进度推给渲染进程（P29，与 mojang 的 sink 同构） */
   setProgressSink(sink: ((progress: TaskProgress) => void) | null): void
+  /** P30：CurseForge Key 连通性测试（基础/详情/搜索三项分开报） */
+  testCurseForge(): Promise<CurseForgeTestResult>
 }
 
 function kindDir(kind: ContentKind): string {
@@ -353,33 +364,70 @@ export function createContentPlugin(): LauncherPlugin<void> {
 
     async function search(
       query: string,
-      opts: { type?: ContentKind; mcVersion?: string; loader?: string; limit?: number } = {},
+      opts: {
+        type?: ContentKind
+        mcVersion?: string
+        loader?: string
+        limit?: number
+        source?: ContentSource | 'all'
+      } = {},
     ): Promise<SearchHit[]> {
-      const facets: string[][] = []
-      if (opts.type) facets.push([`project_type:${opts.type}`])
-      if (opts.mcVersion) facets.push([`versions:${opts.mcVersion}`])
-      if (opts.loader) facets.push([`categories:${opts.loader}`])
-      const params = new URLSearchParams({
-        query,
-        limit: String(Math.min(opts.limit ?? 12, 30)),
-        index: 'relevance',
-      })
-      if (facets.length > 0) params.set('facets', JSON.stringify(facets))
-      const data = await api<{ hits: RawSearchHit[] }>(`/search?${params.toString()}`)
-      return (data.hits ?? []).map((hit) => ({
-        projectId: hit.project_id,
-        slug: hit.slug,
-        title: hit.title,
-        description: hit.description,
-        projectType: hit.project_type,
-        categories: hit.categories ?? [],
-        downloads: hit.downloads ?? 0,
-        iconUrl: hit.icon_url,
-        versions: hit.versions ?? [],
-        // P28：前端「支持 1.20.1 · Fabric」chips
-        gameVersions: hit.versions ?? [],
-        loaders: hit.loaders ?? [],
-      }))
+      const limit = Math.min(opts.limit ?? 12, 30)
+      const runModrinth = async (): Promise<SearchHit[]> => {
+        const facets: string[][] = []
+        if (opts.type) facets.push([`project_type:${opts.type}`])
+        if (opts.mcVersion) facets.push([`versions:${opts.mcVersion}`])
+        if (opts.loader) facets.push([`categories:${opts.loader}`])
+        const params = new URLSearchParams({
+          query,
+          limit: String(limit),
+          index: 'relevance',
+        })
+        if (facets.length > 0) params.set('facets', JSON.stringify(facets))
+        const data = await api<{ hits: RawSearchHit[] }>(`/search?${params.toString()}`)
+        return (data.hits ?? []).map((hit) => ({
+          projectId: hit.project_id,
+          slug: hit.slug,
+          title: hit.title,
+          description: hit.description,
+          projectType: hit.project_type,
+          categories: hit.categories ?? [],
+          downloads: hit.downloads ?? 0,
+          iconUrl: hit.icon_url,
+          versions: hit.versions ?? [],
+          // P28：前端「支持 1.20.1 · Fabric」chips
+          gameVersions: hit.versions ?? [],
+          loaders: hit.loaders ?? [],
+          source: 'modrinth' as ContentSource,
+        }))
+      }
+
+      const sourceSel = opts.source ?? 'modrinth'
+      if (sourceSel === 'curseforge') {
+        return searchCurseforge(query, { ...opts, limit })
+      }
+      if (sourceSel === 'all') {
+        // P30：两个源并发，单个失败不影响另一个
+        const [modrinth, curseforge] = await Promise.allSettled([
+          runModrinth(),
+          searchCurseforge(query, { ...opts, limit }),
+        ])
+        if (modrinth.status === 'rejected' && curseforge.status === 'rejected') {
+          throw modrinth.reason instanceof Error ? modrinth.reason : new Error(String(modrinth.reason))
+        }
+        if (modrinth.status === 'rejected') {
+          log.warn('content', 'Modrinth 搜索结果已跳过', { error: String(modrinth.reason) })
+        }
+        if (curseforge.status === 'rejected') {
+          log.warn('content', 'CurseForge 搜索结果已跳过', { error: String(curseforge.reason) })
+        }
+        const merged = [
+          ...(modrinth.status === 'fulfilled' ? modrinth.value : []),
+          ...(curseforge.status === 'fulfilled' ? curseforge.value : []),
+        ]
+        return merged.sort((a, b) => b.downloads - a.downloads).slice(0, limit)
+      }
+      return runModrinth()
     }
 
     async function versions(
@@ -567,6 +615,14 @@ export function createContentPlugin(): LauncherPlugin<void> {
       projectId: string,
       opts: { mcVersion?: string; loader?: string } = {},
     ): Promise<ContentInstallResult> {
+      // P30：cf-<id> 走 CurseForge 分支（详情 → 文件 → 下载 → 记 content.json）
+      if (projectId.startsWith('cf-')) {
+        const cfId = Number.parseInt(projectId.slice(3), 10)
+        if (!Number.isFinite(cfId)) {
+          return { ok: false, projectId, files: [], dependenciesInstalled: 0, error: `无效的 CurseForge 项目 id: ${projectId}` }
+        }
+        return installCurseforge(instanceId, cfId, opts)
+      }
       const task = createTask('安装内容', '安装内容')
       try {
         const project = await api<{ id: string; title: string; project_type: string }>(
@@ -870,8 +926,244 @@ export function createContentPlugin(): LauncherPlugin<void> {
       return data.data
     }
 
-    function readCurseManifest(buffer: Buffer): { manifest: CurseManifest; zip: AdmZip } {
-      const zip = new AdmZip(buffer)
+    /* ---------- P30：CurseForge 内容源（搜索 / 单文件安装 / Key 测试） ---------- */
+
+    /** classId：模组 6、资源包 12、光影 6552、整合包 4471 */
+    const CF_CLASS: Partial<Record<ContentKind, number>> = {
+      mod: 6,
+      resourcepack: 12,
+      shader: 6552,
+      modpack: 4471,
+    }
+    const CF_KIND_BY_CLASS: Record<number, ContentKind> = { 6: 'mod', 12: 'resourcepack', 6552: 'shader', 4471: 'modpack' }
+    /** modLoaderType：forge 1、fabric 4、quilt 5、neoforge 6 */
+    const CF_LOADER_TYPE: Record<string, number> = { forge: 1, fabric: 4, quilt: 5, neoforge: 6 }
+
+    interface CfLogo {
+      thumbnailUrl?: string | null
+      url?: string | null
+    }
+    interface CfFileIndex {
+      gameVersion?: string
+      fileId?: number
+      filename?: string
+      releaseType?: number
+      modLoader?: number
+    }
+    interface CfMod {
+      id: number
+      name: string
+      slug?: string
+      summary?: string
+      classId?: number
+      downloadCount?: number
+      logo?: CfLogo | null
+      latestFilesIndexes?: CfFileIndex[]
+    }
+    interface CfModFile {
+      id: number
+      modId?: number
+      displayName?: string
+      fileName: string
+      downloadUrl?: string | null
+      fileLength?: number
+      releaseType?: number
+      fileDate?: string
+      hashes?: { value: string; algo: number }[]
+    }
+
+    /** CurseForge GET：把「Key 无效」和「没有搜索权限」分开报，用户看得懂。 */
+    async function cfGet<T>(pathname: string): Promise<T> {
+      const key = CF_KEY()
+      if (!key) throw new Error('缺少 CurseForge API Key：设置 → 内容与插件市场 → CurseForge API Key')
+      const res = await fetch(`${CF_API()}${pathname}`, {
+        headers: { 'x-api-key': key, accept: 'application/json', 'user-agent': UA },
+        signal: AbortSignal.timeout(20_000),
+      })
+      if (res.status === 403) {
+        throw new Error('CurseForge 拒绝访问（403）：这把 Key 没有搜索/列表权限，或当前网络被 Cloudflare 拦截')
+      }
+      if (!res.ok) throw new Error(`CurseForge 请求失败：HTTP ${res.status}`)
+      return (await res.json()) as T
+    }
+
+    function cfLoaderName(modLoader?: number): string | undefined {
+      switch (modLoader) {
+        case 1:
+          return 'forge'
+        case 4:
+          return 'fabric'
+        case 5:
+          return 'quilt'
+        case 6:
+          return 'neoforge'
+        default:
+          return undefined
+      }
+    }
+
+    function cfToHit(mod: CfMod): SearchHit {
+      const indexes = mod.latestFilesIndexes ?? []
+      const gameVersions = [
+        ...new Set(indexes.map((item) => item.gameVersion).filter((value): value is string => Boolean(value))),
+      ]
+      const loaders = [
+        ...new Set(indexes.map((item) => cfLoaderName(item.modLoader)).filter((value): value is string => Boolean(value))),
+      ]
+      return {
+        projectId: `cf-${mod.id}`,
+        slug: mod.slug ?? String(mod.id),
+        title: mod.name,
+        description: mod.summary ?? '',
+        projectType: CF_KIND_BY_CLASS[mod.classId ?? 6] ?? 'mod',
+        categories: [],
+        downloads: mod.downloadCount ?? 0,
+        iconUrl: mod.logo?.thumbnailUrl ?? mod.logo?.url ?? undefined,
+        versions: gameVersions,
+        gameVersions,
+        loaders,
+        source: 'curseforge',
+      }
+    }
+
+    async function searchCurseforge(
+      query: string,
+      opts: { type?: ContentKind; mcVersion?: string; loader?: string; limit?: number },
+    ): Promise<SearchHit[]> {
+      const classId = CF_CLASS[opts.type ?? 'mod']
+      if (!classId) return []
+      const params = new URLSearchParams({
+        gameId: '432',
+        classId: String(classId),
+        pageSize: String(Math.min(opts.limit ?? 20, 50)),
+        sortField: '2',
+        sortOrder: 'desc',
+      })
+      if (query.trim()) params.set('searchFilter', query.trim())
+      if (opts.mcVersion) params.set('gameVersion', opts.mcVersion)
+      const loaderType = opts.loader ? CF_LOADER_TYPE[opts.loader] : undefined
+      if (loaderType) params.set('modLoaderType', String(loaderType))
+      const data = await cfGet<{ data?: CfMod[] }>(`/v1/mods/search?${params.toString()}`)
+      return (data.data ?? []).map(cfToHit)
+    }
+
+    /** 三项分别探：基础接口 / 详情文件接口 / 搜索接口（很多 Key 只有前两项）。 */
+    async function testCurseForge(): Promise<CurseForgeTestResult> {
+      const started = Date.now()
+      if (!CF_KEY()) return { ok: false, error: '还没有填 CurseForge API Key' }
+      const result: CurseForgeTestResult = { ok: false }
+      try {
+        const basic = await cfGet<{ data?: unknown[] }>('/v1/games?pageSize=5')
+        result.basicOk = true
+        result.games = Array.isArray(basic.data) ? basic.data.length : 0
+      } catch (err) {
+        result.basicOk = false
+        result.error = err instanceof Error ? err.message : String(err)
+        result.ms = Date.now() - started
+        return result
+      }
+      try {
+        // JEI 的固定 id，用来验证「详情/文件」接口，不依赖搜索权限
+        await cfGet('/v1/mods/238222')
+        result.detailOk = true
+      } catch (err) {
+        result.detailOk = false
+        result.searchError = err instanceof Error ? err.message : String(err)
+      }
+      try {
+        await cfGet('/v1/mods/search?gameId=432&pageSize=1')
+        result.searchOk = true
+      } catch (err) {
+        result.searchOk = false
+        result.searchError = err instanceof Error ? err.message : String(err)
+      }
+      result.ms = Date.now() - started
+      result.ok = Boolean(result.basicOk && result.detailOk && result.searchOk)
+      return result
+    }
+
+    /** 从 CurseForge 装单个 mod / 资源包 / 光影：详情 → 挑兼容文件 → 下载 → 记 content.json。 */
+    async function installCurseforge(
+      instanceId: string,
+      cfId: number,
+      opts: { mcVersion?: string; loader?: string },
+    ): Promise<ContentInstallResult> {
+      const task = createTask('安装内容', '安装内容')
+      try {
+        const instance = instances.get(instanceId)
+        if (!instance) throw new Error(`实例不存在: ${instanceId}`)
+        const mod = (await cfGet<{ data: CfMod }>(`/v1/mods/${cfId}`)).data
+        const kind = CF_KIND_BY_CLASS[mod.classId ?? 6] ?? 'mod'
+        task.title = `安装${kindLabel(kind)} ${mod.name}`
+        task.message = task.title
+        emitTask(task, 'content', true)
+
+        const mcv = opts.mcVersion ?? instance.gameVersion ?? instance.versionId ?? undefined
+        const loader = opts.loader ?? (instance.loader !== 'vanilla' ? instance.loader : undefined)
+        const params = new URLSearchParams({ pageSize: '50' })
+        if (mcv) params.set('gameVersion', mcv)
+        const loaderType = loader ? CF_LOADER_TYPE[loader] : undefined
+        if (loaderType) params.set('modLoaderType', String(loaderType))
+        const files = (await cfGet<{ data?: CfModFile[] }>(`/v1/mods/${cfId}/files?${params.toString()}`)).data ?? []
+        const release = files
+          .filter((file) => file.releaseType === 1)
+          .sort((a, b) => Date.parse(b.fileDate ?? '') - Date.parse(a.fileDate ?? ''))[0]
+        const file = release ?? files[0]
+        if (!file) throw new Error(`CurseForge 上没有适配 ${mcv ?? '该版本'} 的可用文件`)
+
+        let downloadUrl = file.downloadUrl ?? undefined
+        if (!downloadUrl) {
+          const detail = await cfGet<{ data?: string }>(`/v1/mods/${cfId}/files/${file.id}/download-url`)
+          downloadUrl = detail.data ?? undefined
+        }
+        if (!downloadUrl) throw new Error('CurseForge 没有返回下载地址（可能被作者禁用）')
+
+        const fileName = safeName(file.fileName, `cf-${cfId}.jar`)
+        const dest = path.join(instance.gameDir, kindDir(kind), fileName)
+        const sha1 = file.hashes?.find((hash) => hash.algo === 1)?.value
+        const stats = await downloadWithTask(
+          task,
+          [{ url: downloadUrl, dest, sha1, size: file.fileLength, label: fileName }],
+          1,
+        )
+        if (stats.failed.length > 0) throw new Error(`下载失败：${fileName}`)
+
+        const list = await installed(instanceId)
+        const versionNumber = file.displayName ?? fileName
+        const next = list.filter((item) => item.fileName !== fileName && item.projectId !== `cf-${cfId}`)
+        next.push({
+          projectId: `cf-${cfId}`,
+          slug: mod.slug,
+          title: mod.name,
+          versionId: `cf-${file.id}`,
+          versionNumber,
+          fileName,
+          kind,
+          sha1: sha1 ?? '',
+          installedAt: Date.now(),
+          source: 'curseforge',
+        })
+        await saveInstalled(instanceId, next)
+        emitTask(task, 'done', true)
+        telemetry.record('content:install', { instanceId, kind, file: fileName, source: 'curseforge' })
+        log.info('content', 'CurseForge 内容已安装', { cfId, fileName, kind })
+        return {
+          ok: true,
+          projectId: `cf-${cfId}`,
+          title: mod.name,
+          versionNumber,
+          files: [fileName],
+          dependenciesInstalled: 0,
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        emitTask(task, 'failed', true, message)
+        log.error('content', 'CurseForge 安装失败', { cfId, error: message })
+        return { ok: false, projectId: `cf-${cfId}`, files: [], dependenciesInstalled: 0, error: message }
+      }
+    }
+
+    function readCurseManifest(buffer: Buffer): { manifest: CurseManifest; zip: AdmZip } {      const zip = new AdmZip(buffer)
       const entry = zip.getEntry('manifest.json')
       if (!entry) throw new Error('不是 CurseForge 整合包（缺 manifest.json）')
       const manifest = JSON.parse(entry.getData().toString('utf8')) as CurseManifest
@@ -1422,6 +1714,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
       installVersion,
       updates,
       update,
+      testCurseForge,
       preview,
       setProgressSink: (next) => {
         progressSink = next

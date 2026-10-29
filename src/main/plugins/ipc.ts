@@ -13,6 +13,7 @@ import type {
   ContentVersionInfo,
   CursePackInspectResult,
   CursePackInstallResult,
+  CurseForgeTestResult,
   PackInspect,
   AccountState,
   AccountSummary,
@@ -228,12 +229,22 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
 
     handle<SearchHit[]>(
       CH.contentSearch,
-      (query: string, opts?: { type?: string; mcVersion?: string; loader?: string; limit?: number }) =>
+      (
+        query: string,
+        opts?: {
+          type?: string
+          mcVersion?: string
+          loader?: string
+          limit?: number
+          source?: 'modrinth' | 'curseforge' | 'all'
+        },
+      ) =>
         content.search(query, {
           type: opts?.type as never,
           mcVersion: opts?.mcVersion,
           loader: opts?.loader,
           limit: opts?.limit,
+          source: opts?.source,
         }),
     )
     handle<ContentVersionInfo[]>(
@@ -263,6 +274,8 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle<ContentPreview>(CH.contentPreview, (projectId: string, kind: ContentKind) =>
       content.preview(projectId, kind),
     )
+    // P30：CurseForge Key 连通性测试
+    handle<CurseForgeTestResult>(CH.contentTestCf, () => content.testCurseForge())
     handle<ConflictReport>(CH.conflictAnalyze, (instanceId?: string) => conflict.analyze(instanceId ?? 'default'))
     handle<Diagnosis>(CH.diagnoseRun, (instanceId?: string) => diagnose.run(instanceId ?? 'default'))
     handle<FixAction[]>(CH.diagnoseFixes, (instanceId?: string) => diagnose.fixes(instanceId ?? 'default'))

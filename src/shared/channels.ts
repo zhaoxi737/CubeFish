@@ -57,6 +57,8 @@ export const CH = {
   contentUpdates: 'content:updates',
   contentUpdate: 'content:update',
   contentPreview: 'content:preview',
+  // P30：CurseForge Key 连通性测试
+  contentTestCf: 'content:test-cf',
   conflictAnalyze: 'conflict:analyze',
   diagnoseRun: 'diagnose:run',
   diagnoseFixes: 'diagnose:fixes',

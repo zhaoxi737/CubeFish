@@ -3152,6 +3152,29 @@ body {
   border-color: rgba(126, 217, 87, 0.6);
 }
 
+.dc-source {
+  flex: 0 0 auto;
+  background: rgba(13, 19, 27, 0.9);
+  color: #c3d2e0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 8px 8px;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.dc-tag.is-cf {
+  color: #ffb86b;
+  border-color: rgba(255, 176, 80, 0.45);
+  background: rgba(255, 176, 80, 0.1);
+}
+
+.dc-tag.is-mr {
+  color: #9ff08a;
+  border-color: rgba(126, 217, 87, 0.4);
+  background: rgba(126, 217, 87, 0.08);
+}
+
 .dc-scroll {
   flex: 1;
   min-height: 0;

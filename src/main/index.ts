@@ -164,13 +164,23 @@ async function runSettingsSmoke(win: BrowserWindowType, startedAt: number): Prom
       writeFileSync(file, image.toPNG())
       await win.webContents.executeJavaScript(`(() => { const body = document.querySelector('.dialog-body'); if (body) body.scrollTop = body.scrollHeight; return 'scrolled' })()`)
       await wait(700)
+      // P30：点「测试 Key」验证 CurseForge 三个接口的连通性（需要环境变量里带 Key）
+      const cfTested = (await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.dialog button')].find((b) => b.textContent?.trim() === '测试 Key'); if (!btn) return 'no-button'; btn.click(); return 'clicked' })()`,
+      )) as string
+      if (cfTested === 'clicked') await wait(3500)
+      const cfText = (await win.webContents.executeJavaScript(
+        `document.querySelector('.cf-test-result')?.textContent ?? ''`,
+      )) as string
       const bottomImage = await win.webContents.capturePage()
       writeFileSync(path.join(dir, 'smoke-settings-bottom.png'), bottomImage.toPNG())
       const info = (await win.webContents.executeJavaScript(
         `JSON.stringify({
           accounts: [...document.querySelectorAll('.account-item')].map((el) => el.textContent ?? ''),
           loginButton: [...document.querySelectorAll('.dialog button')].map((el) => el.textContent ?? '').find((text) => text.includes('微软账号')) ?? '',
-          clientIdField: Boolean([...document.querySelectorAll('.field-label')].find((el) => el.textContent?.includes('client_id')))
+          clientIdField: Boolean([...document.querySelectorAll('.field-label')].find((el) => el.textContent?.includes('client_id'))),
+          curseforgeKeyField: Boolean([...document.querySelectorAll('.field-label')].find((el) => el.textContent?.includes('CurseForge'))),
+          cfTest: ${JSON.stringify(cfText)}
         })`,
       )) as string
       console.log(`SETTINGS_SMOKE_RESULT ${JSON.stringify({ ok: true, screenshot: file, ms: Date.now() - startedAt, ui: JSON.parse(info) })}`)
@@ -765,6 +775,56 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
       )
       await wait(400)
 
+      // ---- P30：CurseForge 源（有 mock 基址或真实 Key 都跑） ----
+      let cfInfo = JSON.stringify({ skipped: true })
+      let cfShot = ''
+      if (process.env.QDOQMC_CF_API_BASE || process.env.QDOQMC_CF_API_KEY) {
+        await win.webContents.executeJavaScript(
+          `(() => { const btn = [...document.querySelectorAll('.titlebar-actions button')].find((b) => b.textContent?.trim() === '模组'); btn?.click(); return 'dc' })()`,
+        )
+        await wait(1800)
+        // 把「来源」切到 CurseForge，看真实/模拟结果
+        await win.webContents.executeJavaScript(
+          `(() => {
+             const sel = document.querySelector('.dc-source')
+             if (!sel) return 'no-select'
+             const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set
+             setter.call(sel, 'curseforge')
+             sel.dispatchEvent(new Event('change', { bubbles: true }))
+             return 'cf-source'
+           })()`,
+        )
+        await wait(3200)
+        cfShot = await shot('smoke-curseforge.png')
+        const cfUi = (await win.webContents.executeJavaScript(
+          `JSON.stringify({
+             rows: document.querySelectorAll('.dc-item').length,
+             first: document.querySelector('.dc-item-title')?.textContent ?? '',
+             badge: document.querySelector('.dc-tag.is-cf') ? 'cf' : '',
+             error: document.querySelector('.dc-error')?.textContent ?? ''
+           })`,
+        )) as string
+        const cfApi = (await win.webContents.executeJavaScript(
+          `window.qdo.content.search('', { type: 'mod', source: 'curseforge', mcVersion: '1.20.1', loader: 'fabric', limit: 5 })
+             .then((hits) => JSON.stringify({ count: hits.length, first: hits[0]?.title ?? '', source: hits[0]?.source ?? '', id: hits[0]?.projectId ?? '' }))
+             .catch((err) => JSON.stringify({ error: String(err) }))`,
+        )) as string
+        const cfTest = (await win.webContents.executeJavaScript(
+          `window.qdo.content.testCurseForge().then((r) => JSON.stringify(r)).catch((e) => JSON.stringify({ ok: false, error: String(e) }))`,
+        )) as string
+        const cfInstall = (await win.webContents.executeJavaScript(
+          `window.qdo.content.install('default', 'cf-111', { mcVersion: '1.20.1', loader: 'fabric' })
+             .then((r) => JSON.stringify({ ok: r.ok, fileName: (r.files ?? [])[0] ?? '', error: r.error ?? '' }))
+             .catch((e) => JSON.stringify({ ok: false, error: String(e) }))`,
+        )) as string
+        cfInfo = JSON.stringify({ ui: JSON.parse(cfUi), api: JSON.parse(cfApi), test: JSON.parse(cfTest), install: JSON.parse(cfInstall) })
+        console.log(`CF_CHECK ${cfInfo}`)
+        await win.webContents.executeJavaScript(
+          `(() => { const btn = [...document.querySelectorAll('.dc-head .ghost')].find((b) => b.textContent?.trim() === '关闭'); btn?.click(); return 'dc-closed' })()`,
+        )
+        await wait(600)
+      }
+
       console.log('SMOKE_STEP pack-done')
       // 左侧版本栏：点第一张卡片切回默认实例
       await win.webContents.executeJavaScript(
@@ -818,6 +878,7 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
             screenshot: downloadShot,
           },
           sidebar: JSON.parse(switchInfo),
+          curseforge: { info: JSON.parse(cfInfo), screenshot: cfShot },
           chatStatus: chat,
         })}`,
       )

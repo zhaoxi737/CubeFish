@@ -59,6 +59,7 @@ const api: QdoApi = {
     updates: (instanceId) => ipcRenderer.invoke(CH.contentUpdates, instanceId),
     update: (instanceId, fileName) => ipcRenderer.invoke(CH.contentUpdate, instanceId, fileName),
     preview: (projectId, kind) => ipcRenderer.invoke(CH.contentPreview, projectId, kind),
+    testCurseForge: () => ipcRenderer.invoke(CH.contentTestCf),
   },
   conflict: {
     analyze: (instanceId) => ipcRenderer.invoke(CH.conflictAnalyze, instanceId),

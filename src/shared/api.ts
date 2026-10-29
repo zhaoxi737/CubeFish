@@ -12,6 +12,7 @@ import type {
   ContentVersionInfo,
   CursePackInspectResult,
   CursePackInstallResult,
+  CurseForgeTestResult,
   PackInspect,
   Diagnosis,
   EntitlementItem,
@@ -90,8 +91,10 @@ export interface QdoApi {
   content: {
     search(
       query: string,
-      opts?: { type?: string; mcVersion?: string; loader?: string; limit?: number },
+      opts?: { type?: string; mcVersion?: string; loader?: string; limit?: number; source?: 'modrinth' | 'curseforge' | 'all' },
     ): Promise<SearchHit[]>
+    /** P30：测试 CurseForge API Key 是否可用（基础/详情/搜索三项分开报） */
+    testCurseForge(): Promise<CurseForgeTestResult>
     versions(projectId: string, opts?: { mcVersion?: string; loader?: string }): Promise<ContentVersionInfo[]>
     install(instanceId: string, projectId: string, opts?: { mcVersion?: string; loader?: string }): Promise<ContentInstallResult>
     installed(instanceId: string): Promise<InstalledContent[]>

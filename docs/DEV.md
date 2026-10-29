@@ -621,6 +621,8 @@ node_modules/.bin/electron . --chat="帮我检查下这个实例有没有冲突"
 | P29 | 逐文件下载进度（含整合包） | 任务页 75 个文件逐行状态 + 大小，`filesDone` 0→1→2 递增；整合包 100% 完成页 |
 | P29 | 资源/光影预览 + 模组更新检查 | Sodium 画廊 6 张图渲染成功；检查更新实测 1 项「0.8.14 → 0.8.15-beta.1」可一键更新 |
 | P29 | 用户背景图接入 | `uploads/…png` → `art/bg-user.jpg`（1920×1079, 306KB），构建自动打包 |
+| P30 | CurseForge 内容源 + Key 测试 | 真机真 Key：搜索 20 条真实结果（GeckoLib / JEI / Cloth Config…）带 CurseForge 徽章；`testCurseForge` = 基础 OK / 详情 OK / 搜索 OK（884–1208ms）；`source:'all'` 合并两源；mock 下 `install cf-111` 落盘 `cf-fake-mod.jar` 且 content.json 记录 `source:'curseforge'` |
+| P30 | 设置页新增 CurseForge Key + 测试按钮 | 输入框（密码型）+ 三项分报结果；无 Key / 403 时给中文提示，不影响 Modrinth |
 
 > 汇总口径：每阶段都跑过 `npm run smoke` 与打包版 `--smoke`；涉及游戏启动的阶段有真实窗口标题与启动标记日志。
 > P28 另附 `scripts/p28-check.mjs`（下载器/镜像/分片实测，不启动 UI）和 [docs/P28-NOTES.md](P28-NOTES.md)（实现与实测数据）。

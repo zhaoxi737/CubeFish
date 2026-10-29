@@ -35,7 +35,7 @@ export type SandboxHostMessage =
 /** worker → 宿主 */
 export type SandboxWorkerMessage =
   | { type: 'ready'; tools: SandboxToolDef[]; commands: SandboxCommandDef[] }
-  | { type: 'request'; callId: number; method: 'storage.get' | 'storage.set' | 'tools.call'; params: unknown }
+  | { type: 'request'; callId: number; method: 'storage.get' | 'storage.set' | 'tools.call' | 'net.fetch'; params: unknown }
   | { type: 'result'; callId: number; ok: boolean; result?: unknown; error?: string }
   | { type: 'log'; level: 'info' | 'warn' | 'error'; message: string }
   | { type: 'error'; message: string }
@@ -52,6 +52,11 @@ export interface SandboxPluginApi {
     error(message: string): void
   }
   callTool(name: string, args?: Record<string, unknown>): Promise<{ ok: boolean; summary: string; data?: unknown }>
+  /** P34：由宿主代发的 https 请求（沙箱内没有全局 fetch，联网插件必须用这个） */
+  fetch(
+    url: string,
+    options?: { method?: string; headers?: Record<string, string>; body?: string },
+  ): Promise<{ ok: boolean; status: number; text: string }>
   registerTool(definition: {
     name: string
     description: string

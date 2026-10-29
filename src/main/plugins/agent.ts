@@ -10,7 +10,7 @@ import type { SettingsService } from './settings'
 import type { TelemetryService } from './telemetry'
 import type { ToolsService } from './tools'
 
-const MAX_ROUNDS = 6
+const MAX_ROUNDS = 10
 
 const SYSTEM_PROMPT = `你是 QDOQMC（Minecraft 启动器）里的助手，直接操作启动器帮用户做事。
 规则：
@@ -40,7 +40,8 @@ export function apply(api) {
 \`\`\`
 - api.registerTool：注册 AI 工具（name 用 snake_case；parameters 是 JSON Schema；handler 必须返回 { ok, summary, data? }）。
 - api.registerCommand({ name, description, async run(args) { return '文本' } })：注册聊天命令。
-- 其他可用：api.log.info/warn/error、api.storage.get/set、api.callTool(内置工具名, args)。
+- 其他可用：api.log.info/warn/error、api.storage.get/set、api.callTool(内置工具名, args)、api.fetch(url, {method,headers,body})。
+- 插件运行在沙箱里：没有 window/document/全局 fetch，联网必须用 api.fetch（只允许 https）；也不能读启动器文件，只能通过 api.callTool 调内置工具。
 - id 用小写字母/数字/._- 且唯一；permissions 默认 []，需要联网才加 'net'。
 - 流程：write_plugin 安装（或升级）→ list_plugins 确认已加载 → 直接调用新工具验证；安装失败就把报错原样告诉用户，并修正代码重试一次。
 

@@ -244,6 +244,26 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
             hostResponse(state, message.callId, true, result)
             return
           }
+          if (message.method === 'net.fetch') {
+            const params = (message.params ?? {}) as {
+              url?: string
+              options?: { method?: string; headers?: Record<string, string>; body?: string }
+            }
+            const url = String(params.url ?? '')
+            if (!/^https:\/\//i.test(url)) {
+              hostResponse(state, message.callId, false, undefined, '插件联网只允许 https 链接')
+              return
+            }
+            const res = await fetch(url, {
+              method: params.options?.method ?? 'GET',
+              headers: { 'user-agent': `QDOQMC-plugin/${id}`, ...(params.options?.headers ?? {}) },
+              body: params.options?.body,
+              signal: AbortSignal.timeout(20_000),
+            })
+            const text = await res.text()
+            hostResponse(state, message.callId, true, { ok: res.ok, status: res.status, text: text.slice(0, 200_000) })
+            return
+          }
           hostResponse(state, message.callId, false, undefined, `未知的沙箱请求：${message.method}`)
         } catch (err) {
           hostResponse(state, message.callId, false, undefined, err instanceof Error ? err.message : String(err))

@@ -594,7 +594,11 @@ export function createToolsPlugin(): LauncherPlugin<void> {
         if (info.isDirectory()) return { ok: false, summary: `这是目录，用 list_dir 查看：${file}` }
         if (info.size > 200 * 1024) return { ok: false, summary: `文件太大（${info.size} 字节），不读取` }
         const text = readFileSync(file, 'utf8')
-        return { ok: true, summary: text.slice(0, 60000) || '（空文件）' }
+        // P34：不把 API Key / 令牌明文返回给模型（settings.json 里有 Key）
+        const redacted = text
+          .replace(/("(?:apiKey|curseforgeApiKey|msAccessToken|msRefreshToken|token|secret)"\s*:\s*")[^"]*(")/gi, '$1***已隐藏***$2')
+          .replace(/\bsk-[A-Za-z0-9_-]{10,}/g, 'sk-***已隐藏***')
+        return { ok: true, summary: redacted.slice(0, 60000) || '（空文件）' }
       },
     })
 
@@ -771,6 +775,45 @@ export function createToolsPlugin(): LauncherPlugin<void> {
           return { ok: true, summary: `更新包 v${state.latest ?? '?'} 已下载，退出重启后生效。`, data: state }
         }
         return { ok: false, summary: state.message ?? '更新下载失败（可能没有配置更新地址）', data: state }
+      },
+    })
+
+    register({
+      name: 'deepseek_balance',
+      description: '查询当前配置的 DeepSeek 账户余额（用启动器里保存的 Key 在后台查，不会把 Key 暴露出来）。',
+      parameters: EMPTY_PARAMS,
+      async handler() {
+        const key = settings.get('apiKey')
+        if (!key) return { ok: false, summary: '还没配置模型 API Key（设置 → AI 助手）' }
+        const base = settings
+          .get('llmBaseUrl')
+          .replace(/\/v1\/?$/i, '')
+          .replace(/\/+$/, '')
+        const url = `${base || 'https://api.deepseek.com'}/user/balance`
+        try {
+          const res = await fetch(url, {
+            headers: { authorization: `Bearer ${key}`, accept: 'application/json' },
+            signal: AbortSignal.timeout(15_000),
+          })
+          if (!res.ok) return { ok: false, summary: `查询失败：HTTP ${res.status}（Key 无效或接口不支持余额查询）` }
+          const data = (await res.json()) as {
+            is_available?: boolean
+            balance_infos?: { currency?: string; total_balance?: string; granted_balance?: string; topped_up_balance?: string }[]
+          }
+          const infos = (data.balance_infos ?? [])
+            .map(
+              (item) =>
+                `${item.currency ?? '?'} 余额 ${item.total_balance ?? '?'}（赠送 ${item.granted_balance ?? '-'} / 充值 ${item.topped_up_balance ?? '-'}）`,
+            )
+            .join('；')
+          return {
+            ok: true,
+            summary: `DeepSeek 账户可用：${data.is_available === false ? '否' : '是'}；${infos || '没有余额信息'}`,
+            data,
+          }
+        } catch (err) {
+          return { ok: false, summary: `查询失败：${err instanceof Error ? err.message : String(err)}` }
+        }
       },
     })
 

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 插件沙箱 worker（P15）：在 utilityProcess 里执行第三方插件。
  *
  * 与主进程只通过 parentPort 上的 JSON 消息通信；
@@ -46,7 +46,7 @@ const send = (message: SandboxWorkerMessage): void => port.postMessage(message)
 const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>()
 let nextCallId = 1
 
-function request(method: 'storage.get' | 'storage.set' | 'tools.call', params: unknown, timeoutMs = 30_000): Promise<unknown> {
+function request(method: 'storage.get' | 'storage.set' | 'tools.call' | 'net.fetch', params: unknown, timeoutMs = 30_000): Promise<unknown> {
   const callId = nextCallId++
   return new Promise((resolve, reject) => {
     pending.set(callId, { resolve, reject })
@@ -82,6 +82,12 @@ function createApi(init: Extract<SandboxHostMessage, { type: 'init' }>): Sandbox
     },
     callTool: async (name, args) =>
       (await request('tools.call', { name, args: args ?? {} }, 120_000)) as { ok: boolean; summary: string; data?: unknown },
+    fetch: async (url, options) =>
+      (await request('net.fetch', { url, options: options ?? {} }, 30_000)) as {
+        ok: boolean
+        status: number
+        text: string
+      },
     registerTool: (definition) => {
       if (!definition?.name) throw new Error('registerTool 需要 name')
       tools.set(definition.name, {
@@ -126,6 +132,29 @@ async function handle(message: SandboxHostMessage): Promise<void> {
 
   if (message.type === 'init') {
     try {
+      // P34：沙箱里没有全局 fetch（permission model 禁止联网）；给插件一个走宿主的 fetch 兼容层
+      const globalFetch = async (url: unknown, init?: { method?: string; headers?: Record<string, string>; body?: unknown }) => {
+        const res = (await request(
+          'net.fetch',
+          {
+            url: String(url ?? ''),
+            options: {
+              method: init?.method,
+              headers: init?.headers,
+              body: typeof init?.body === 'string' ? init.body : undefined,
+            },
+          },
+          30_000,
+        )) as { ok: boolean; status: number; text: string }
+        return {
+          ok: res.ok,
+          status: res.status,
+          text: async () => res.text,
+          json: async () => JSON.parse(res.text),
+        }
+      }
+      ;(globalThis as unknown as { fetch?: unknown }).fetch = globalFetch
+
       const module = (await import(`${message.entry}?t=${Date.now()}`)) as {
         apply?: (api: SandboxPluginApi) => unknown
         default?: (api: SandboxPluginApi) => unknown

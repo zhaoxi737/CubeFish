@@ -3707,6 +3707,50 @@ body {
   border-color: rgba(126, 217, 87, 0.6);
 }
 
+/* P31 修复：网格子项默认 min-height:auto 会把行撑出屏幕，导致底部输入框/启动按钮溢出。
+   给三列都加 min-height:0 + overflow:hidden，把滚动交给各自的内部 flex。 */
+.main {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.version-sidebar,
+.chat-side,
+.stage {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-side .chat {
+  height: 100%;
+  min-height: 0;
+}
+
+.side-launch {
+  flex: 0 0 auto;
+}
+
+/* 侧栏里的启动按钮更紧凑，避免顶出屏幕 */
+.side-launch .launch {
+  min-height: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+}
+
+.side-launch .launch-main {
+  font-size: 20px;
+  letter-spacing: 2px;
+}
+
+.side-launch .launch-sub {
+  font-size: 10px;
+}
+
+.side-launch .launch-fish.mascot-img {
+  width: 20px;
+  height: 20px;
+}
+
 
 
 

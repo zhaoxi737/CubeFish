@@ -145,6 +145,8 @@ export function createToolsPlugin(): LauncherPlugin<void> {
     }
 
     const registry = new Map<string, ToolDefinition>()
+    /** P38：避免 AI 反复应用同一个冲突修复（会把已修好的版本又装回来） */
+    const appliedConflictFixes = new Set<string>()
 
     const register = (definition: ToolDefinition) => {
       registry.set(definition.name, definition)
@@ -491,7 +493,16 @@ export function createToolsPlugin(): LauncherPlugin<void> {
             data: { diagnosis, actions },
           }
         }
+        const fixKey = `${instanceId}:${versionFix.id}`
+        if (appliedConflictFixes.has(fixKey)) {
+          return {
+            ok: false,
+            summary: `这个修复已经应用过：${versionFix.label}。如果游戏还报错，请换方案（比如先禁用 Iris 或 Sodium），或重启游戏再试。`,
+            data: { diagnosis, actions },
+          }
+        }
         const result = await diagnose.applyFix(instanceId, versionFix.id)
+        if (result.ok) appliedConflictFixes.add(`${instanceId}:${versionFix.id}`)
         return {
           ok: result.ok,
           summary: result.ok ? `${versionFix.label} → ${result.message}` : `修复失败：${result.message}`,

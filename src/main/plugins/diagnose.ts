@@ -254,9 +254,11 @@ export function createDiagnosePlugin(): LauncherPlugin<void> {
         if (info.requiringSlug) {
           try {
             const list = await content.versions(info.requiringSlug, { mcVersion: mcv, loader })
-            const min = info.minRequiringVersion
+            // 只允许「比已装的新」且「达到下界」的版本；宁可不动，也不要降级
+            const installedRequiring = info.requiringVersion
+            const min = info.minRequiringVersion ?? installedRequiring
             const candidate = list
-              .filter((item) => !min || cmpVersion(item.versionNumber, min) >= 0)
+              .filter((item) => (!min || cmpVersion(item.versionNumber, min) >= 0) && (!installedRequiring || cmpVersion(item.versionNumber, installedRequiring) > 0))
               .sort(byNewest)[0]
             if (candidate) {
               actions.push({
@@ -417,6 +419,16 @@ export function createDiagnosePlugin(): LauncherPlugin<void> {
           const versionId = rest.slice(split + 1)
           const result = await content.installVersionById(instanceId, slug, versionId)
           if (!result.ok) return { ok: false, message: `安装失败：${result.error ?? '未知错误'}` }
+          // 修好之后把旧崩溃报告清掉，避免下次诊断还读到同一条旧冲突
+          try {
+            const crashDir = path.join(instance.gameDir, 'crash-reports')
+            if (existsSync(crashDir)) {
+              const newest = newestFile(crashDir)
+              if (newest) rmSync(path.join(crashDir, newest), { force: true })
+            }
+          } catch {
+            /* 忽略 */
+          }
           telemetry.record('diagnose:fix', { instanceId, kind: 'install-version', project: slug })
           log.info('diagnose', '已安装冲突修复版本', { instanceId, slug, versionId })
           return { ok: true, message: `已安装 ${slug} ${result.versionNumber ?? ''}，重新启动试试`, refresh: true }

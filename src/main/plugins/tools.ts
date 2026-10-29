@@ -487,6 +487,25 @@ export function createToolsPlugin(): LauncherPlugin<void> {
     })
 
     register({
+      name: 'reload_plugin',
+      description: '热重载一个已安装的插件（改完代码后让它重新加载；不改变磁盘上的代码）。',
+      parameters: {
+        type: 'object',
+        properties: { id: { type: 'string', description: '插件 id' } },
+        required: ['id'],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const info = await host().reload(str(args.id))
+        return {
+          ok: true,
+          summary: `插件 ${info.id} 已重载。注册工具：${(info.tools ?? []).join(', ') || '无'}；命令：${(info.commands ?? []).join(', ') || '无'}`,
+          data: info,
+        }
+      },
+    })
+
+    register({
       name: 'set_memory',
       description: '设置当前实例的内存分配（MB），范围 512–32768。',
       parameters: {

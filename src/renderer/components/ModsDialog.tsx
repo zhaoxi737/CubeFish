@@ -311,29 +311,55 @@ export function ModsDialog({ instance, onClose, onNotify, onRefresh }: Props) {
         {error ? <div className="warn-box">{error}</div> : null}
 
         <div className="mods-list">
-          {hits.map((hit) => (
-            <div className="mod-row" key={hit.projectId}>
-              {hit.iconUrl ? <img className="mod-icon" src={hit.iconUrl} alt="" /> : <div className="mod-icon" />}
-              <div className="mod-info">
-                <div className="mod-title">
-                  {hit.title} <span className="mod-slug">{hit.slug}</span>
+          {hits.map((hit) => {
+            const gameVersions = hit.gameVersions ?? []
+            const hitLoaders = hit.loaders ?? []
+            const versionOk = !mcVersion || gameVersions.length === 0 || gameVersions.includes(mcVersion)
+            const loaderOk = kind !== 'mod' || !loader || hitLoaders.length === 0 || hitLoaders.includes(loader)
+            const compatible = versionOk && loaderOk
+            const reason = !versionOk
+              ? `它不支持 ${mcVersion}（支持 ${gameVersions.slice(0, 4).join(' / ')}）`
+              : !loaderOk
+                ? `它需要 ${hitLoaders.join(' / ')}，当前实例是 ${loader ?? 'vanilla'}`
+                : ''
+            return (
+              <div className={`mod-row ${compatible ? '' : 'is-incompatible'}`} key={hit.projectId}>
+                {hit.iconUrl ? <img className="mod-icon" src={hit.iconUrl} alt="" /> : <div className="mod-icon" />}
+                <div className="mod-info">
+                  <div className="mod-title">
+                    {hit.title} <span className="mod-slug">{hit.slug}</span>
+                  </div>
+                  <div className="mod-desc">{hit.description}</div>
+                  <div className="mod-compat">
+                    {gameVersions.slice(0, 5).map((version) => (
+                      <span key={`v-${version}`} className={`mini-chip ${version === mcVersion ? 'is-ok' : ''}`}>
+                        {version}
+                      </span>
+                    ))}
+                    {hitLoaders.slice(0, 3).map((item) => (
+                      <span key={`l-${item}`} className={`mini-chip ${item === loader ? 'is-ok' : ''}`}>
+                        {item}
+                      </span>
+                    ))}
+                    {!compatible ? <span className="mini-chip is-bad">不匹配当前实例</span> : null}
+                  </div>
+                  <div className="mod-meta">
+                    {Math.round(hit.downloads / 1000)}k 下载
+                    {hit.categories.length > 0 ? ` · ${hit.categories.slice(0, 3).join(' / ')}` : ''}
+                  </div>
                 </div>
-                <div className="mod-desc">{hit.description}</div>
-                <div className="mod-meta">
-                  {Math.round(hit.downloads / 1000)}k 下载
-                  {hit.categories.length > 0 ? ` · ${hit.categories.slice(0, 3).join(' / ')}` : ''}
-                </div>
+                <button
+                  type="button"
+                  className="primary"
+                  title={reason || '安装与当前实例版本匹配的最新文件'}
+                  onClick={() => void install(hit)}
+                  disabled={busy === hit.projectId || !mcVersion || !compatible}
+                >
+                  {busy === hit.projectId ? '安装中…' : !compatible ? '版本不符' : '安装'}
+                </button>
               </div>
-              <button
-                type="button"
-                className="primary"
-                onClick={() => void install(hit)}
-                disabled={busy === hit.projectId || !mcVersion}
-              >
-                {busy === hit.projectId ? '安装中…' : '安装'}
-              </button>
-            </div>
-          ))}
+            )
+          })}
         </div>
 
         <div className="dialog-foot">

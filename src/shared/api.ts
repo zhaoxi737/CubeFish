@@ -21,9 +21,12 @@ import type {
   InstanceSummary,
   InstalledContent,
   InstallResult,
+  InstallerRunRequest,
+  InstallerRunResult,
   JavaRuntimeInfo,
   LaunchDryRun,
   LaunchResult,
+  LoaderAvailability,
   LogRecord,
   MarketListResult,
   ModpackInspectResult,
@@ -76,6 +79,8 @@ export interface QdoApi {
     list(): Promise<VersionList>
     install(versionId: string): Promise<InstallResult>
     installed(): Promise<string[]>
+    /** P28：取消当前安装任务（中止下载并清理 .part） */
+    cancel(): Promise<{ ok: boolean; cancelled: boolean }>
   }
   java: {
     list(): Promise<JavaRuntimeInfo[]>
@@ -110,6 +115,12 @@ export interface QdoApi {
     fabric(gameVersion: string): Promise<FabricInstallResult>
     neoforge(gameVersion: string): Promise<NeoForgeInstallResult>
     forge(gameVersion: string): Promise<NeoForgeInstallResult>
+    /** P28：列出某版本可用的三种加载器及版本清单 */
+    available(gameVersion: string): Promise<LoaderAvailability>
+  }
+  installer: {
+    /** P28：一键装（原版+加载器并绑定到实例），原子操作 */
+    run(req: InstallerRunRequest): Promise<InstallerRunResult>
   }
   plugins: {
     list(): Promise<PluginInfo[]>

@@ -257,7 +257,122 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
 
     try {
       await wait(2400)
+      // 等首屏的加载器可用性查完（否则主截图会显示"查询中…"）
+      for (let attempt = 0; attempt < 15; attempt += 1) {
+        const ready = (await win.webContents.executeJavaScript(
+          `(() => {
+            const notes = [...document.querySelectorAll('.dl-loader-note')].map((el) => el.textContent ?? '')
+            return notes.length > 0 && !notes.some((text) => text.includes('查询中'))
+          })()`,
+        )) as boolean
+        if (ready) break
+        await wait(1000)
+      }
+      await wait(400)
       const firstShot = await shot('smoke.png')
+
+      // ---- P28：先收起所有弹窗，回到主界面 ----
+      await win.webContents.executeJavaScript(
+        `(() => {
+          for (let i = 0; i < 4; i += 1) {
+            const btn = [...document.querySelectorAll('.dialog-head button')].find((b) => b.textContent?.trim() === '关闭')
+            if (btn) btn.click()
+          }
+          return document.querySelectorAll('.overlay').length
+        })()`,
+      )
+      await wait(800)
+
+      // ---- P28：加载器可用性面板 ----
+      const loaderPicked = (await win.webContents.executeJavaScript(
+        `(() => {
+          const sel = document.querySelector('.dl-select')
+          if (!sel) return 'no-select'
+          const target = [...sel.options].find((option) => option.value === '1.20.1') ?? [...sel.options][0]
+          if (!target) return 'empty'
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set
+          setter.call(sel, target.value)
+          sel.dispatchEvent(new Event('change', { bubbles: true }))
+          return target.value
+        })()`,
+      )) as string
+      // 等加载器可用性查完（首次要打 3 个上游接口，最多等 12 秒）
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        const ready = (await win.webContents.executeJavaScript(
+          `![...document.querySelectorAll('.dl-loader-note')].some((el) => (el.textContent ?? '').includes('查询中'))`,
+        )) as boolean
+        if (ready) break
+        await wait(1000)
+      }
+      await wait(600)
+      const loaderShot = await shot('smoke-loader.png')
+      const loaderInfo = (await win.webContents.executeJavaScript(
+        `JSON.stringify({
+          picked: ${JSON.stringify(loaderPicked)},
+          cards: [...document.querySelectorAll('.dl-loader')].map((el) => (el.textContent ?? '').trim().replace(/\\s+/g, ' ')),
+          install: document.querySelector('.dl-go')?.textContent ?? ''
+        })`,
+      )) as string
+      await win.webContents.executeJavaScript(
+        `(() => { const card = [...document.querySelectorAll('.dl-loader')].find((el) => (el.textContent ?? '').includes('Fabric')); card?.click(); return 'fabric-picked' })()`,
+      )
+      await wait(700)
+      const loaderDetail = (await win.webContents.executeJavaScript(
+        `JSON.stringify({
+          loaderVersion: document.querySelector('.dl-select-narrow')?.value ?? '',
+          install: document.querySelector('.dl-go')?.textContent ?? ''
+        })`,
+      )) as string
+      console.log('SMOKE_STEP loaders-done')
+
+      // ---- P28：PCL 式下载进度（真下载 6 秒后取消） ----
+      const downloadPicked = (await win.webContents.executeJavaScript(
+        `(() => {
+          const sel = document.querySelector('.dl-select')
+          if (!sel) return 'no-select'
+          const next = [...sel.options].find((option) => !(option.textContent ?? '').includes('✓'))
+          if (!next) return 'none'
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set
+          setter.call(sel, next.value)
+          sel.dispatchEvent(new Event('change', { bubbles: true }))
+          return next.value
+        })()`,
+      )) as string
+      // 等这个版本的加载器可用性查完、安装按钮可点（首次要打上游接口）
+      let downloadStart = 'disabled'
+      for (let attempt = 0; attempt < 15; attempt += 1) {
+        await wait(1000)
+        downloadStart = (await win.webContents.executeJavaScript(
+          `(() => { const btn = document.querySelector('.dl-go'); if (!btn || btn.disabled) return 'disabled'; btn.click(); return 'clicked' })()`,
+        )) as string
+        if (downloadStart === 'clicked') break
+      }
+      await wait(6500)
+      const downloadSnap = (await win.webContents.executeJavaScript(
+        `JSON.stringify({
+          title: document.querySelector('.progress-title')?.textContent ?? '',
+          pct: document.querySelector('.progress-pct')?.textContent ?? '',
+          facts: document.querySelector('.progress-facts')?.textContent ?? '',
+          current: document.querySelector('.progress-current code')?.textContent ?? '',
+          stages: [...document.querySelectorAll('.progress-stage')].map((el) => (el.textContent ?? '').trim().replace(/\\s+/g, ' '))
+        })`,
+      )) as string
+      // 滚到底，让进度卡完整入镜（中间列现在内容多、可滚动）
+      await win.webContents.executeJavaScript(
+        `(() => { const el = document.querySelector('.stage'); if (el) el.scrollTop = el.scrollHeight; return 'scrolled' })()`,
+      )
+      await wait(500)
+      const downloadShot = await shot('smoke-download.png')
+      const cancelClicked = (await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.progress-actions button')].find((el) => (el.textContent ?? '').includes('取消')); if (!btn) return 'no-cancel'; btn.click(); return 'clicked' })()`,
+      )) as string
+      await wait(3000)
+      const cancelInfo = (await win.webContents.executeJavaScript(
+        `JSON.stringify({ title: document.querySelector('.progress-title')?.textContent ?? '', toast: document.querySelector('.toast')?.textContent ?? '' })`,
+      )) as string
+      console.log('SMOKE_STEP download-done')
+      // 等进度卡/取消提示自己收起，后面的截图别带着它
+      await wait(8000)
 
       // 版本管理：打开面板截图 → UI 重命名来回一次 → 读取目录信息
       await win.webContents.executeJavaScript(
@@ -308,21 +423,19 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
         const restored = await set('默认实例')
         return { renamed: JSON.parse(renamed), restored: JSON.parse(restored) }
       })()
+      // 实例导出：版本管理里点某一行的「导出」（保存对话框用环境变量跳过，便于自动化）
+      process.env.QDOQMC_SAVE_FILE = path.join(dir, 'smoke-export.zip')
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.vm-row button')].find((b) => b.textContent?.trim() === '导出'); btn?.click(); return 'export-clicked' })()`,
+      )
+      await wait(1600)
+      const exportInfo = (await win.webContents.executeJavaScript(
+        `JSON.stringify({ toast: document.querySelector('.toast')?.textContent ?? '' })`,
+      )) as string
       await win.webContents.executeJavaScript(
         `(() => { const btn = [...document.querySelectorAll('.dialog-head button')].find((b) => b.textContent?.trim() === '关闭'); btn?.click(); return 'versions-closed' })()`,
       )
       await wait(500)
-
-      // 实例导出：点主页「导出」按钮（保存对话框用环境变量跳过，便于自动化）
-      process.env.QDOQMC_SAVE_FILE = path.join(dir, 'smoke-export.zip')
-      // 记录 toast 与产物
-      await win.webContents.executeJavaScript(
-        `(() => { const btn = [...document.querySelectorAll('.version-sidebar button')].find((b) => b.textContent?.trim() === '导出'); btn?.click(); return 'export-clicked' })()`,
-      )
-      await wait(1200)
-      const exportInfo = (await win.webContents.executeJavaScript(
-        `JSON.stringify({ toast: document.querySelector('.toast')?.textContent ?? '' })`,
-      )) as string
       const exportDir = path.join(process.env.APPDATA ?? '', 'QDOQMC', 'exports')
       let exportFiles: string[] = []
       try {
@@ -625,6 +738,7 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
         `JSON.stringify({ active: document.querySelector('.ver-card.is-active .ver-card-name')?.textContent ?? '', toast: document.querySelector('.toast')?.textContent ?? '', cards: document.querySelectorAll('.ver-card').length })`,
       )) as string
 
+
       const info = k.ctx.get('appMeta') as { version?: string } | undefined
       console.log(
         `SMOKE_RESULT ${JSON.stringify({
@@ -647,6 +761,14 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           gameLog: { info: JSON.parse(gameLogInfo), screenshot: gameLogShot },
           instanceExport: { info: JSON.parse(exportInfo), files: exportFiles, saved: exportFromDialog },
           versions: { info: JSON.parse(versionInfo), folders: JSON.parse(foldersInfo), rename: renameResult, screenshot: versionShot },
+          loaders: { info: JSON.parse(loaderInfo), detail: JSON.parse(loaderDetail), screenshot: loaderShot },
+          download: {
+            picked: downloadPicked,
+            start: downloadStart,
+            snapshot: JSON.parse(downloadSnap),
+            cancel: { clicked: cancelClicked, ui: JSON.parse(cancelInfo) },
+            screenshot: downloadShot,
+          },
           sidebar: JSON.parse(switchInfo),
           chatStatus: chat,
         })}`,

@@ -28,6 +28,8 @@ export const DEFAULT_SETTINGS: SettingsShape = {
   msClientId: '',
   curseforgeApiKey: '',
   autoCheckUpdate: true,
+  downloadSource: 'auto',
+  downloadThreads: 4,
 }
 
 const MASKED_KEYS: (keyof SettingsShape)[] = ['apiKey']
@@ -109,6 +111,12 @@ function sanitize(input: Partial<SettingsShape>): Partial<SettingsShape> {
   if (typeof input.curseforgeApiKey === 'string') out.curseforgeApiKey = input.curseforgeApiKey.trim()
   if (typeof input.memoryMb === 'number' && Number.isFinite(input.memoryMb)) {
     out.memoryMb = Math.min(32768, Math.max(512, Math.round(input.memoryMb)))
+  }
+  if (input.downloadSource === 'auto' || input.downloadSource === 'official' || input.downloadSource === 'bmclapi') {
+    out.downloadSource = input.downloadSource
+  }
+  if (typeof input.downloadThreads === 'number' && Number.isFinite(input.downloadThreads)) {
+    out.downloadThreads = Math.min(16, Math.max(1, Math.round(input.downloadThreads)))
   }
   return out
 }

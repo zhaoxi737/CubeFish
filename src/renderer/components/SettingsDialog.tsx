@@ -93,6 +93,8 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
       await onSave({
         updateFeedUrl: draft.updateFeedUrl,
         autoCheckUpdate: draft.autoCheckUpdate,
+        downloadSource: draft.downloadSource,
+        downloadThreads: draft.downloadThreads,
         telemetry: draft.telemetry,
         memoryMb: draft.memoryMb,
         playerName: draft.playerName,
@@ -142,6 +144,34 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
               onChange={(event) => update('autoCheckUpdate', event.target.checked)}
             />
             <span>启动时自动检查更新</span>
+          </label>
+
+          <div className="settings-group-title">下载</div>
+          <label className="field">
+            <span className="field-label">下载源</span>
+            <select
+              value={draft.downloadSource}
+              onChange={(event) => update('downloadSource', event.target.value as SettingsShape['downloadSource'])}
+            >
+              <option value="auto">自动（推荐：先测速，再选快的那个）</option>
+              <option value="bmclapi">国内镜像 BMCLAPI（国内网络明显更快）</option>
+              <option value="official">Mojang 官方源（海外网络更快）</option>
+            </select>
+            <span className="field-hint">
+              游戏本体、库文件、贴图音效都从这里下。PCL 下载快，很大一部分就是默认走国内镜像 + 多线程分片——这里也是同样的做法。
+            </span>
+          </label>
+
+          <label className="field">
+            <span className="field-label">单文件分片线程数</span>
+            <input
+              type="number"
+              min={1}
+              max={16}
+              value={draft.downloadThreads}
+              onChange={(event) => update('downloadThreads', Math.max(1, Math.min(16, Number(event.target.value) || 4)))}
+            />
+            <span className="field-hint">大文件会切成几段同时下。1–2 省带宽，4–8 更快；网络差或镜像限速时调小。</span>
           </label>
 
           <div className="settings-group-title">游戏与启动</div>

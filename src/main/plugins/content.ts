@@ -44,6 +44,8 @@ interface RawSearchHit {
   downloads: number
   icon_url?: string
   versions: string[]
+  /** Modrinth /search 返回的加载器列表（P28 新增映射） */
+  loaders?: string[]
 }
 
 interface RawVersion {
@@ -181,6 +183,9 @@ export function createContentPlugin(): LauncherPlugin<void> {
         downloads: hit.downloads ?? 0,
         iconUrl: hit.icon_url,
         versions: hit.versions ?? [],
+        // P28：前端「支持 1.20.1 · Fabric」chips
+        gameVersions: hit.versions ?? [],
+        loaders: hit.loaders ?? [],
       }))
     }
 

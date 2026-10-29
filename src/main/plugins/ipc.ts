@@ -23,9 +23,12 @@ import type {
   FixResult,
   InstanceSummary,
   InstalledContent,
+  InstallerRunRequest,
+  InstallerRunResult,
   JavaRuntimeInfo,
   LaunchDryRun,
   LaunchResult,
+  LoaderAvailability,
   LogRecord,
   MarketListResult,
   PluginInfo,
@@ -45,6 +48,7 @@ import type { DiagnoseService } from './diagnose'
 import type { EntitlementService } from './entitlement'
 import type { IdentityService } from './identity'
 import type { InstancesService } from './instances'
+import type { InstallerService } from './installer'
 import type { JavaService } from './java'
 import type { LaunchService } from './launch'
 import type { LoadersService } from './loaders'
@@ -84,6 +88,7 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     const java = use<JavaService>(ctx, 'java')
     const launch = use<LaunchService>(ctx, 'launch')
     const loaders = use<LoadersService>(ctx, 'loaders')
+    const installer = use<InstallerService>(ctx, 'installer')
     const content = use<ContentService>(ctx, 'content')
     const conflict = use<ConflictService>(ctx, 'conflict')
     const diagnose = use<DiagnoseService>(ctx, 'diagnose')
@@ -213,6 +218,7 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
       return result
     })
     handle<string[]>(CH.versionsInstalled, () => mojang.installed())
+    handle<{ ok: boolean; cancelled: boolean }>(CH.versionCancel, () => mojang.cancel())
     handle<JavaRuntimeInfo[]>(CH.javaList, () => java.detect())
     handle<LaunchResult>(CH.launchStart, (instanceId?: string) => launch.start(instanceId ?? 'default'))
     handle(CH.launchStop, () => launch.stop())
@@ -281,6 +287,9 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
       }
       return result
     })
+
+    handle<LoaderAvailability>(CH.loaderAvailable, (gameVersion: string) => loaders.available(gameVersion))
+    handle<InstallerRunResult>(CH.installerRun, (req: InstallerRunRequest) => installer.run(req))
 
     log.info('ipc', 'IPC 通道已注册', { count: Object.keys(CH).length })
   })

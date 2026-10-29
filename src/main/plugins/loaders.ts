@@ -4,7 +4,13 @@
  */
 import { existsSync } from 'node:fs'
 import path from 'node:path'
-import type { FabricInstallResult, NeoForgeInstallResult, TaskProgress } from '../../shared/types'
+import type {
+  FabricInstallResult,
+  LoaderAvailability,
+  LoaderChoice,
+  NeoForgeInstallResult,
+  TaskProgress,
+} from '../../shared/types'
 import { Downloader, type DownloadSpec } from '../lib/downloader'
 import { runOfficialInstaller } from '../lib/forge-installer'
 import { ensureDir, readJson, writeJsonAtomic } from '../lib/fsx'
@@ -35,10 +41,12 @@ interface FabricProfile {
 
 export interface LoadersService {
   fabricVersions(gameVersion: string): Promise<{ version: string; stable: boolean }[]>
-  installFabric(gameVersion: string): Promise<FabricInstallResult>
+  installFabric(gameVersion: string, versionOverride?: string): Promise<FabricInstallResult>
   neoforgeVersions(gameVersion: string): Promise<string[]>
   installNeoForge(gameVersion: string, versionOverride?: string): Promise<NeoForgeInstallResult>
   installForge(gameVersion: string, versionOverride?: string): Promise<NeoForgeInstallResult>
+  /** P28：列出某版本可用的三种加载器及版本清单（单个来源失败不抛错） */
+  available(gameVersion: string): Promise<LoaderAvailability>
   setProgressSink(sink: ((progress: TaskProgress) => void) | null): void
 }
 
@@ -68,9 +76,24 @@ export function createLoadersPlugin(): LauncherPlugin<void> {
     let sink: ((progress: TaskProgress) => void) | null = null
 
     async function getJson<T>(url: string): Promise<T> {
-      const res = await fetch(url, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(20_000) })
-      if (!res.ok) throw new Error(`Fabric meta 请求失败: HTTP ${res.status} ${url}`)
-      return (await res.json()) as T
+      const text = await fetchText(url)
+      return JSON.parse(text) as T
+    }
+
+    /** 元数据请求偶发 `fetch failed`（DNS/连接抖动），重试 3 次避免面板少显示版本。 */
+    async function fetchText(url: string): Promise<string> {
+      let lastError: unknown
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          const res = await fetch(url, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(20_000) })
+          if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`)
+          return await res.text()
+        } catch (err) {
+          lastError = err
+          if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 400 * attempt))
+        }
+      }
+      throw lastError instanceof Error ? lastError : new Error(String(lastError))
     }
 
     async function fabricVersions(gameVersion: string): Promise<{ version: string; stable: boolean }[]> {
@@ -78,7 +101,7 @@ export function createLoadersPlugin(): LauncherPlugin<void> {
       return list.map((entry) => ({ version: entry.loader.version, stable: entry.loader.stable }))
     }
 
-    async function installFabric(gameVersion: string): Promise<FabricInstallResult> {
+    async function installFabric(gameVersion: string, versionOverride?: string): Promise<FabricInstallResult> {
       try {
         const taskId = `fabric-${gameVersion}-${Date.now()}`
         const emit = (stage: string, done: number, total: number, bytes = 0, message?: string) =>
@@ -92,11 +115,16 @@ export function createLoadersPlugin(): LauncherPlugin<void> {
           if (!baseResult.ok) return { ok: false, gameVersion, error: `原版安装失败：${baseResult.error}` }
         }
 
-        // 2) 选 loader 版本（优先 stable）
+        // 2) 选 loader 版本（显式指定优先，否则 stable → 最新）
         emit('libraries', 0, 1, 0, '查询 Fabric loader 版本')
         const loaders = await fabricVersions(gameVersion)
         if (loaders.length === 0) return { ok: false, gameVersion, error: `Fabric 不支持 ${gameVersion}` }
-        const chosen = loaders.find((entry) => entry.stable) ?? loaders[0]
+        const chosen = versionOverride
+          ? (loaders.find((entry) => entry.version === versionOverride) ?? {
+              version: versionOverride,
+              stable: false,
+            })
+          : (loaders.find((entry) => entry.stable) ?? loaders[0])
 
         // 3) 拉 profile json
         const profile = await getJson<FabricProfile>(
@@ -158,12 +186,7 @@ export function createLoadersPlugin(): LauncherPlugin<void> {
     async function neoforgeVersions(mcVersion: string): Promise<string[]> {
       const prefix = neoforgePrefix(mcVersion)
       if (!prefix) return []
-      const res = await fetch(`${NEOFORGE_MAVEN}/maven-metadata.xml`, {
-        headers: { 'user-agent': UA },
-        signal: AbortSignal.timeout(20_000),
-      })
-      if (!res.ok) throw new Error(`NeoForge 版本列表获取失败：HTTP ${res.status}`)
-      const xml = await res.text()
+      const xml = await fetchText(`${NEOFORGE_MAVEN}/maven-metadata.xml`)
       const all = [...xml.matchAll(/<version>([^<]+)<\/version>/g)].map((match) => match[1])
       const numeric = (value: string) => value.split(/[.-]/).map((part) => Number.parseInt(part, 10) || 0)
       return all
@@ -349,12 +372,144 @@ export function createLoadersPlugin(): LauncherPlugin<void> {
       }
     }
 
+    /* ---------- P28：加载器可用性清单 ---------- */
+
+    let promosCache: { at: number; table: Record<string, string> } | undefined
+
+    async function forgePromos(): Promise<Record<string, string>> {
+      if (promosCache && Date.now() - promosCache.at < 10 * 60 * 1000) return promosCache.table
+      const text = await fetchText(FORGE_PROMOS)
+      const data = JSON.parse(text) as { promos?: Record<string, string> }
+      promosCache = { at: Date.now(), table: data.promos ?? {} }
+      return promosCache.table
+    }
+
+    /** Forge maven 里 `<gv>-<build>` 的 build 列表，新→旧。 */
+    async function forgeMavenVersions(gameVersion: string): Promise<string[]> {
+      const xml = await fetchText(`${FORGE_MAVEN}/maven-metadata.xml`)
+      const prefix = `${gameVersion}-`
+      const all = [...xml.matchAll(/<version>([^<]+)<\/version>/g)]
+        .map((match) => match[1])
+        .filter((version) => version.startsWith(prefix))
+        .map((version) => version.slice(prefix.length))
+        .filter((version) => /^\d/.test(version))
+      const numeric = (value: string) => value.split('.').map((part) => Number.parseInt(part, 10) || 0)
+      return all.sort((a, b) => {
+        const pa = numeric(a)
+        const pb = numeric(b)
+        for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+          const diff = (pb[i] ?? 0) - (pa[i] ?? 0)
+          if (diff !== 0) return diff
+        }
+        return 0
+      })
+    }
+
+    async function forgeChoice(gameVersion: string): Promise<LoaderChoice> {
+      let promos: Record<string, string> | undefined
+      let mavenError: unknown
+      let versions: string[] = []
+      try {
+        promos = await forgePromos()
+      } catch (err) {
+        log.warn('loaders', 'Forge promotions 查询失败，回退 maven 元数据', { gameVersion, error: String(err) })
+      }
+      try {
+        versions = await forgeMavenVersions(gameVersion)
+      } catch (err) {
+        mavenError = err
+      }
+      if (!promos && versions.length === 0) {
+        throw mavenError instanceof Error ? mavenError : new Error('Forge 版本来源不可用')
+      }
+      const recommended = promos?.[`${gameVersion}-recommended`] ?? promos?.[`${gameVersion}-latest`]
+      const latest = promos?.[`${gameVersion}-latest`]
+      for (const value of [latest, recommended]) {
+        if (value && !versions.includes(value)) versions.unshift(value)
+      }
+      if (versions.length === 0) {
+        return { loader: 'forge', versions: [], note: `Forge 没有支持 ${gameVersion} 的版本` }
+      }
+      return {
+        loader: 'forge',
+        versions: versions.slice(0, 20),
+        recommended: recommended ?? versions[0],
+      }
+    }
+
+    /** 三种加载器可用版本清单；单个来源失败只在该项 note 里提示，不整体抛错。 */
+    async function available(gameVersion: string): Promise<LoaderAvailability> {
+      let release = false
+      let javaMajor: number | undefined
+      try {
+        const all = await mojang.list('all')
+        release = all.versions.find((entry) => entry.id === gameVersion)?.type === 'release'
+      } catch (err) {
+        log.warn('loaders', '版本清单查询失败（可用性面板降级）', { gameVersion, error: String(err) })
+      }
+      try {
+        const json = await mojang.versionJson(gameVersion)
+        javaMajor = json.javaVersion?.majorVersion
+      } catch (err) {
+        log.warn('loaders', '版本 JSON 查询失败（可用性面板降级）', { gameVersion, error: String(err) })
+      }
+
+      const choices: LoaderChoice[] = []
+
+      // Fabric：过滤 beta，保留历史正式版（stable 只用于 recommended，不能当唯一版本）
+      try {
+        const list = await fabricVersions(gameVersion)
+        const versions = list
+          .map((entry) => entry.version)
+          .filter((version) => !version.includes('-beta'))
+          .slice(0, 20)
+        const stable = list.find((entry) => entry.stable && !entry.version.includes('-beta'))?.version
+        choices.push(
+          versions.length > 0
+            ? { loader: 'fabric', versions, recommended: stable ?? versions[0] }
+            : { loader: 'fabric', versions: [], note: 'Fabric 没有可用版本' },
+        )
+      } catch {
+        choices.push({ loader: 'fabric', versions: [], note: '查询失败，可稍后重试' })
+      }
+
+      // Forge
+      try {
+        choices.push(await forgeChoice(gameVersion))
+      } catch {
+        choices.push({ loader: 'forge', versions: [], note: '查询失败，可稍后重试' })
+      }
+
+      // NeoForge：1.20.2 起才有客户端构建（更早走 Forge，不出现该项）
+      if (neoforgePrefix(gameVersion)) {
+        try {
+          const versions = (await neoforgeVersions(gameVersion)).reverse().slice(0, 20)
+          choices.push(
+            versions.length > 0
+              ? { loader: 'neoforge', versions, recommended: versions[0] }
+              : { loader: 'neoforge', versions: [], note: `NeoForge 没有支持 ${gameVersion} 的版本` },
+          )
+        } catch {
+          choices.push({ loader: 'neoforge', versions: [], note: '查询失败，可稍后重试' })
+        }
+      }
+
+      log.info('loaders', '加载器可用性查询完成', {
+        gameVersion,
+        release,
+        javaMajor,
+        loaders: choices.map((choice) => `${choice.loader}:${choice.versions.length}`),
+      })
+      return { gameVersion, release, javaMajor, loaders: choices }
+    }
+
     ctx.provide('loaders', {
       fabricVersions,
       installFabric,
       neoforgeVersions,
       installNeoForge,
       installForge,
+      available,
       readProfile,
       setProgressSink: (next) => {
         sink = next

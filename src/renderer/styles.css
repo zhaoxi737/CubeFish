@@ -2018,3 +2018,524 @@ body {
   padding: 8px 11px;
   font-size: 12px;
 }
+
+/* ============================================================
+   P28：下载面板 + PCL 式进度卡 + 兼容性 chips
+   ============================================================ */
+
+.dl-panel {
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, rgba(20, 28, 38, 0.92), rgba(15, 20, 27, 0.96));
+  border: 2px solid rgba(77, 107, 254, 0.28);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.04), 0 6px 18px rgba(0, 0, 0, 0.35);
+  border-radius: 4px;
+}
+
+.dl-panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dl-panel-title {
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #bff0a0;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+}
+
+.dl-panel-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dl-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dl-row-top {
+  align-items: flex-start;
+}
+
+.dl-label {
+  width: 84px;
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: #9fb3c8;
+}
+
+.dl-select {
+  flex: 0 0 auto;
+  min-width: 190px;
+  padding: 8px 10px;
+  background: #0b1016;
+  color: var(--text);
+  border: 2px solid var(--border);
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.dl-select:focus {
+  outline: none;
+  border-color: rgba(126, 217, 87, 0.6);
+}
+
+.dl-select-narrow {
+  min-width: 170px;
+}
+
+.dl-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.dl-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid rgba(126, 217, 87, 0.35);
+  border-radius: 2px;
+  color: #8fd47a;
+}
+
+.dl-badge.is-ok {
+  background: rgba(126, 217, 87, 0.14);
+}
+
+.dl-badge.is-warn {
+  border-color: rgba(251, 191, 36, 0.45);
+  color: var(--warn);
+}
+
+.dl-hint {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.dl-hint-right {
+  margin-left: auto;
+}
+
+.dl-warn {
+  font-size: 12px;
+  color: var(--warn);
+}
+
+.dl-loaders {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.dl-loader {
+  text-align: left;
+  padding: 8px 10px;
+  background: #0b1016;
+  border: 2px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  transition: border-color 0.12s, transform 0.12s;
+}
+
+.dl-loader:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(77, 107, 254, 0.55);
+}
+
+.dl-loader.is-active {
+  border-color: #7ed957;
+  background: rgba(126, 217, 87, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(126, 217, 87, 0.28);
+}
+
+.dl-loader.is-off {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.dl-loader-name {
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.dl-loader-name em {
+  font-style: normal;
+  font-size: 11px;
+  color: #9fd3ff;
+}
+
+.dl-loader-note {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.dl-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-top: 1px dashed rgba(77, 107, 254, 0.22);
+  padding-top: 10px;
+}
+
+.dl-go {
+  padding: 10px 18px;
+  font-size: 13px;
+}
+
+/* ---- PCL 式进度卡 ---- */
+
+.progress-card {
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, rgba(16, 23, 32, 0.96), rgba(11, 16, 22, 0.98));
+  border: 2px solid rgba(77, 107, 254, 0.3);
+  border-radius: 4px;
+}
+
+.progress-card.is-done {
+  border-color: rgba(126, 217, 87, 0.5);
+}
+
+.progress-card.is-cancelled {
+  border-color: rgba(248, 113, 113, 0.45);
+}
+
+.progress-card .progress-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.progress-title {
+  font-size: 13px;
+  color: #cfe6ff;
+}
+
+.progress-pct {
+  font-size: 22px;
+  font-weight: 800;
+  color: #7ed957;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-facts {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: #a9bccd;
+}
+
+.progress-facts .sep {
+  color: #3d4d5e;
+}
+
+.progress-source {
+  color: #9fd3ff;
+}
+
+.progress-current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--muted);
+  overflow: hidden;
+}
+
+.progress-current-label {
+  flex: 0 0 auto;
+  color: #7ed957;
+}
+
+.progress-current code {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-stages {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.progress-stage {
+  display: grid;
+  grid-template-columns: 18px 96px 124px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #7e8fa1;
+}
+
+.progress-stage .stage-icon {
+  color: #4a5a6b;
+  font-size: 11px;
+}
+
+.progress-stage .stage-detail {
+  font-variant-numeric: tabular-nums;
+  color: #93a5b7;
+}
+
+.progress-stage .stage-hint {
+  font-size: 11px;
+  color: #5f7081;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-stage.stage-done {
+  color: #9fd3ff;
+}
+
+.progress-stage.stage-done .stage-icon {
+  color: #7ed957;
+}
+
+.progress-stage.stage-running {
+  color: #e6edf3;
+}
+
+.progress-stage.stage-running .stage-icon {
+  color: #7ed957;
+  animation: qdo-pulse 1s ease-in-out infinite;
+}
+
+@keyframes qdo-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.progress-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* ---- 兼容性 chips ---- */
+
+.mod-compat {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin: 3px 0 2px;
+}
+
+.mini-chip {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  color: #8b9bab;
+  background: rgba(255, 255, 255, 0.02);
+  letter-spacing: 0.2px;
+}
+
+.mini-chip.is-ok {
+  color: #9ff08a;
+  border-color: rgba(126, 217, 87, 0.45);
+  background: rgba(126, 217, 87, 0.12);
+}
+
+.mini-chip.is-bad {
+  color: #fca5a5;
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.1);
+}
+
+.mod-row.is-incompatible {
+  opacity: 0.68;
+}
+
+.mod-row.is-incompatible .mod-desc {
+  color: #6f7f8f;
+}
+
+/* ============================================================
+   P28：ComfyUI 生成的美术资源（背景 + 大肥鱼）
+   资源缺失时：背景不显示、图片回退 SVG，不会破图
+   ============================================================ */
+
+.app {
+  position: relative;
+  isolation: isolate;
+}
+
+.app::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: url('./assets/bg-hero.png') center bottom / cover no-repeat;
+  opacity: 0.15;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: url('./assets/tile-grass.png') repeat;
+  background-size: 176px;
+  opacity: 0.04;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app > * {
+  position: relative;
+  z-index: 1;
+}
+
+.app > .app-companion {
+  position: fixed;
+  right: -34px;
+  bottom: -26px;
+  z-index: 0;
+  opacity: 0.1;
+  pointer-events: none;
+  filter: saturate(1.15) drop-shadow(0 0 24px rgba(77, 107, 254, 0.4));
+}
+
+.mascot-img {
+  object-fit: contain;
+  flex: 0 0 auto;
+  filter: drop-shadow(0 2px 5px rgba(11, 16, 22, 0.45));
+}
+
+.brand .brand-fish.mascot-img {
+  width: 34px;
+  height: 34px;
+}
+
+.launch .launch-fish.mascot-img {
+  margin-left: auto;
+  width: 26px;
+  height: 26px;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35));
+}
+
+.stage-companion {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  opacity: 0.9;
+  pointer-events: none;
+  filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.55));
+  z-index: 0;
+}
+
+/* P28：下载面板 + 进度卡让中间列变高，改成可滚动，别把进度卡裁掉 */
+.stage {
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 18px 24px 14px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.stage::-webkit-scrollbar {
+  width: 8px;
+}
+
+.stage::-webkit-scrollbar-thumb {
+  background: rgba(77, 107, 254, 0.32);
+  border-radius: 4px;
+}
+
+.stage-chips {
+  flex: 0 0 auto;
+}
+
+.dl-panel {
+  padding: 12px 14px;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.dl-panel-sub {
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.dl-row {
+  gap: 8px;
+}
+
+.dl-loader {
+  padding: 6px 8px;
+  gap: 2px;
+}
+
+.dl-loader-name {
+  font-size: 12.5px;
+}
+
+.dl-loader-note {
+  font-size: 10.5px;
+}
+
+.dl-foot {
+  padding-top: 8px;
+}
+
+.progress-card {
+  padding: 10px 12px;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.progress-stages {
+  gap: 2px;
+}
+
+.progress-stage {
+  font-size: 11.5px;
+}
+
+.progress-actions {
+  margin-top: 0;
+}
+
+.launch {
+  flex: 0 0 auto;
+}
+
+

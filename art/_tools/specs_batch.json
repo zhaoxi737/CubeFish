@@ -1,0 +1,44 @@
+[
+  {
+    "ckpt": "anything-v5-PrtRE.safetensors",
+    "pos": "chibi mascot character, one very chubby round blue whale, deepseek brand blue color, big cute shiny eyes, small fins, kawaii, flat color illustration, clean bold outlines, simple cel shading, solo, full body, centered, isolated on pure white background, no humans",
+    "neg": "text, watermark, signature, blurry, photo, 3d render, realistic, detailed background, multiple characters, cropped, deformed, ugly, jpeg artifacts, human, person, dark background",
+    "width": 512,
+    "height": 512,
+    "seed": 20261029,
+    "steps": 22,
+    "cfg": 7.0,
+    "sampler": "euler_ancestral",
+    "scheduler": "normal",
+    "prefix": "qdoqmc",
+    "out": "D:\\QDOQMC\\art\\_tools\\raw\\mascot.png"
+  },
+  {
+    "ckpt": "anything-v5-PrtRE.safetensors",
+    "pos": "green grass texture, top view, pixel art, 16-bit, seamless tileable background, flat grass field, uniform small grass pixels, bright green with darker green tufts, background texture, evenly distributed, no objects, no text",
+    "neg": "text, watermark, signature, blurry, photo, 3d render, realistic, jpeg artifacts, cube, isometric, 3d block, object, icon, border, frame, blank margins, perspective, horizon, landscape, terrain, ring, circle, diamond, logo, centered object, single object",
+    "width": 512,
+    "height": 512,
+    "seed": 20261050,
+    "steps": 24,
+    "cfg": 7.0,
+    "sampler": "euler_ancestral",
+    "scheduler": "normal",
+    "prefix": "qdoqmc_tile",
+    "out": "D:\\QDOQMC\\art\\_tools\\raw\\tile.png"
+  },
+  {
+    "ckpt": "anything-v5-PrtRE.safetensors",
+    "pos": "pixel art landscape, wide shot, dusk golden hour, blocky voxel world hills, minecraft style terrain, grass blocks, square pixel clouds in sky, distant mountains, flat shading, 16-bit, low contrast, dark muted blue and teal palette, calm evening sky, left side empty sky with no objects for text, cinematic wide composition, no text",
+    "neg": "text, watermark, signature, blurry, photo, 3d render, realistic, jpeg artifacts, bright saturated colors, busy composition, characters, people, ui, hdr, lens flare, high contrast, black background",
+    "width": 1024,
+    "height": 576,
+    "seed": 20261031,
+    "steps": 24,
+    "cfg": 6.5,
+    "sampler": "euler_ancestral",
+    "scheduler": "normal",
+    "prefix": "qdoqmc_bg",
+    "out": "D:\\QDOQMC\\art\\_tools\\raw\\bg.png"
+  }
+]

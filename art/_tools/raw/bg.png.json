@@ -1,0 +1,18 @@
+{
+  "ckpt": "anything-v5-PrtRE.safetensors",
+  "pos": "pixel art landscape, wide shot, dusk golden hour, blocky voxel world hills, minecraft style terrain, grass blocks, square pixel clouds in sky, distant mountains, flat shading, 16-bit, low contrast, dark muted blue and teal palette, calm evening sky, left side empty sky with no objects for text, cinematic wide composition, no text",
+  "neg": "text, watermark, signature, blurry, photo, 3d render, realistic, jpeg artifacts, bright saturated colors, busy composition, characters, people, ui, hdr, lens flare, high contrast, black background",
+  "width": 1024,
+  "height": 576,
+  "seed": 20261031,
+  "steps": 24,
+  "cfg": 6.5,
+  "sampler": "euler_ancestral",
+  "scheduler": "normal",
+  "loras": [],
+  "seconds": 83.1,
+  "prompt_id": "dd1320e3-224c-4113-aa45-55148b25582b",
+  "bytes": 536357,
+  "output": "D:\\QDOQMC\\art\\_tools\\test_bg.png",
+  "comfy_filename": "qdoqmc_bg_00001_.png"
+}

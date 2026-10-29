@@ -1,0 +1,18 @@
+{
+  "ckpt": "anything-v5-PrtRE.safetensors",
+  "pos": "green grass texture, top view, pixel art, 16-bit, seamless tileable background, flat grass field, uniform small grass pixels, bright green with darker green tufts, background texture, evenly distributed, no objects, no text",
+  "neg": "text, watermark, signature, blurry, photo, 3d render, realistic, jpeg artifacts, cube, isometric, 3d block, object, icon, border, frame, blank margins, perspective, horizon, landscape, terrain, ring, circle, diamond, logo, centered object, single object",
+  "width": 512,
+  "height": 512,
+  "seed": 20261050,
+  "steps": 24,
+  "cfg": 7.0,
+  "sampler": "euler_ancestral",
+  "scheduler": "normal",
+  "loras": [],
+  "seconds": 30.3,
+  "prompt_id": "879433be-d94a-4bd9-8b98-1196e9fbe616",
+  "bytes": 623003,
+  "output": "D:\\QDOQMC\\art\\_tools\\test_tile5.png",
+  "comfy_filename": "qdoqmc_tile_00008_.png"
+}

@@ -11,6 +11,7 @@ import { createDiagnosePlugin } from './plugins/diagnose'
 import { createEntitlementPlugin } from './plugins/entitlement'
 import { createIdentityPlugin } from './plugins/identity'
 import { createInstancesPlugin } from './plugins/instances'
+import { createInstallerPlugin } from './plugins/installer'
 import { createIpcPlugin, type WindowProvider } from './plugins/ipc'
 import { createJavaPlugin } from './plugins/java'
 import { createLaunchPlugin } from './plugins/launch'
@@ -83,6 +84,7 @@ export async function bootKernel(options: KernelOptions): Promise<Kernel> {
     createJavaPlugin(),
     createInstancesPlugin(),
     createLoadersPlugin(),
+    createInstallerPlugin(),
     createContentPlugin(),
     createConflictPlugin(),
     createDiagnosePlugin(),

@@ -6,6 +6,7 @@ import type {
   FixAction,
   GameStateEvent,
   InstanceSummary,
+  LoaderAvailability,
   SettingsPatch,
   SettingsShape,
   TaskProgress,
@@ -18,7 +19,10 @@ import { LogDrawer } from './components/LogDrawer'
 import { ModsDialog } from './components/ModsDialog'
 import { VersionManager } from './components/VersionManager'
 import { FishMascot } from './components/FishMascot'
+import { MascotImage } from './components/MascotImage'
 import { PluginsDialog } from './components/PluginsDialog'
+import { ProgressCard } from './components/ProgressCard'
+import { VersionPicker, type LoaderKind } from './components/VersionPicker'
 
 const FALLBACK_INFO: AppInfo = {
   name: 'QDOQMC',
@@ -75,6 +79,10 @@ export function App() {
   const [selected, setSelected] = useState('')
   const [installing, setInstalling] = useState(false)
   const [progress, setProgress] = useState<TaskProgress | null>(null)
+  const [availability, setAvailability] = useState<LoaderAvailability | null>(null)
+  const [availabilityLoading, setAvailabilityLoading] = useState(false)
+  const [loaderKind, setLoaderKind] = useState<LoaderKind>('vanilla')
+  const [loaderVersion, setLoaderVersion] = useState('')
   const [running, setRunning] = useState<{ pid?: number } | null>(null)
   const [exited, setExited] = useState<GameStateEvent | null>(null)
   const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null)
@@ -88,15 +96,14 @@ export function App() {
   const [showMods, setShowMods] = useState(false)
   const [showVersions, setShowVersions] = useState(false)
   const [showPlugins, setShowPlugins] = useState(false)
-  const [fabricBusy, setFabricBusy] = useState(false)
-  const [neoforgeBusy, setNeoforgeBusy] = useState(false)
-  const [forgeBusy, setForgeBusy] = useState(false)
   const [instances, setInstances] = useState<InstanceSummary[]>([])
   const [newInstanceOpen, setNewInstanceOpen] = useState(false)
   const [newInstanceName, setNewInstanceName] = useState('')
   const [importPath, setImportPath] = useState('')
   const activeIdRef = useRef('default')
   const listening = useRef(false)
+  // 加载器可用性按游戏版本做 5 分钟内存缓存：来回切版本不用每次都打上游接口
+  const availCache = useRef(new Map<string, { at: number; value: LoaderAvailability }>())
 
   const hasApi = typeof window !== 'undefined' && typeof window.qdo !== 'undefined'
 
@@ -308,27 +315,107 @@ export function App() {
     [hasApi, notify, refreshInstalled],
   )
 
-  const install = useCallback(async () => {
-    if (!hasApi || !selected || installing) return
+  const loadAvailability = useCallback(
+    async (gameVersion: string, force = false) => {
+      if (!hasApi || !gameVersion) return
+      const cached = !force ? availCache.current.get(gameVersion) : undefined
+      if (cached && Date.now() - cached.at < 5 * 60 * 1000) {
+        setAvailability(cached.value)
+        setAvailabilityLoading(false)
+        setLoaderKind((current) => {
+          if (current === 'vanilla') return current
+          const found = cached.value.loaders.find((item) => item.loader === current)
+          return found && found.versions.length > 0 ? current : 'vanilla'
+        })
+        return
+      }
+      setAvailabilityLoading(true)
+      try {
+        const result = await window.qdo.loaders.available(gameVersion)
+        availCache.current.set(gameVersion, { at: Date.now(), value: result })
+        setAvailability(result)
+        // 用户已经选过加载器且新版本仍支持 → 保留；不支持则退回原版
+        setLoaderKind((current) => {
+          if (current === 'vanilla') return current
+          const found = result.loaders.find((item) => item.loader === current)
+          return found && found.versions.length > 0 ? current : 'vanilla'
+        })
+      } catch (err) {
+        setAvailability(null)
+        notify(`查询加载器失败：${err instanceof Error ? err.message : String(err)}`)
+      } finally {
+        setAvailabilityLoading(false)
+      }
+    },
+    [hasApi, notify],
+  )
+
+  useEffect(() => {
+    if (!hasApi || !selected) return
+    void loadAvailability(selected)
+  }, [hasApi, loadAvailability, selected])
+
+  const loaderChoice = availability?.loaders.find((item) => item.loader === loaderKind)
+  const effectiveLoaderVersion =
+    loaderChoice && loaderChoice.versions.includes(loaderVersion)
+      ? loaderVersion
+      : (loaderChoice?.recommended ?? loaderChoice?.versions[0] ?? '')
+
+  const chooseLoader = useCallback(
+    (kind: LoaderKind) => {
+      setLoaderKind(kind)
+      const found = availability?.loaders.find((item) => item.loader === kind)
+      setLoaderVersion(found?.recommended ?? found?.versions[0] ?? '')
+    },
+    [availability],
+  )
+
+  const runInstall = useCallback(async () => {
+    if (!hasApi || !selected || installing || !instance) return
     setInstalling(true)
     setExited(null)
-    setProgress({ taskId: 'local', kind: 'install', stage: 'version', done: 0, total: 1, bytes: 0, message: '开始' })
+    setProgress({ taskId: 'local', kind: 'install', stage: 'version', done: 0, total: 1, bytes: 0, message: '开始安装' })
     try {
-      const result = await window.qdo.versions.install(selected)
+      const result = await window.qdo.installer.run({
+        instanceId: instance.id,
+        gameVersion: selected,
+        loader: loaderKind,
+        loaderVersion: loaderKind === 'vanilla' ? undefined : effectiveLoaderVersion || undefined,
+      })
       if (!result.ok) {
-        notify(`安装失败：${result.error ?? '未知错误'}`)
+        if ((result.error ?? '').includes('已取消')) notify('已取消安装，已下载的文件会保留，下次续传')
+        else notify(`安装失败：${result.error ?? '未知错误'}`)
       } else {
-        notify(`安装完成：${result.versionId}（Java ${result.javaMajor}，${Math.round(result.ms / 1000)}s）`)
+        const loaderText = result.loader && result.loader !== 'vanilla' ? ` + ${result.loader} ${result.loaderVersion ?? ''}` : '（原版）'
+        notify(`安装完成：${selected}${loaderText}，已绑定到「${instance.name}」（${Math.round((result.ms ?? 0) / 1000)}s）`)
       }
       await refreshInstalled()
-      setSelected(selected)
     } catch (err) {
       notify(`安装失败：${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setInstalling(false)
-      setProgress(null)
     }
-  }, [hasApi, installing, notify, refreshInstalled, selected])
+  }, [effectiveLoaderVersion, hasApi, installing, instance, loaderKind, notify, refreshInstalled, selected])
+
+  // 任务结束（完成/取消）后自动收起进度卡，避免旧的安装结果一直挂在新操作下面
+  useEffect(() => {
+    if (!progress || (progress.stage !== 'done' && progress.stage !== 'cancelled')) return
+    const timer = window.setTimeout(
+      () => setProgress((current) => (current && (current.stage === 'done' || current.stage === 'cancelled') ? null : current)),
+      6000,
+    )
+    return () => window.clearTimeout(timer)
+  }, [progress])
+
+  const cancelInstall = useCallback(async () => {
+    if (!hasApi) return
+    try {
+      const result = await window.qdo.versions.cancel()
+      notify(result.cancelled ? '已取消下载（已下载的文件会保留，下次续传）' : '没有正在进行的下载任务')
+    } catch (err) {
+      notify(`取消失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [hasApi, notify])
 
   const launch = useCallback(async () => {
     if (!hasApi || running || installing) return
@@ -382,68 +469,6 @@ export function App() {
     }
   }, [hasApi, notify])
 
-  const installFabric = useCallback(async () => {    if (!hasApi || fabricBusy) return
-    const gameVersion = instance?.gameVersion ?? selected
-    if (!gameVersion || !installed.includes(gameVersion)) {
-      notify('先安装对应的原版版本，再装 Fabric')
-      return
-    }
-    setFabricBusy(true)
-    try {
-      const result = await window.qdo.loaders.fabric(gameVersion)
-      if (!result.ok) notify(`Fabric 安装失败：${result.error ?? '未知错误'}`)
-      else notify(`Fabric ${result.loaderVersion} 已安装（${result.libraries} 个库）`)
-      await refreshInstalled()
-    } catch (err) {
-      notify(`Fabric 安装失败：${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setFabricBusy(false)
-      setProgress(null)
-    }
-  }, [fabricBusy, hasApi, instance?.gameVersion, installed, notify, refreshInstalled, selected])
-
-  const installNeoForge = useCallback(async () => {
-    if (!hasApi || neoforgeBusy) return
-    const gameVersion = instance?.gameVersion ?? selected
-    if (!gameVersion || !installed.includes(gameVersion)) {
-      notify('先安装对应的原版版本，再装 NeoForge')
-      return
-    }
-    setNeoforgeBusy(true)
-    try {
-      const result = await window.qdo.loaders.neoforge(gameVersion)
-      if (!result.ok) notify(`NeoForge 安装失败：${result.error ?? '未知错误'}`)
-      else notify(`NeoForge ${result.loaderVersion} 已安装`)
-      await refreshInstalled()
-    } catch (err) {
-      notify(`NeoForge 安装失败：${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setNeoforgeBusy(false)
-      setProgress(null)
-    }
-  }, [hasApi, instance?.gameVersion, installed, neoforgeBusy, notify, refreshInstalled, selected])
-
-  const installForge = useCallback(async () => {
-    if (!hasApi || forgeBusy) return
-    const gameVersion = instance?.gameVersion ?? selected
-    if (!gameVersion || !installed.includes(gameVersion)) {
-      notify('先安装对应的原版版本，再装 Forge')
-      return
-    }
-    setForgeBusy(true)
-    try {
-      const result = await window.qdo.loaders.forge(gameVersion)
-      if (!result.ok) notify(`Forge 安装失败：${result.error ?? '未知错误'}`)
-      else notify(`Forge ${result.loaderVersion} 已安装`)
-      await refreshInstalled()
-    } catch (err) {
-      notify(`Forge 安装失败：${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setForgeBusy(false)
-      setProgress(null)
-    }
-  }, [forgeBusy, hasApi, instance?.gameVersion, installed, notify, refreshInstalled, selected])
-
   const onSaveSettings = useCallback(
     async (patch: SettingsPatch) => {
       if (!hasApi) return
@@ -486,13 +511,14 @@ export function App() {
 
   return (
     <div className="app">
+      <MascotImage size={230} className="app-companion" fallback={false} />
       <header className="titlebar">
         <div className="brand">
-          <FishMascot size={30} className="brand-fish" />
+          <MascotImage size={34} className="brand-fish" />
           <span className="brand-mark">QDOQMC</span>
           <span className="brand-sub">大肥鱼开服</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P27 · 版本列表</span>
+          <span className="brand-tag">P28 · 下载面板</span>
         </div>
         <div className="titlebar-actions">
           <button type="button" className="ghost" onClick={() => setShowMods(true)} disabled={!instance}>
@@ -597,70 +623,33 @@ export function App() {
             </div>
           ) : null}
 
-          <div className="version-row">
-            <select
-              value={selected}
-              onChange={(event) => setSelected(event.target.value)}
-              disabled={installing || Boolean(running) || !versions}
-            >
-              {(versions?.versions ?? []).map((v) => (
-                <option key={v.id} value={v.id}>
-                  {installed.includes(v.id) ? '✓ ' : ''}
-                  {v.id}
-                  {v.id === versions?.latest.release ? '（最新正式版）' : ''}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="ghost"
-              onClick={() => void install()}
-              disabled={installing || !selected || installed.includes(selected)}
-            >
-              {installing ? '安装中…' : installed.includes(selected) ? '已安装' : '安装选定版本'}
-            </button>
-            <button
-              type="button"
-              className="ghost"
-              onClick={() => void installFabric()}
-              disabled={fabricBusy || installing || !selected || !installed.includes(selected)}
-            >
-              {fabricBusy ? '装 Fabric…' : instance?.loader === 'fabric' ? 'Fabric 已装' : '装 Fabric'}
-            </button>
-            <button
-              type="button"
-              className="ghost"
-              onClick={() => void installNeoForge()}
-              disabled={neoforgeBusy || installing || !selected || !installed.includes(selected)}
-            >
-              {neoforgeBusy ? '装 NeoForge…' : instance?.loader === 'neoforge' ? 'NeoForge 已装' : '装 NeoForge'}
-            </button>
-            <button
-              type="button"
-              className="ghost"
-              onClick={() => void installForge()}
-              disabled={forgeBusy || installing || !selected || !installed.includes(selected)}
-            >
-              {forgeBusy ? '装 Forge…' : instance?.loader === 'forge' ? 'Forge 已装' : '装 Forge'}
-            </button>
-          </div>
+          <VersionPicker
+            instanceName={instance?.name ?? '默认实例'}
+            versions={versions}
+            installed={installed}
+            selected={selected}
+            onSelect={setSelected}
+            availability={availability}
+            availabilityLoading={availabilityLoading}
+            choice={loaderKind}
+            onChoice={chooseLoader}
+            loaderVersion={effectiveLoaderVersion}
+            onLoaderVersion={setLoaderVersion}
+            currentVersionId={instance?.versionId}
+            currentLoader={instance?.loader}
+            busy={installing || Boolean(running)}
+            onInstall={() => void runInstall()}
+            onRetry={() => void loadAvailability(selected, true)}
+            downloadSource={settings?.downloadSource}
+          />
 
-          {progress && (installing || progress.stage !== 'done') ? (
-            <div className="progress-card">
-              <div className="progress-head">
-                <span>{STAGE_LABEL[progress.stage] ?? progress.stage}</span>
-                <span>
-                  {progress.total > 0 ? `${progress.done}/${progress.total} · ` : ''}
-                  {progressPct}%
-                </span>
-              </div>
-              <div className="progress-bar">
-                <div className="progress-fill" style={{ width: `${Math.max(2, progressPct)}%` }} />
-              </div>
-              <div className="progress-detail">
-                {(progress.bytes / 1048576).toFixed(1)} MB {progress.message ? `· ${progress.message}` : ''}
-              </div>
-            </div>
+          {progress ? (
+            <ProgressCard
+              progress={progress}
+              busy={installing}
+              title={selected ? `正在准备 ${selected}` : '正在安装'}
+              onCancel={() => void cancelInstall()}
+            />
           ) : null}
 
           <button type="button" className="launch" onClick={() => void launch()} disabled={!canLaunch}>
@@ -672,7 +661,7 @@ export function App() {
                   ? `${instance?.versionId} · ${instance?.accountName ?? '离线登录'} · ${instance?.playerName}`
                   : '先安装一个游戏版本'}
             </span>
-            <FishMascot size={22} className="launch-fish" />
+            <MascotImage size={26} className="launch-fish" />
           </button>
 
           {running ? (

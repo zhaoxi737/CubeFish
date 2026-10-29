@@ -154,6 +154,10 @@ export interface SettingsShape {
   curseforgeApiKey: string
   /** 启动时自动检查更新 */
   autoCheckUpdate: boolean
+  /** P28：下载源（auto 自动测速选最快） */
+  downloadSource: DownloadSource
+  /** P28：单文件分片下载数 1..16 */
+  downloadThreads: number
 }
 
 export type SettingsPatch = Partial<SettingsShape>
@@ -201,16 +205,53 @@ export interface VersionList {
   installed: string[]
 }
 
-export type InstallStage = 'version' | 'libraries' | 'assets' | 'logging' | 'legacy' | 'done'
+export type InstallStage = 'version' | 'libraries' | 'assets' | 'logging' | 'legacy' | 'done' | 'cancelled'
+
+/** 下载源：auto = 自动测速选最快，official = Mojang 官方，bmclapi = 国内镜像 */
+export type DownloadSource = 'auto' | 'official' | 'bmclapi'
+
+/** 一个下载阶段（PCL 式分阶段进度条） */
+export interface StageProgress {
+  /** 'version' | 'libraries' | 'assets' | 'logging' | 'done' | 'content' */
+  stage: string
+  /** 中文短名，如 '下载库文件' */
+  label: string
+  /** 该阶段已完成文件数 */
+  done: number
+  /** 该阶段文件总数 */
+  total: number
+  /** 该阶段已下载字节 */
+  bytes: number
+  /** 该阶段总字节（未知时 0） */
+  bytesTotal: number
+  state: 'pending' | 'running' | 'done'
+}
 
 export interface TaskProgress {
   taskId: string
-  kind: 'install' | 'update'
+  kind: 'install' | 'update' | 'content'
   stage: InstallStage | string
   done: number
   total: number
   bytes: number
   message?: string
+  // ---- P28 新增（全部可选，旧发射方不受影响） ----
+  /** 整体加权百分比 0..100 */
+  percent?: number
+  /** 本次任务总字节 */
+  bytesTotal?: number
+  /** 字节/秒（最近 2s 滑动平均） */
+  speed?: number
+  /** 预计剩余毫秒（未知时省略） */
+  etaMs?: number
+  /** 当前正在下载的文件名/label */
+  currentFile?: string
+  filesDone?: number
+  filesTotal?: number
+  /** 阶段快照，按顺序 */
+  stages?: StageProgress[]
+  /** 实际使用的下载源 */
+  source?: DownloadSource
 }
 
 export interface InstallResult {
@@ -268,6 +309,11 @@ export interface SearchHit {
   downloads: number
   iconUrl?: string
   versions: string[]
+  // ---- P28 新增：Modrinth search 响应里本来就有 ----
+  /** 该项目最新版本支持的游戏版本 */
+  gameVersions?: string[]
+  /** 'fabric' | 'forge' | 'neoforge' | 'quilt' */
+  loaders?: string[]
 }
 
 export interface ContentVersionInfo {
@@ -325,6 +371,48 @@ export interface NeoForgeInstallResult {
   loaderVersion?: string
   libraries?: number
   processors?: number
+  error?: string
+}
+
+/* ---------- P28：加载器可用性 / 一键安装 ---------- */
+
+/** 某个 MC 版本可用的加载器 */
+export interface LoaderChoice {
+  loader: 'fabric' | 'forge' | 'neoforge'
+  /** 可用加载器版本，新→旧，最多 20 个 */
+  versions: string[]
+  /** 推荐版本（Fabric 取最新稳定；Forge 取推荐 build；NeoForge 取最新） */
+  recommended?: string
+  /** 例如 '仅支持 1.20.1 及以下' / '查询失败，可稍后重试' */
+  note?: string
+}
+
+export interface LoaderAvailability {
+  gameVersion: string
+  release: boolean
+  javaMajor?: number
+  /** 不可用的加载器不出现 */
+  loaders: LoaderChoice[]
+}
+
+export type InstallerLoader = 'vanilla' | 'fabric' | 'forge' | 'neoforge'
+
+export interface InstallerRunRequest {
+  instanceId: string
+  /** 例如 '1.20.1' */
+  gameVersion: string
+  /** 默认 'vanilla' */
+  loader?: InstallerLoader
+  /** 为空则由后端取 recommended */
+  loaderVersion?: string
+}
+
+export interface InstallerRunResult {
+  ok: boolean
+  versionId?: string
+  loader?: InstallerLoader
+  loaderVersion?: string
+  ms?: number
   error?: string
 }
 

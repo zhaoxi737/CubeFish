@@ -613,5 +613,10 @@ node_modules/.bin/electron . --chat="帮我检查下这个实例有没有冲突"
 | P23 | 实例导出 / 导入 | 导出 54 文件；导入实例启动 7 项标记 |
 | P24 | 系统文件选择器 | 导出另存 32.9MB；选择文件自动填路径 |
 | P25 | 多实例独立账号 | 全局 SecondPlayer 时，绑定实例用 MockPlayer 启动 |
+| P26 | 版本管理 + 中文语言 + 设置说明 + MC/大肥鱼主题 | 版本表 4 个文件夹按钮；`options.txt` 由 `en_us` 改 `zh_cn` |
+| P27 | PCL 式常驻左侧版本列表 | 侧栏卡片 2 张、点卡片切实例 `sidebar.active=默认实例` |
+| P28 | 下载清晰化：加载器可用性 + PCL 式进度 + 镜像/分片加速 | 1.20.1 → Fabric 20 个版本可选 / Forge 20 个 / NeoForge 不支持；下载中 6%、451 KB/s、剩余 4 分 29 秒、文件 14/76、取消后「已取消」；真机 auto 选源 official 510 KB/s vs bmclapi 154 KB/s → 选 official；分片 x4 实测 4 次 206 + sha1 正确 |
+| P28 | ComfyUI 美术接入 | 本机 SD1.5 出图 4 张（吉祥物/草地砖/背景/图标），构建自动拷入 `out/renderer/assets`，缺图回退 SVG |
 
 > 汇总口径：每阶段都跑过 `npm run smoke` 与打包版 `--smoke`；涉及游戏启动的阶段有真实窗口标题与启动标记日志。
+> P28 另附 `scripts/p28-check.mjs`（下载器/镜像/分片实测，不启动 UI）和 [docs/P28-NOTES.md](P28-NOTES.md)（实现与实测数据）。

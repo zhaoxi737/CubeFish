@@ -38,6 +38,7 @@ const api: QdoApi = {
     list: () => ipcRenderer.invoke(CH.versionsList),
     install: (versionId) => ipcRenderer.invoke(CH.versionInstall, versionId),
     installed: () => ipcRenderer.invoke(CH.versionsInstalled),
+    cancel: () => ipcRenderer.invoke(CH.versionCancel),
   },
   java: {
     list: () => ipcRenderer.invoke(CH.javaList),
@@ -69,6 +70,10 @@ const api: QdoApi = {
     fabric: (gameVersion) => ipcRenderer.invoke(CH.loaderFabric, gameVersion),
     neoforge: (gameVersion) => ipcRenderer.invoke(CH.loaderNeoForge, gameVersion),
     forge: (gameVersion) => ipcRenderer.invoke(CH.loaderForge, gameVersion),
+    available: (gameVersion) => ipcRenderer.invoke(CH.loaderAvailable, gameVersion),
+  },
+  installer: {
+    run: (req) => ipcRenderer.invoke(CH.installerRun, req),
   },
   plugins: {
     list: () => ipcRenderer.invoke(CH.pluginsList),

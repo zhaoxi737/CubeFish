@@ -5,7 +5,7 @@
 import AdmZip from 'adm-zip'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { createWriteStream, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import type { AppMeta, GameStateEvent, LaunchResult, TaskProgress } from '../../shared/types'
 import { ensureDir } from '../lib/fsx'
@@ -310,6 +310,27 @@ export function createLaunchPlugin(): LauncherPlugin<void> {
         }
 
         const finalArgs = [...jvm, resolved.mainClass, ...gameArgs]
+        // 默认中文：options.txt 里没有 lang 时补一个（不覆盖玩家已选的语言）
+        try {
+          const optionsFile = path.join(gameDir, 'options.txt')
+          if (!existsSync(optionsFile)) {
+            writeFileSync(optionsFile, 'lang:zh_cn\n')
+            log.info('launch', '已写入默认语言 zh_cn', { optionsFile })
+          } else {
+            const current = readFileSync(optionsFile, 'utf8')
+            if (!/^lang:/m.test(current)) {
+              writeFileSync(optionsFile, current + (current.endsWith('\n') ? '' : '\n') + 'lang:zh_cn\n')
+              log.info('launch', 'options.txt 缺少语言项，已补 zh_cn', { optionsFile })
+            } else if (/^lang:en_us\s*$/m.test(current)) {
+              // 游戏首次启动默认是英文；中文用户直接改成简体中文（玩家手动选过其他语言则不动）
+              writeFileSync(optionsFile, current.replace(/^lang:en_us\s*$/m, 'lang:zh_cn'))
+              log.info('launch', '已把默认英文改为简体中文', { optionsFile })
+            }
+          }
+        } catch (err) {
+          log.warn('launch', '写入默认语言失败', { error: err instanceof Error ? err.message : String(err) })
+        }
+
         const logDir = path.join(gameDir, 'logs')
         await ensureDir(logDir)
         const stamp = new Date().toISOString().replace(/[:.]/g, '-')

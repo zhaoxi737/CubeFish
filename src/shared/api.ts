@@ -66,6 +66,10 @@ export interface QdoApi {
     export(id?: string, dest?: string): Promise<{ ok: boolean; path?: string; bytes?: number; files?: number; error?: string }>
     /** 绑定/解绑实例账号（accountId 为空 = 跟随全局账号） */
     bindAccount(id: string, accountId?: string, accountName?: string): Promise<InstanceSummary>
+    rename(id: string, name: string): Promise<InstanceSummary>
+    folders(id: string): Promise<{ root: string; game: string; mods: string; logs: string; versions: string }>
+    /** 在资源管理器中打开实例的某个目录 */
+    openFolder(id: string, kind: 'root' | 'game' | 'mods' | 'logs'): Promise<{ ok: boolean; path?: string; error?: string }>
     import(zipPath: string, name?: string): Promise<{ ok: boolean; instance?: InstanceSummary; error?: string }>
   }
   versions: {

@@ -1,5 +1,6 @@
 import electron from 'electron'
 import { dialog, type BrowserWindow } from 'electron'
+import { existsSync } from 'node:fs'
 import { CH, EVT } from '../../shared/channels'
 import type {
   AppInfo,
@@ -139,6 +140,15 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle(CH.instancesRemove, (id: string) => instances.remove(id))
     handle<InstanceSummary>(CH.instancesActivate, (id: string) => instances.setActive(id))
     handle(CH.instancesExport, (id?: string, dest?: string) => instances.exportInstance(id, dest))
+    handle<InstanceSummary>(CH.instancesRename, (id: string, name: string) => instances.rename(id, name))
+    handle(CH.instancesFolders, (id: string) => instances.folders(id))
+    handle(CH.instancesOpenFolder, async (id: string, kind: 'root' | 'game' | 'mods' | 'logs') => {
+      const folders = instances.folders(id)
+      const target = folders[kind] ?? folders.game
+      if (!existsSync(target)) return { ok: false, error: `目录不存在：${target}` }
+      const error = await electron.shell.openPath(target)
+      return error ? { ok: false, path: target, error } : { ok: true, path: target }
+    })
     handle<InstanceSummary>(CH.instancesAccount, (id: string, accountId?: string, accountName?: string) => {
       instances.setAccount(id, accountId, accountName)
       return instances.get(id) ?? instances.active()

@@ -1502,3 +1502,385 @@ code {
   font-size: 11.5px;
   line-height: 1.5;
 }
+
+/* ============================================================
+   P26 主题：我的世界 × DeepSeek 大肥鱼
+   （覆盖层：不改旧布局，只换质感/配色/像素细节）
+   ============================================================ */
+:root {
+  --bg: #070b10;
+  --panel: #0d141c;
+  --panel-2: #121c27;
+  --border: #1d2c3b;
+  --text: #e8eef5;
+  --muted: #8497a8;
+  --accent: #7ed957;      /* Minecraft 草绿 */
+  --accent-2: #4ea52e;
+  --blue: #4d6bfe;        /* DeepSeek 蓝 */
+  --warn: #f0b429;
+  --danger: #ef6f6f;
+  --radius: 10px;
+}
+
+body {
+  background-color: #070b10;
+  background-image:
+    radial-gradient(1100px 560px at 18% -12%, rgba(77, 107, 254, 0.20), transparent 62%),
+    radial-gradient(900px 520px at 108% 8%, rgba(126, 217, 87, 0.10), transparent 58%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.016) 0px, rgba(255, 255, 255, 0.016) 1px, transparent 1px, transparent 4px),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.18) 0px, rgba(0, 0, 0, 0.18) 1px, transparent 1px, transparent 4px);
+}
+
+/* ---- 顶栏 / 品牌 ---- */
+.titlebar {
+  background: linear-gradient(180deg, rgba(15, 23, 33, 0.96), rgba(9, 14, 20, 0.96));
+  border-bottom: 2px solid rgba(77, 107, 254, 0.28);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
+}
+
+.brand {
+  gap: 9px;
+}
+
+.brand-fish {
+  filter: drop-shadow(0 2px 6px rgba(77, 107, 254, 0.55));
+}
+
+.brand-mark {
+  font-weight: 900;
+  letter-spacing: 3px;
+  background: linear-gradient(120deg, #9bf072, #c3f7a4 35%, #7c93ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+  filter: drop-shadow(0 2px 6px rgba(77, 107, 254, 0.45));
+}
+
+.brand-sub {
+  font-size: 11px;
+  color: rgba(132, 151, 168, 0.85);
+  letter-spacing: 1px;
+  padding-bottom: 2px;
+}
+
+/* ---- 按钮：MC 式斜面 ---- */
+.ghost {
+  background: linear-gradient(180deg, #16222e, #0f1822);
+  border: 1px solid #223649;
+  border-radius: 6px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), inset 0 -2px 0 rgba(0, 0, 0, 0.38);
+  transition: transform 0.08s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.ghost:hover {
+  border-color: #35526c;
+  background: linear-gradient(180deg, #1b2a38, #121d28);
+}
+
+.ghost:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.45);
+}
+
+.primary {
+  background: linear-gradient(180deg, #8ce267, #4fa62e);
+  border: 1px solid #3a7f22;
+  border-radius: 6px;
+  color: #07130a;
+  font-weight: 800;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.38), inset 0 -3px 0 rgba(0, 0, 0, 0.22), 0 4px 12px rgba(79, 166, 46, 0.22);
+}
+
+.primary:hover {
+  filter: brightness(1.06);
+}
+
+.primary:active {
+  transform: translateY(1px);
+}
+
+/* ---- 启动按钮：草方块质感 ---- */
+.launch {
+  border: 3px solid #2f6b21;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #9bea74 0%, #6ccb43 45%, #4a9e2b 100%);
+  box-shadow:
+    inset 0 4px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -7px 0 rgba(0, 0, 0, 0.22),
+    0 10px 34px rgba(79, 166, 46, 0.35);
+  position: relative;
+  transition: transform 0.1s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+
+.launch:hover:not(:disabled) {
+  filter: brightness(1.05);
+  box-shadow:
+    inset 0 4px 0 rgba(255, 255, 255, 0.36),
+    inset 0 -7px 0 rgba(0, 0, 0, 0.24),
+    0 14px 40px rgba(79, 166, 46, 0.45);
+}
+
+.launch:active:not(:disabled) {
+  transform: translateY(2px);
+}
+
+.launch:disabled {
+  filter: grayscale(0.75) brightness(0.75);
+}
+
+.launch-main {
+  font-size: 40px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  color: #08160b;
+  text-shadow: 0 2px 0 rgba(255, 255, 255, 0.35);
+}
+
+.launch-fish {
+  position: absolute;
+  right: 16px;
+  bottom: 10px;
+  opacity: 0.95;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
+}
+
+/* ---- 实例行 / chip ---- */
+.instance-select {
+  background: linear-gradient(180deg, #16222e, #0f1822);
+  border: 1px solid #223649;
+  border-radius: 6px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.chip {
+  border-radius: 5px;
+  border: 1px solid rgba(77, 107, 254, 0.28);
+  background: rgba(77, 107, 254, 0.10);
+  color: #c9d4ff;
+}
+
+.chip.subtle {
+  border-color: rgba(126, 217, 87, 0.25);
+  background: rgba(126, 217, 87, 0.08);
+  color: #b9e8a1;
+}
+
+/* ---- 面板 / 对话框 ---- */
+.stage,
+.chat {
+  position: relative;
+}
+
+.chat {
+  background: linear-gradient(180deg, rgba(14, 21, 31, 0.94), rgba(9, 14, 20, 0.94));
+  border-left: 1px solid rgba(77, 107, 254, 0.18);
+}
+
+.chat-head {
+  border-bottom: 1px solid rgba(77, 107, 254, 0.16);
+}
+
+.chat-title {
+  color: #dfe6ff;
+  text-shadow: 0 1px 0 #000;
+}
+
+.dialog {
+  background: linear-gradient(180deg, #0f1823, #0b121a);
+  border: 2px solid #1e3348;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(77, 107, 254, 0.18);
+}
+
+.dialog-head {
+  border-bottom: 1px solid rgba(77, 107, 254, 0.18);
+}
+
+.dialog-head h2 {
+  letter-spacing: 1px;
+  text-shadow: 0 2px 0 #000;
+}
+
+.bubble-assistant {
+  border-left: 2px solid rgba(77, 107, 254, 0.55);
+}
+
+/* ---- 版本管理 ---- */
+.vm-table {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px 4px;
+  overflow: auto;
+  max-height: 56vh;
+  gap: 6px;
+}
+
+.vm-head,
+.vm-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1.2fr 0.5fr 0.7fr 1.25fr 2.5fr;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.vm-head {
+  color: var(--muted);
+  letter-spacing: 1px;
+  border-bottom: 1px solid rgba(77, 107, 254, 0.18);
+  padding-bottom: 6px;
+}
+
+.vm-row {
+  background: linear-gradient(180deg, rgba(20, 30, 42, 0.85), rgba(13, 20, 28, 0.85));
+  border: 1px solid #1b2b3b;
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.vm-row.is-active {
+  border-color: rgba(126, 217, 87, 0.45);
+  box-shadow: inset 3px 0 0 var(--accent), 0 0 18px rgba(126, 217, 87, 0.10);
+}
+
+.vm-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.vm-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  flex: none;
+}
+
+.vm-meta {
+  color: var(--muted);
+  font-size: 11.5px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.vm-folders {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.vm-folders .link {
+  padding: 0;
+  white-space: nowrap;
+  font-size: 11px;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: #9db7ff;
+  font-size: 11.5px;
+  text-decoration: underline dotted rgba(157, 183, 255, 0.5);
+}
+
+.vm-folders .link:hover {
+  color: #cdd9ff;
+}
+
+.vm-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.vm-actions .tiny,
+.vm-folders .tiny {
+  font-size: 10.5px;
+  padding: 3px 6px;
+  white-space: nowrap;
+}
+
+.vm-badge {
+  font-size: 11px;
+  color: #b9e8a1;
+  border: 1px solid rgba(126, 217, 87, 0.35);
+  border-radius: 5px;
+  padding: 2px 8px;
+  align-self: center;
+}
+
+.vm-rename {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.vm-rename input {
+  width: 120px;
+  background: #0a121a;
+  border: 1px solid #2a4257;
+  border-radius: 5px;
+  color: var(--text);
+  padding: 3px 7px;
+  font-size: 12px;
+  outline: none;
+}
+
+.vm-rename input:focus {
+  border-color: rgba(126, 217, 87, 0.5);
+}
+
+/* ---- 设置分组 ---- */
+.settings-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 6px;
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: #a9bcd0;
+  text-transform: uppercase;
+}
+
+.settings-group-title::before {
+  content: '';
+  width: 4px;
+  height: 14px;
+  background: linear-gradient(180deg, var(--blue), var(--accent));
+  border-radius: 2px;
+}
+
+.settings-intro {
+  margin: 2px 0 8px;
+  padding: 10px 12px;
+  border: 1px dashed rgba(77, 107, 254, 0.35);
+  border-radius: 8px;
+  background: rgba(77, 107, 254, 0.06);
+  font-size: 12px;
+  color: #b8c6d8;
+  line-height: 1.6;
+}
+
+/* ---- 状态栏 ---- */
+.statusbar {
+  border-top: 1px solid rgba(77, 107, 254, 0.18);
+  background: linear-gradient(180deg, rgba(9, 14, 20, 0.95), rgba(6, 10, 14, 0.95));
+}
+
+
+.vm-dialog {
+  width: min(940px, 94vw);
+}
+
+.vm-table {
+  max-height: 58vh;
+}

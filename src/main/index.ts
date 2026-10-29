@@ -46,6 +46,16 @@ import {
 } from './cli'
 
 const { app, BrowserWindow, shell } = electron
+// 测试/多开隔离：QDOQMC_USER_DATA 指定独立的 Electron userData（同时改变单实例锁与日志目录）
+if (process.env.QDOQMC_USER_DATA) {
+  try {
+    app.setPath('userData', process.env.QDOQMC_USER_DATA)
+    app.setPath('sessionData', process.env.QDOQMC_USER_DATA)
+  } catch {
+    /* 忽略：必须在 ready 之前 */
+  }
+}
+
 const here = path.dirname(fileURLToPath(import.meta.url))
 // 插件沙箱 worker 与主进程 bundle 同级（out/plugin-worker.mjs）
 process.env.QDOQMC_PLUGIN_WORKER = path.join(here, '..', 'plugin-worker.mjs')
@@ -149,11 +159,13 @@ async function runSettingsSmoke(win: BrowserWindowType, startedAt: number): Prom
         `(() => { const btn = [...document.querySelectorAll('.titlebar-actions button')].find((b) => b.textContent?.trim() === '设置'); btn?.click(); return 'settings' })()`,
       )
       await wait(1200)
-      await win.webContents.executeJavaScript(`(() => { const body = document.querySelector('.dialog-body'); if (body) body.scrollTop = body.scrollHeight; return 'scrolled' })()`)
-      await wait(700)
       const image = await win.webContents.capturePage()
       const file = path.join(dir, 'smoke-settings.png')
       writeFileSync(file, image.toPNG())
+      await win.webContents.executeJavaScript(`(() => { const body = document.querySelector('.dialog-body'); if (body) body.scrollTop = body.scrollHeight; return 'scrolled' })()`)
+      await wait(700)
+      const bottomImage = await win.webContents.capturePage()
+      writeFileSync(path.join(dir, 'smoke-settings-bottom.png'), bottomImage.toPNG())
       const info = (await win.webContents.executeJavaScript(
         `JSON.stringify({
           accounts: [...document.querySelectorAll('.account-item')].map((el) => el.textContent ?? ''),
@@ -247,6 +259,60 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
       await wait(2400)
       const firstShot = await shot('smoke.png')
 
+      // 版本管理：打开面板截图 → UI 重命名来回一次 → 读取目录信息
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.instances-line button')].find((b) => b.textContent?.trim() === '版本管理'); btn?.click(); return 'versions-open' })()`,
+      )
+      await wait(900)
+      const versionShot = await shot('smoke-versions.png')
+      const versionInfo = (await win.webContents.executeJavaScript(
+        `JSON.stringify({
+          rows: document.querySelectorAll('.vm-row').length,
+          folders: [...document.querySelectorAll('.vm-folders button')].map((el) => el.textContent ?? ''),
+          activeRow: document.querySelector('.vm-row.is-active .vm-name')?.textContent ?? ''
+        })`,
+      )) as string
+      const foldersInfo = (await win.webContents.executeJavaScript(
+        `window.qdo.instances.folders('default').then((value) => JSON.stringify(value))`,
+      )) as string
+      // 重命名（来回各一次，验证 UI + API，最后恢复原名）
+      const renameResult = await (async () => {
+        const set = async (name: string) => {
+          await win.webContents.executeJavaScript(
+            `(() => {
+              const row = document.querySelector('.vm-row')
+              const btn = [...row.querySelectorAll('button')].find((b) => b.textContent?.trim() === '重命名')
+              btn?.click()
+              return 'rename-open'
+            })()`,
+          )
+          await wait(400)
+          await win.webContents.executeJavaScript(
+            `(() => {
+              const input = document.querySelector('.vm-rename input')
+              if (!input) return 'no-input'
+              const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+              setter.call(input, ${JSON.stringify(name)})
+              input.dispatchEvent(new Event('input', { bubbles: true }))
+              const save = [...document.querySelectorAll('.vm-rename button')].find((b) => b.textContent?.trim() === '保存')
+              save?.click()
+              return 'rename-saved'
+            })()`,
+          )
+          await wait(900)
+          return (await win.webContents.executeJavaScript(
+            `JSON.stringify({ toast: document.querySelector('.toast')?.textContent ?? '', first: document.querySelector('.vm-row .vm-name')?.textContent ?? '' })`,
+          )) as string
+        }
+        const renamed = await set('默认实例（改名测试）')
+        const restored = await set('默认实例')
+        return { renamed: JSON.parse(renamed), restored: JSON.parse(restored) }
+      })()
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.dialog-head button')].find((b) => b.textContent?.trim() === '关闭'); btn?.click(); return 'versions-closed' })()`,
+      )
+      await wait(500)
+
       // 实例导出：点主页「导出」按钮（保存对话框用环境变量跳过，便于自动化）
       process.env.QDOQMC_SAVE_FILE = path.join(dir, 'smoke-export.zip')
       // 记录 toast 与产物
@@ -298,8 +364,8 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
 
       const uiText = (await win.webContents.executeJavaScript(
         `JSON.stringify({
-          versionSelect: document.querySelector('.version-row select')?.value ?? '',
-          optionCount: document.querySelectorAll('.version-row select option').length,
+          versionSelect: document.querySelector('.vm-row select')?.value ?? '',
+          optionCount: document.querySelectorAll('.vm-row select option').length,
           chips: [...document.querySelectorAll('.chip')].map((el) => el.textContent),
           launchLabel: document.querySelector('.launch-main')?.textContent ?? '',
           launchDisabled: Boolean(document.querySelector('.launch')?.disabled),
@@ -571,6 +637,7 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           importPicker: { picked: importPicked },
           gameLog: { info: JSON.parse(gameLogInfo), screenshot: gameLogShot },
           instanceExport: { info: JSON.parse(exportInfo), files: exportFiles, saved: exportFromDialog },
+          versions: { info: JSON.parse(versionInfo), folders: JSON.parse(foldersInfo), rename: renameResult, screenshot: versionShot },
           chatStatus: chat,
         })}`,
       )
@@ -600,7 +667,7 @@ if (!gotLock) {
     .then(async () => {
       const startedAt = Date.now()
       kernel = await bootKernel({
-        dataDir: app.getPath('userData'),
+        dataDir: process.env.QDOQMC_DATA_DIR || app.getPath('userData'),
         appName: app.getName(),
         appVersion: app.getVersion(),
         isSmoke,

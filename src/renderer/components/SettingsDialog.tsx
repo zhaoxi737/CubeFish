@@ -119,15 +119,20 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
         </div>
 
         <div className="dialog-body">
+          <div className="settings-intro">
+            <strong>不填也能用：</strong>装游戏、装模组、查冲突、修崩溃全部离线可用。<br />
+            想用满两个能力再填：<strong>模型 API Key</strong>（AI 对话）和<strong>微软 client_id</strong>（正版登录）。
+          </div>
+          <div className="settings-group-title">更新与网络</div>
           <label className="field">
             <span className="field-label">更新清单地址（latest.json）</span>
             <input
               value={draft.updateFeedUrl}
               onChange={(event) => update('updateFeedUrl', event.target.value)}
-              placeholder="留空 = 离线模式，不联网检查更新"
+              placeholder="留空 = 不联网检查更新"
               spellCheck={false}
             />
-            <span className="field-hint">以后换成 CDN 上的静态 JSON 即可启用自动更新（P5 接入下载）。</span>
+            <span className="field-hint">填你自己的 latest.json 地址即可启用自动更新：下载校验 sha256 后，退出时自动替换并重启。</span>
           </label>
 
           <label className="field field-inline">
@@ -139,6 +144,7 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
             <span>启动时自动检查更新</span>
           </label>
 
+          <div className="settings-group-title">游戏与启动</div>
           <label className="field">
             <span className="field-label">默认内存分配（MB）</span>
             <input
@@ -149,7 +155,7 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
               value={draft.memoryMb}
               onChange={(event) => update('memoryMb', Number(event.target.value) || 4096)}
             />
-            <span className="field-hint">P1 起按实例生效；P3 会按整合包规模自动建议。</span>
+            <span className="field-hint">每个版本可以单独调整；整合包建议 4–8 GB，原版 2–4 GB 就够。</span>
           </label>
 
           <label className="field">
@@ -160,9 +166,10 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
               placeholder="Player"
               spellCheck={false}
             />
-            <span className="field-hint">离线模式使用（正版登录在 P2 接入）。</span>
+            <span className="field-hint">离线进游戏时显示的名字。登录微软账号后会自动改用正版 ID。</span>
           </label>
 
+          <div className="settings-group-title">AI 助手</div>
           <label className="field">
             <span className="field-label">模型 API Key（只存本地）</span>
             <input
@@ -172,7 +179,7 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
               placeholder="sk-... （DeepSeek / 任意 OpenAI 兼容服务）"
               spellCheck={false}
             />
-            <span className="field-hint">加密后只存在本机；不会上传、不会随统计上报。</span>
+            <span className="field-hint">只保存在本机，不会上传。没填也能装游戏、修崩溃，只是 AI 对话框不能说话。</span>
           </label>
 
           <label className="field">
@@ -183,7 +190,7 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
               placeholder="https://api.deepseek.com/v1"
               spellCheck={false}
             />
-            <span className="field-hint">任何 OpenAI 兼容的 /chat/completions 端点都可以。</span>
+            <span className="field-hint">默认是 DeepSeek；任何 OpenAI 兼容的 /chat/completions 地址都行。</span>
           </label>
 
           <label className="field">
@@ -196,6 +203,7 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
             />
           </label>
 
+          <div className="settings-group-title">隐私与统计</div>
           <label className="field field-inline">
             <input
               type="checkbox"
@@ -206,6 +214,7 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
           </label>
           <p className="field-hint">关掉后本地事件仍记录，但不会上传。</p>
 
+          <div className="settings-group-title">微软账号（正版登录）</div>
           <div className="field">
             <span className="field-label">微软账号（正版登录）</span>
             {accounts.length > 0 ? (
@@ -263,9 +272,10 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
               placeholder="Azure 应用（公共客户端）的 Application ID"
               spellCheck={false}
             />
-            <span className="field-hint">留空 = 只能离线登录。令牌只存本机 account.json，不上传。</span>
+            <span className="field-hint">留空 = 只能离线登录。登录后的令牌用 Windows DPAPI 加密，只存本机。</span>
           </label>
 
+          <div className="settings-group-title">内容与插件市场</div>
           <label className="field">
             <span className="field-label">插件市场 feed 地址</span>
             <input

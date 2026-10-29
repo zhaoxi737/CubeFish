@@ -35,6 +35,10 @@ export interface InstancesService {
   setPlayerName(id: string, playerName: string): void
   /** 绑定/解绑实例账号（accountId 为空 = 跟随全局账号） */
   setAccount(id: string, accountId?: string, accountName?: string): void
+  /** 重命名实例（显示名，id 不变） */
+  rename(id: string, name: string): InstanceSummary
+  /** 实例的各个目录（PCL 式文件管理用） */
+  folders(id: string): { root: string; game: string; mods: string; logs: string; versions: string }
   dryRun(id?: string): Promise<LaunchDryRun>
   /** 导出实例为 zip（mods/config/存档 等，跳过日志与缓存） */
   exportInstance(id?: string, dest?: string): Promise<{ ok: boolean; path?: string; bytes?: number; files?: number; error?: string }>
@@ -392,6 +396,26 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
       log.info('instances', accountId ? '实例已绑定账号' : '实例已解绑账号', { id, accountId, accountName })
     }
 
+    const rename = (id: string, name: string): InstanceSummary => {
+      const file = read(id)
+      if (!file) throw new Error(`实例不存在：${id}`)
+      const trimmed = name.trim()
+      if (!trimmed) throw new Error('实例名不能为空')
+      file.name = trimmed.slice(0, 40)
+      write(file)
+      telemetry.record('instance:rename', { id })
+      log.info('instances', '实例已重命名', { id, name: file.name })
+      return toSummary(file)
+    }
+
+    const folders = (id: string): { root: string; game: string; mods: string; logs: string; versions: string } => ({
+      root: dirOf(id),
+      game: gameDir(id),
+      mods: path.join(gameDir(id), 'mods'),
+      logs: path.join(gameDir(id), 'logs'),
+      versions: paths.versions,
+    })
+
     ctx.provide('instances', {
       list,
       get,
@@ -405,6 +429,8 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
       setMemory,
       setPlayerName,
       setAccount,
+      rename,
+      folders,
       dryRun,
       exportInstance,
       importInstance,

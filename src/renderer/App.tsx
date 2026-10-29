@@ -16,6 +16,8 @@ import { ChatPanel } from './components/ChatPanel'
 import { SettingsDialog } from './components/SettingsDialog'
 import { LogDrawer } from './components/LogDrawer'
 import { ModsDialog } from './components/ModsDialog'
+import { VersionManager } from './components/VersionManager'
+import { FishMascot } from './components/FishMascot'
 import { PluginsDialog } from './components/PluginsDialog'
 
 const FALLBACK_INFO: AppInfo = {
@@ -84,6 +86,7 @@ export function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [showLogs, setShowLogs] = useState(false)
   const [showMods, setShowMods] = useState(false)
+  const [showVersions, setShowVersions] = useState(false)
   const [showPlugins, setShowPlugins] = useState(false)
   const [fabricBusy, setFabricBusy] = useState(false)
   const [neoforgeBusy, setNeoforgeBusy] = useState(false)
@@ -475,9 +478,11 @@ export function App() {
     <div className="app">
       <header className="titlebar">
         <div className="brand">
+          <FishMascot size={30} className="brand-fish" />
           <span className="brand-mark">QDOQMC</span>
+          <span className="brand-sub">大肥鱼开服</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P25 · 实例账号</span>
+          <span className="brand-tag">P26 · 版本管理</span>
         </div>
         <div className="titlebar-actions">
           <button type="button" className="ghost" onClick={() => setShowMods(true)} disabled={!instance}>
@@ -517,8 +522,8 @@ export function App() {
             <button type="button" className="ghost tiny" onClick={() => setNewInstanceOpen(true)} disabled={Boolean(running)}>
               + 新建
             </button>
-            <button type="button" className="ghost tiny" onClick={() => void exportInstance()} disabled={Boolean(running) || !instance}>
-              导出
+            <button type="button" className="ghost tiny" onClick={() => setShowVersions(true)} disabled={Boolean(running)}>
+              版本管理
             </button>
             {instance && instance.id !== 'default' ? (
               <button
@@ -632,9 +637,10 @@ export function App() {
               {running
                 ? `PID ${running.pid ?? '?'} · 点击右侧按钮结束`
                 : canLaunch
-                  ? `${instance?.versionId} · 离线登录 · ${instance?.playerName}`
+                  ? `${instance?.versionId} · ${instance?.accountName ?? '离线登录'} · ${instance?.playerName}`
                   : '先安装一个游戏版本'}
             </span>
+            <FishMascot size={22} className="launch-fish" />
           </button>
 
           {running ? (
@@ -765,6 +771,30 @@ export function App() {
             </div>
           </div>
         </div>
+      ) : null}
+      {showVersions ? (
+        <VersionManager
+          instances={instances}
+          activeId={instance?.id ?? 'default'}
+          onClose={() => setShowVersions(false)}
+          onActivate={(id) => {
+            void switchInstance(id)
+            setShowVersions(false)
+          }}
+          onRefresh={refreshInstalled}
+          onNotify={notify}
+          onCreate={() => {
+            setShowVersions(false)
+            setNewInstanceOpen(true)
+          }}
+          onOpenMods={(id) => {
+            void (async () => {
+              await switchInstance(id)
+              setShowVersions(false)
+              setShowMods(true)
+            })()
+          }}
+        />
       ) : null}
       {showMods && instance ? (
         <ModsDialog instance={instance} onClose={() => setShowMods(false)} onNotify={notify} onRefresh={() => void refreshInstalled()} />

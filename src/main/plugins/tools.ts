@@ -726,6 +726,202 @@ export function createToolsPlugin(): LauncherPlugin<void> {
       },
     })
 
+    // ---- P35：把 harness 的 agent 层能力搬进来（精确编辑 / 内容搜索 / 记忆 / 联网搜索）----
+    const memoryFile = path.join(paths.data, 'ai-memory.json')
+    const readMemory = (): { content: string; kind?: string; ts: number }[] => {
+      try {
+        return JSON.parse(readFileSync(memoryFile, 'utf8')) as { content: string; kind?: string; ts: number }[]
+      } catch {
+        return []
+      }
+    }
+
+    register({
+      name: 'edit_file',
+      description: '把当前实例目录里某个文本文件中的一段文字精确替换成另一段（只匹配一次），改配置/options.txt 用这个比 write_file 更安全。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: '相对游戏目录的路径' },
+          old: { type: 'string', description: '要替换掉的原文片段（要唯一）' },
+          new: { type: 'string', description: '替换成的新内容' },
+        },
+        required: ['path', 'old', 'new'],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const inst = instance()
+        if (!inst) return { ok: false, summary: '没有当前实例' }
+        const rel = str(args.path).replace(/\\/g, '/')
+        if (!rel || rel.includes('..') || rel.startsWith('/')) return { ok: false, summary: '路径必须相对游戏目录' }
+        const file = path.join(inst.gameDir, rel)
+        if (!inScope(file, [inst.gameDir]) || /instance\.json$/i.test(file)) return { ok: false, summary: '不允许改这个文件' }
+        if (!existsSync(file)) return { ok: false, summary: `文件不存在：${file}` }
+        const text = readFileSync(file, 'utf8')
+        const oldText = String(args.old)
+        if (!oldText) return { ok: false, summary: 'old 不能为空' }
+        const count = text.split(oldText).length - 1
+        if (count === 0) return { ok: false, summary: '没找到要替换的原文，先 read_file 确认内容' }
+        if (count > 1) return { ok: false, summary: `匹配到 ${count} 处，请给更长的唯一片段` }
+        await writeTextAtomic(file, text.replace(oldText, String(args.new)))
+        return { ok: true, summary: `已替换 1 处（${rel}）` }
+      },
+    })
+
+    register({
+      name: 'search_files',
+      description: '在启动器目录里按文件内容搜索文本（类似 grep），找配置/日志/模组信息时用。',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: '要搜索的文字' },
+          path: { type: 'string', description: '在哪个目录下搜（留空=当前实例游戏目录）' },
+          limit: { type: 'number', description: '最多返回条数，默认 40' },
+        },
+        required: ['query'],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const query = str(args.query)
+        if (!query) return { ok: false, summary: 'query 不能为空' }
+        const root = str(args.path).trim() ? resolveReadPath(str(args.path)) : (instance()?.gameDir ?? paths.instances)
+        const limit = Math.min(100, Math.max(1, num(args.limit, 40)))
+        const results: string[] = []
+        let scanned = 0
+        // 允许直接传一个文件：只搜这个文件
+        try {
+          const rootStat = statSync(root)
+          if (rootStat.isFile()) {
+            const text = readFileSync(root, 'utf8')
+            const index = text.toLowerCase().indexOf(query.toLowerCase())
+            if (index < 0) return { ok: true, summary: `没找到「${query}」（文件 ${path.basename(root)}）` }
+            const line = text.slice(0, index).split('\n').length
+            const snippet = text.slice(Math.max(0, index - 60), index + query.length + 60).replace(/\s+/g, ' ')
+            return { ok: true, summary: `${path.basename(root)}:${line}: …${snippet}…`, data: [snippet] }
+          }
+        } catch {
+          /* 根路径不存在时走目录分支 */
+        }
+        const skipDirs = new Set(['node_modules', '.git', 'assets', 'libraries', 'runtimes', 'cache'])
+        const walk = (dir: string, depth: number): void => {
+          if (results.length >= limit || scanned > 5000 || depth > 6) return
+          let entries: { name: string; isDirectory(): boolean }[] = []
+          try {
+            entries = readdirSync(dir, { withFileTypes: true })
+          } catch {
+            return
+          }
+          for (const entry of entries) {
+            if (results.length >= limit) return
+            const full = path.join(dir, entry.name)
+            if (entry.isDirectory()) {
+              if (!skipDirs.has(entry.name)) walk(full, depth + 1)
+              continue
+            }
+            try {
+              if (statSync(full).size > 512 * 1024) continue
+            } catch {
+              continue
+            }
+            scanned += 1
+            try {
+              const text = readFileSync(full, 'utf8')
+              const index = text.toLowerCase().indexOf(query.toLowerCase())
+              if (index < 0) continue
+              const line = text.slice(0, index).split('\n').length
+              const snippet = text.slice(Math.max(0, index - 60), index + query.length + 60).replace(/\s+/g, ' ')
+              results.push(`${path.relative(root, full)}:${line}: …${snippet}…`)
+            } catch {
+              /* 二进制/编码问题忽略 */
+            }
+          }
+        }
+        walk(root, 0)
+        return {
+          ok: true,
+          summary: results.length ? `找到 ${results.length} 处（扫了 ${scanned} 个文件）：\n${results.join('\n')}` : `没找到（扫了 ${scanned} 个文件）`,
+          data: results,
+        }
+      },
+    })
+
+    register({
+      name: 'remember',
+      description: '把用户明确要求记住的信息存下来（跨会话保留，例如偏好、习惯、常用设置）。',
+      parameters: {
+        type: 'object',
+        properties: {
+          content: { type: 'string', description: '要记住的内容' },
+          kind: { type: 'string', description: '类别，如 偏好/习惯/事实' },
+        },
+        required: ['content'],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const content = str(args.content).trim()
+        if (!content) return { ok: false, summary: '内容为空' }
+        const items = readMemory()
+        if (!items.some((item) => item.content === content)) {
+          items.push({ content: content.slice(0, 1000), kind: str(args.kind) || undefined, ts: Date.now() })
+          await writeTextAtomic(memoryFile, JSON.stringify(items.slice(-200), null, 2))
+        }
+        return { ok: true, summary: `记住了：${content.slice(0, 80)}` }
+      },
+    })
+
+    register({
+      name: 'recall',
+      description: '检索之前 remember 记住的信息（跨会话）。',
+      parameters: {
+        type: 'object',
+        properties: { query: { type: 'string', description: '关键词，留空=看最近记住的' } },
+        required: [],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const query = str(args.query).toLowerCase()
+        const items = readMemory().filter((item) => !query || item.content.toLowerCase().includes(query))
+        if (items.length === 0) return { ok: true, summary: '没有相关记忆' }
+        return { ok: true, summary: items.slice(-20).map((item) => `- ${item.content}`).join('\n'), data: items }
+      },
+    })
+
+    register({
+      name: 'web_search',
+      description: '联网搜索网页（DuckDuckGo），返回标题和链接。需要最新信息/查资料时用；要正文再配合 web_fetch。',
+      parameters: {
+        type: 'object',
+        properties: { query: { type: 'string', description: '搜索词' } },
+        required: ['query'],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const query = str(args.query).trim()
+        if (!query) return { ok: false, summary: 'query 为空' }
+        try {
+          const res = await fetch(`https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+            headers: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) QDOQMC' },
+            signal: AbortSignal.timeout(15_000),
+          })
+          if (!res.ok) return { ok: false, summary: `搜索失败：HTTP ${res.status}` }
+          const html = await res.text()
+          const items: string[] = []
+          const pattern = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi
+          let match: RegExpExecArray | null
+          while ((match = pattern.exec(html)) !== null && items.length < 8) {
+            const title = match[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+            let href = match[1]
+            const encoded = /[?&]uddg=([^&]+)/.exec(href)
+            if (encoded) href = decodeURIComponent(encoded[1])
+            items.push(`${title} — ${href}`)
+          }
+          return { ok: true, summary: items.length ? items.join('\n') : '搜索没有结果（可能被风控，试试换关键词或用 web_fetch 直接抓已知网址）' }
+        } catch (err) {
+          return { ok: false, summary: `搜索失败：${err instanceof Error ? err.message : String(err)}` }
+        }
+      },
+    })
+
     register({
       name: 'run_command',
       description:

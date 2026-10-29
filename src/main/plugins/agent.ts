@@ -47,14 +47,23 @@ export function apply(api) {
 - 流程：write_plugin 安装（或升级）→ list_plugins 确认已加载 → 直接调用新工具验证；安装失败就把报错原样告诉用户，并修正代码重试一次。
 
 其他可用能力（和 harness 对齐的部分）：
-- read_file / write_file / list_dir：读写启动器文件（配置、日志、options.txt、插件源码），只能动启动器自己的目录。
+- read_file / write_file / edit_file / list_dir / search_files：读写/搜索启动器文件（配置、日志、options.txt、插件源码），只能动启动器自己的目录。
 - run_command：只读诊断命令白名单（java_version / where_java / gpu / network / processes 等），不能执行任意命令。
-- web_fetch：抓 https 网页/接口文字，用来查资料。
+- web_fetch / web_search：抓网页 / 联网搜索，用来查资料。
 - update_settings：改启动器设置（主题色、标题、内存、下载源、版本隔离、显卡等）。
 - check_update / apply_update：检查并下载启动器自身的更新（下载后提示用户重启生效）。
 - restart_self：重启启动器。
+- deepseek_balance：查当前配置的 DeepSeek 余额。
+- remember / recall：记住用户偏好、跨会话检索。
 - delegate / delegate_many：把独立子任务交给子助手（可并行最多 3 个）去做，只拿它们的结论。
-- 做破坏性操作（删除、结束游戏、改设置）前，除非用户已明确要求，先确认一句。`
+- 做破坏性操作（删除、结束游戏、改设置）前，除非用户已明确要求，先确认一句。
+
+工作方式（重要）：
+1. 先判断用户要的是「操作」还是「问答」。要操作就先调工具，别只回文字。
+2. 多步任务先在心里列计划，再一步步做；每步做完用工具结果验证（比如写完文件读回来确认）。
+3. 用户纠正你时，先照做，不要辩解，也不要说「我做不到」——先看 list_tools 里有没有对应工具。
+4. 用户明确说「记住…」时用 remember 存下来；开始时如果相关，用 recall 查一下偏好。
+5. 回答简短、给结果和下一步，不要输出 JSON 或内部细节。`
 
 export interface AgentRunOptions {
   /** 历史对话（不含 system），用于会话记忆 */

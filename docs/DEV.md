@@ -628,6 +628,8 @@ node_modules/.bin/electron . --chat="帮我检查下这个实例有没有冲突"
 | P31 | 设置：个性化 + 启动选项 + Java + 高性能显卡 + 版本隔离 | 设置页新增 7 组：个性化（标题/主题色/背景图）、启动选项（宽高/全屏/JVM）、Java（列出 4 个/选择/手动添加）、显卡开关（写 UserGpuPreferences）、版本隔离开关；settings smoke 断言 title/accent/gpu/javaRadios 全 true |
 | P31 | 下载中心增量显示 | `source:'all'` 先出 Modrinth、CurseForge 到了再补（不再等慢源） |
 | P32 | AI 写插件 / 自升级（harness 内核） | 新增 `write_plugin`/`list_plugins`/`remove_plugin` 三个 AI 工具 + `plugin-host.installFromSource/remove`（写 plugin.json+index.mjs → 沙箱加载 → 失败回滚）+ agent 系统提示教模型自我扩展；`--check-p32` 单进程实测：写→列出(2 个)→调 `smoke_ai_tool`(返回「AI 插件工作正常」)→删除，全绿且不烧模型 Key |
+| P33 | 补齐 harness 能力 | `read_file`/`write_file`/`list_dir`/`web_fetch`/`restart_self` + `run_command`（只读命令白名单）+ `update_settings`（AI 改自己设置）+ `check_update`/`apply_update`（AI 下载启动器更新）+ `delegate`/`delegate_many`（子助手，最多 3 并行、1 层）；`--call-tool` 实测 5 项全绿（java_version 返回 OpenJDK 21、list_dir/read_file/update_settings/check_update） |
+| P34 | 危险操作确认 + 模型可换 + 工具调用自纠 | 设置 `confirmDangerousOps`（默认开）：AI 要对 `stop_game/remove_plugin/write_file/apply_update/restart_self…` 动手前先说明、等用户回「确认」；模型只回文字不调工具时自动追加一次纠正提示再试；设置页加「快速切换模型」（deepseek-chat / deepseek-reasoner / 自定义） |
 
 > 汇总口径：每阶段都跑过 `npm run smoke` 与打包版 `--smoke`；涉及游戏启动的阶段有真实窗口标题与启动标记日志。
 > P28 另附 `scripts/p28-check.mjs`（下载器/镜像/分片实测，不启动 UI）和 [docs/P28-NOTES.md](P28-NOTES.md)（实现与实测数据）。

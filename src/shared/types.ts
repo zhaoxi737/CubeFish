@@ -121,7 +121,7 @@ export interface ToolCallTrace {
 export interface ChatReply {
   ok: boolean
   text: string
-  kind?: 'text' | 'action' | 'error' | 'agent'
+  kind?: 'text' | 'action' | 'error' | 'agent' | 'confirm'
   trace?: ToolCallTrace[]
   /** 文本是否通过流式增量推送过（渲染层避免重复拼接） */
   streamed?: boolean
@@ -180,6 +180,8 @@ export interface SettingsShape {
   customBackground: string
   /** P31：标题文本；空 = 'QDOQMC' */
   titleText: string
+  /** P34：AI 执行危险操作（结束游戏/删插件/写文件等）前需要用户确认 */
+  confirmDangerousOps: boolean
 }
 
 export type SettingsPatch = Partial<SettingsShape>

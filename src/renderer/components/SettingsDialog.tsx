@@ -117,6 +117,7 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
         apiKey: draft.apiKey,
         llmBaseUrl: draft.llmBaseUrl,
         llmModel: draft.llmModel,
+        confirmDangerousOps: draft.confirmDangerousOps,
         marketUrl: draft.marketUrl,
         msClientId: draft.msClientId,
         marketPublicKey: draft.marketPublicKey,
@@ -465,6 +466,31 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
               placeholder="deepseek-chat"
               spellCheck={false}
             />
+            <span className="field-hint">常用：deepseek-chat（便宜快）/ deepseek-reasoner（更强、工具调用更稳、贵一些）。</span>
+          </label>
+
+          <label className="field">
+            <span className="field-label">快速切换模型</span>
+            <select
+              value={['deepseek-chat', 'deepseek-reasoner'].includes(draft.llmModel) ? draft.llmModel : '__custom__'}
+              onChange={(event) => {
+                if (event.target.value !== '__custom__') update('llmModel', event.target.value)
+              }}
+            >
+              <option value="deepseek-chat">deepseek-chat（便宜快）</option>
+              <option value="deepseek-reasoner">deepseek-reasoner（更强）</option>
+              <option value="__custom__">自定义（用上面的「模型名」）</option>
+            </select>
+          </label>
+
+          <label className="field field-inline">
+            <input
+              type="checkbox"
+              checked={draft.confirmDangerousOps}
+              onChange={(event) => update('confirmDangerousOps', event.target.checked)}
+            />
+            <span>AI 执行危险操作前先问我（结束游戏 / 删插件 / 写文件 / 重启等）</span>
+            <span className="field-hint">开着更安全：AI 会先说要做什么，你回复「确认」它才执行。</span>
           </label>
 
           <div className="settings-group-title">隐私与统计</div>

@@ -6,6 +6,7 @@ import type { ChatReply, ToolCallTrace } from '../../shared/types'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { LlmMessage, LlmService } from './llm'
 import type { LogService } from './logger'
+import type { SettingsService } from './settings'
 import type { TelemetryService } from './telemetry'
 import type { ToolsService } from './tools'
 
@@ -69,8 +70,25 @@ export function createAgentPlugin(): LauncherPlugin<void> {
   return definePlugin('agent', () => (ctx) => {
     const llm = use<LlmService>(ctx, 'llm')
     const tools = use<ToolsService>(ctx, 'tools')
+    const settings = use<SettingsService>(ctx, 'settings')
     const log = use<LogService>(ctx, 'log')
     const telemetry = use<TelemetryService>(ctx, 'telemetry')
+
+    /** P34：需要用户二次确认的破坏性/不可逆操作 */
+    const DANGEROUS_TOOLS = new Set([
+      'stop_game',
+      'remove_plugin',
+      'write_file',
+      'import_instance',
+      'install_version',
+      'apply_update',
+      'restart_self',
+      'bind_instance_account',
+    ])
+    const CONFIRM_WORDS = ['确认', '确定', '同意', '执行吧', '是的']
+    const ACTION_HINTS = ['帮我', '写', '装', '改', '删', '读', '查', '跑', '更新', '重启', '生成', '执行', '安装', '配置', '设置', '备份', '下载']
+    const userConfirmed = (text: string): boolean => CONFIRM_WORDS.some((word) => text.includes(word))
+    const wantsAction = (text: string): boolean => ACTION_HINTS.some((word) => text.includes(word))
 
     async function run(userText: string, options?: AgentRunOptions): Promise<ChatReply> {
       if (!llm.available()) {
@@ -88,6 +106,7 @@ export function createAgentPlugin(): LauncherPlugin<void> {
       ]
       const trace: ToolCallTrace[] = []
       const started = Date.now()
+      let nudged = false
 
       try {
         for (let round = 0; round < MAX_ROUNDS; round += 1) {
@@ -96,6 +115,16 @@ export function createAgentPlugin(): LauncherPlugin<void> {
             : await llm.chat(messages, tools.specs())
 
           if (response.toolCalls.length === 0) {
+            // P34：模型只回了文字但用户明显要操作 → 提醒它调工具，再试一次
+            if (!nudged && wantsAction(userText)) {
+              nudged = true
+              log.info('agent', '模型未调用工具，追加一次纠正提示', { rounds: round, userText: userText.slice(0, 40) })
+              messages.push({
+                role: 'user',
+                content: '（系统提示：你刚才没有调用任何工具。要完成用户的要求，请先调用合适的工具，不要只回复文字。）',
+              })
+              continue
+            }
             const text = (response.content ?? '').trim()
             telemetry.record('agent:answer', {
               rounds: round + 1,
@@ -107,6 +136,20 @@ export function createAgentPlugin(): LauncherPlugin<void> {
               kind: 'agent',
               text: text || '（模型没有返回内容）',
               trace,
+            }
+          }
+
+          // P34：危险操作先要确认（用户本条消息里带「确认/确定/同意」才放行）
+          if (settings.get('confirmDangerousOps') && !userConfirmed(userText)) {
+            const dangerous = response.toolCalls.find((call) => DANGEROUS_TOOLS.has(call.name))
+            if (dangerous) {
+              const argsText = (dangerous.arguments ?? '').replace(/\s+/g, ' ').slice(0, 160)
+              return {
+                ok: false,
+                kind: 'confirm',
+                text: `我要执行「${dangerous.name}」${argsText ? `（${argsText}）` : ''}。这属于会改动启动器/游戏的操作，确认的话回复「确认」我就执行。`,
+                trace,
+              }
             }
           }
 

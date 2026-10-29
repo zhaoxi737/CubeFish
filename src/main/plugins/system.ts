@@ -8,16 +8,19 @@
  * 注意：麦克风/喇叭属于系统能力，插件沙箱里拿不到（没有 DOM 和媒体 API），所以做成内置服务。
  */
 import { execFile } from 'node:child_process'
-import { mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import electron from 'electron'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { RecordingItem, SystemInfo } from '../../shared/types'
+import { findRepoRoot, runCommand, runNpm } from '../lib/repo'
 import type { LogService } from './logger'
 import type { PathsService } from './paths'
 
 const execFileAsync = promisify(execFile)
+const electronApp = electron.app
 
 export type { RecordingItem, SystemInfo }
 
@@ -29,6 +32,10 @@ export interface SystemService {
   recordingsDir(): string
   saveRecording(data: Buffer, ext?: string): Promise<{ ok: boolean; path?: string; error?: string }>
   listRecordings(): RecordingItem[]
+  /** P40：把 src/ 回滚到上一次提交，重新构建并同步，然后重启自己 */
+  rollbackSource(): Promise<{ ok: boolean; message: string; reverted?: string[] }>
+  /** P40：查看 src/ 当前有多少未提交改动 */
+  sourceStatus(): Promise<{ ok: boolean; repoRoot?: string; dirty: string[]; error?: string }>
 }
 
 export function createSystemPlugin(): LauncherPlugin<void> {
@@ -115,6 +122,69 @@ export function createSystemPlugin(): LauncherPlugin<void> {
       }
     }
 
+    const repoHints = (): string[] => {
+      const hints: string[] = []
+      try {
+        hints.push(path.dirname(electronApp.getPath('exe')))
+      } catch {
+        /* 忽略 */
+      }
+      if (process.resourcesPath) hints.push(path.dirname(process.resourcesPath))
+      return hints
+    }
+
+    const sourceStatus = async (): Promise<{ ok: boolean; repoRoot?: string; dirty: string[]; error?: string }> => {
+      const root = findRepoRoot(repoHints())
+      if (!root) return { ok: false, dirty: [], error: '找不到源码目录（打包版需要源码在 dist 上一级，或设置 QDOQMC_REPO）' }
+      const result = await runCommand('git', ['-C', root, 'status', '--porcelain', '--', 'src'], root, 30_000)
+      if (!result.ok) return { ok: false, repoRoot: root, dirty: [], error: result.stderr.slice(0, 400) }
+      const dirty = result.stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+      return { ok: true, repoRoot: root, dirty }
+    }
+
+    const rollbackSource = async (): Promise<{ ok: boolean; message: string; reverted?: string[] }> => {
+      const root = findRepoRoot(repoHints())
+      if (!root) return { ok: false, message: '找不到源码目录：把源码放回 dist 上一级，或设置环境变量 QDOQMC_REPO' }
+      const status = await runCommand('git', ['-C', root, 'status', '--porcelain', '--', 'src'], root, 30_000)
+      if (!status.ok) return { ok: false, message: `git 不可用：${status.stderr.slice(0, 300)}` }
+      const reverted = status.stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+      const checkout = await runCommand('git', ['-C', root, 'checkout', '--', 'src'], root, 60_000)
+      if (!checkout.ok) return { ok: false, message: `回滚失败：${checkout.stderr.slice(0, 400)}` }
+      // 清掉 AI 新建但没提交的 src 文件，避免残留导致构建失败
+      await runCommand('git', ['-C', root, 'clean', '-fd', '--', 'src'], root, 60_000)
+      const build = await runNpm(['run', 'build'], root, 300_000)
+      if (!build.ok) {
+        return { ok: false, message: `回滚完成但重新构建失败：${(build.stderr || build.stdout).slice(0, 500)}`, reverted }
+      }
+      const outDir = path.join(root, 'out')
+      const resourcesApp = process.resourcesPath ? path.join(process.resourcesPath, 'app') : ''
+      if (resourcesApp && existsSync(resourcesApp) && existsSync(outDir)) {
+        const target = path.join(resourcesApp, 'out')
+        rmSync(target, { recursive: true, force: true })
+        cpSync(outDir, target, { recursive: true })
+      }
+      log.info('system', '源码已回滚', { root, files: reverted.length })
+      setTimeout(() => {
+        try {
+          electronApp.relaunch()
+          electronApp.exit(0)
+        } catch {
+          /* 忽略 */
+        }
+      }, 800)
+      return {
+        ok: true,
+        message: `已回滚 ${reverted.length} 个源码文件并重新构建，正在重启…`,
+        reverted,
+      }
+    }
+
     ctx.provide('system', {
       info,
       setSpeaker: (sink) => {
@@ -124,6 +194,8 @@ export function createSystemPlugin(): LauncherPlugin<void> {
       recordingsDir: () => recordingsDir,
       saveRecording,
       listRecordings,
+      rollbackSource,
+      sourceStatus,
     } satisfies SystemService)
 
     log.info('system', '系统对接就绪', { platform: process.platform, recordings: recordingsDir })

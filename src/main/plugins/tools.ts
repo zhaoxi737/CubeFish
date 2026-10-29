@@ -1310,6 +1310,37 @@ export function createToolsPlugin(): LauncherPlugin<void> {
     })
 
     register({
+      name: 'source_status',
+      description: '查看启动器源码 src/ 有没有未提交的改动（AI 改源码前后自查用）。',
+      parameters: EMPTY_PARAMS,
+      async handler() {
+        const svc = ctx.get('system') as SystemService | undefined
+        if (!svc) return { ok: false, summary: '系统服务未就绪' }
+        const status = await svc.sourceStatus()
+        if (!status.ok) return { ok: false, summary: status.error ?? '读取失败' }
+        if (status.dirty.length === 0) return { ok: true, summary: `src/ 干净（仓库：${status.repoRoot}）` }
+        return {
+          ok: true,
+          summary: `src/ 有 ${status.dirty.length} 个未提交改动：\n${status.dirty.slice(0, 20).join('\n')}`,
+          data: status.dirty,
+        }
+      },
+    })
+
+    register({
+      name: 'rollback_source',
+      description:
+        '把启动器源码 src/ 回滚到最后一次 git 提交，重新构建并重启（AI 改坏源码时的自救办法）。',
+      parameters: EMPTY_PARAMS,
+      async handler() {
+        const svc = ctx.get('system') as SystemService | undefined
+        if (!svc) return { ok: false, summary: '系统服务未就绪' }
+        const result = await svc.rollbackSource()
+        return { ok: result.ok, summary: result.message, data: result.reverted }
+      },
+    })
+
+    register({
       name: 'set_memory',
       description: '设置当前实例的内存分配（MB），范围 512–32768。',
       parameters: {

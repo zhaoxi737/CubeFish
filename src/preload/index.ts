@@ -128,6 +128,8 @@ const api: QdoApi = {
     speak: (text) => ipcRenderer.invoke(CH.systemSpeak, text),
     saveRecording: (data, ext) => ipcRenderer.invoke(CH.systemRecordSave, data, ext),
     recordings: () => ipcRenderer.invoke(CH.systemRecordings),
+    rollback: () => ipcRenderer.invoke(CH.systemRollback),
+    sourceStatus: () => ipcRenderer.invoke(CH.systemSourceStatus),
     onSpeak: (callback) => {
       const listener = (_event: unknown, payload: { text?: string }) => callback(payload?.text ?? '')
       ipcRenderer.on(EVT.speak, listener)

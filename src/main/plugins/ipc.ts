@@ -218,6 +218,8 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
       system.saveRecording(Buffer.from(data), ext),
     )
     handle(CH.systemRecordings, () => system.listRecordings())
+    handle(CH.systemRollback, () => system.rollbackSource())
+    handle(CH.systemSourceStatus, () => system.sourceStatus())
     handle(CH.chatHistory, () => chat.history())
     handle(CH.chatClear, () => {
       chat.clearHistory()

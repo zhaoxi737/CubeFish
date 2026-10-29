@@ -17,6 +17,8 @@ export function SystemPanel({ onClose, onNotify }: { onClose: () => void; onNoti
       return false
     }
   })
+  const [source, setSource] = useState<{ ok: boolean; repoRoot?: string; dirty: string[]; error?: string } | null>(null)
+  const [rollingBack, setRollingBack] = useState(false)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
 
@@ -29,6 +31,11 @@ export function SystemPanel({ onClose, onNotify }: { onClose: () => void; onNoti
     }
     try {
       setRecordings(await window.qdo.system.recordings())
+    } catch {
+      /* 忽略 */
+    }
+    try {
+      setSource(await window.qdo.system.sourceStatus())
     } catch {
       /* 忽略 */
     }
@@ -165,6 +172,49 @@ export function SystemPanel({ onClose, onNotify }: { onClose: () => void; onNoti
               />
               <span>AI 每次回复都朗读出来</span>
             </label>
+          </section>
+          <section>
+            <h4>源码回滚</h4>
+            <p className="muted">
+              AI 改坏启动器源码 / 构建失败时用：把 <code>src/</code> 回滚到上次 git 提交 → 重新构建 → 自动重启。
+            </p>
+            {source ? (
+              source.ok ? (
+                <div className="muted">
+                  {source.dirty.length > 0
+                    ? `有 ${source.dirty.length} 个文件未提交：${source.dirty
+                        .slice(0, 3)
+                        .map((line) => line.split(/\s+/).pop())
+                        .join('、')}${source.dirty.length > 3 ? ' …' : ''}`
+                    : 'src/ 当前没有未提交改动'}
+                </div>
+              ) : (
+                <div className="muted">{source.error}</div>
+              )
+            ) : (
+              <div className="muted">读取中…</div>
+            )}
+            <div className="system-row">
+              <button
+                type="button"
+                className="composer-stop"
+                disabled={rollingBack}
+                onClick={async () => {
+                  if (!window.confirm('把 src/ 回滚到最后一次提交、重新构建并重启？\n当前未提交的源码改动会丢失（其它目录不受影响）。')) return
+                  setRollingBack(true)
+                  try {
+                    const result = await window.qdo.system.rollback()
+                    onNotify(result.message)
+                  } catch (err) {
+                    onNotify(`回滚失败：${err instanceof Error ? err.message : String(err)}`)
+                  } finally {
+                    setRollingBack(false)
+                  }
+                }}
+              >
+                {rollingBack ? '回滚中…' : '回滚源码并重启'}
+              </button>
+            </div>
           </section>
         </div>
       </div>

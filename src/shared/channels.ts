@@ -90,6 +90,8 @@ export const CH = {
   systemSpeak: 'system:speak',
   systemRecordSave: 'system:record-save',
   systemRecordings: 'system:recordings',
+  systemRollback: 'system:rollback',
+  systemSourceStatus: 'system:source-status',
   marketList: 'market:list',
   marketInstall: 'market:install',
 } as const

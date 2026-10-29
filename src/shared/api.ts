@@ -195,6 +195,10 @@ export interface QdoApi {
     /** 保存一段录音（麦克风录完的二进制） */
     saveRecording(data: ArrayBuffer, ext?: string): Promise<{ ok: boolean; path?: string; error?: string }>
     recordings(): Promise<RecordingItem[]>
+    /** P40：回滚 src/ 到上次提交并重新构建、重启 */
+    rollback(): Promise<{ ok: boolean; message: string; reverted?: string[] }>
+    /** P40：查看 src/ 未提交改动 */
+    sourceStatus(): Promise<{ ok: boolean; repoRoot?: string; dirty: string[]; error?: string }>
     /** 主进程要求朗读时触发；返回取消订阅 */
     onSpeak(callback: (text: string) => void): () => void
   }

@@ -3,9 +3,11 @@
  *
  * 每个工具 = 权限点 + 审计点。P4 全部是用户级操作；后续插件市场的第三方工具走权限分级。
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { app } from 'electron'
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import type { ToolCallTrace } from '../../shared/types'
+import { writeTextAtomic } from '../lib/fsx'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { ConflictService } from './conflict'
 import type { ContentService } from './content'
@@ -18,6 +20,7 @@ import type { AuthService } from './auth'
 import type { LoadersService } from './loaders'
 import type { LogService } from './logger'
 import type { MojangService } from './mojang'
+import type { PathsService } from './paths'
 import type { PluginHostService } from './plugin-host'
 import type { TelemetryService } from './telemetry'
 
@@ -66,6 +69,7 @@ export function createToolsPlugin(): LauncherPlugin<void> {
     const conflict = use<ConflictService>(ctx, 'conflict')
     const diagnose = use<DiagnoseService>(ctx, 'diagnose')
     const launch = use<LaunchService>(ctx, 'launch')
+    const paths = use<PathsService>(ctx, 'paths')
     const log = use<LogService>(ctx, 'log')
     const telemetry = use<TelemetryService>(ctx, 'telemetry')
 
@@ -74,6 +78,21 @@ export function createToolsPlugin(): LauncherPlugin<void> {
       const svc = ctx.get('pluginHost') as PluginHostService | undefined
       if (!svc) throw new Error('插件宿主尚未就绪')
       return svc
+    }
+
+    // ---- P33：文件 / 网络 / 重启（缩小与 harness 的差距）----
+    const readRoots = () => [paths.data, paths.instances, paths.logs, paths.meta, paths.versions]
+    const inScope = (target: string, roots: string[]): boolean => {
+      const resolved = path.resolve(target)
+      return roots.some((root) => {
+        const r = path.resolve(root)
+        return resolved === r || resolved.startsWith(r + path.sep)
+      })
+    }
+    const resolveReadPath = (input: string): string => {
+      const p = path.isAbsolute(input) ? input : path.join(instance()?.gameDir ?? paths.instances, input)
+      if (!inScope(p, readRoots())) throw new Error(`路径不在允许范围内：${p}`)
+      return p
     }
 
     const registry = new Map<string, ToolDefinition>()
@@ -502,6 +521,118 @@ export function createToolsPlugin(): LauncherPlugin<void> {
           summary: `插件 ${info.id} 已重载。注册工具：${(info.tools ?? []).join(', ') || '无'}；命令：${(info.commands ?? []).join(', ') || '无'}`,
           data: info,
         }
+      },
+    })
+
+    register({
+      name: 'read_file',
+      description:
+        '读取启动器目录里的文本文件（配置 / 日志 / 插件源码 / 崩溃报告 / options.txt 等）。传绝对路径，或相对当前实例游戏目录的路径。',
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string', description: '文件路径' } },
+        required: ['path'],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const file = resolveReadPath(str(args.path))
+        if (!existsSync(file)) return { ok: false, summary: `文件不存在：${file}` }
+        const info = statSync(file)
+        if (info.isDirectory()) return { ok: false, summary: `这是目录，用 list_dir 查看：${file}` }
+        if (info.size > 200 * 1024) return { ok: false, summary: `文件太大（${info.size} 字节），不读取` }
+        const text = readFileSync(file, 'utf8')
+        return { ok: true, summary: text.slice(0, 60000) || '（空文件）' }
+      },
+    })
+
+    register({
+      name: 'write_file',
+      description:
+        '往当前实例的游戏目录里写一个文本文件（例如改 options.txt、加/改配置）。路径相对游戏目录，不允许 .. 或绝对路径，不能覆盖实例配置。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: '相对游戏目录的路径，如 options.txt 或 config/xx.properties' },
+          content: { type: 'string', description: '要写入的内容' },
+        },
+        required: ['path', 'content'],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const inst = instance()
+        if (!inst) return { ok: false, summary: '没有当前实例' }
+        const rel = str(args.path).replace(/\\/g, '/')
+        if (!rel || rel.includes('..') || rel.startsWith('/')) {
+          return { ok: false, summary: '路径必须相对游戏目录，不允许 .. 或绝对路径' }
+        }
+        const content = String(args.content)
+        if (content.length > 1024 * 1024) return { ok: false, summary: '内容超过 1MB' }
+        const file = path.join(inst.gameDir, rel)
+        if (!inScope(file, [inst.gameDir]) || /instance\.json$/i.test(file)) {
+          return { ok: false, summary: '只允许写实例游戏目录内，且不能覆盖实例配置' }
+        }
+        mkdirSync(path.dirname(file), { recursive: true })
+        await writeTextAtomic(file, content)
+        return { ok: true, summary: `已写入 ${rel}（${content.length} 字节）` }
+      },
+    })
+
+    register({
+      name: 'list_dir',
+      description: '列目录内容（启动器数据目录或实例目录）。传绝对路径，或相对当前实例游戏目录的路径。',
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string', description: '目录路径（留空 = 当前实例游戏目录）' } },
+        required: [],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const input = str(args.path).trim()
+        const dir = input ? resolveReadPath(input) : (instance()?.gameDir ?? paths.instances)
+        if (!existsSync(dir)) return { ok: false, summary: `目录不存在：${dir}` }
+        const entries = readdirSync(dir, { withFileTypes: true })
+          .slice(0, 100)
+          .map((entry) => {
+            const full = path.join(dir, entry.name)
+            let size = ''
+            try {
+              if (!entry.isDirectory()) size = ` (${statSync(full).size} 字节)`
+            } catch {
+              /* 忽略 */
+            }
+            return `${entry.isDirectory() ? '[目录] ' : ''}${entry.name}${size}`
+          })
+        return { ok: true, summary: `${dir}\n${entries.join('\n') || '（空）'}` }
+      },
+    })
+
+    register({
+      name: 'web_fetch',
+      description: '抓取一个网页/接口的文字内容（只允许 https，用于查资料，例如模组说明、报错原因）。',
+      parameters: {
+        type: 'object',
+        properties: { url: { type: 'string', description: 'https 链接' } },
+        required: ['url'],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const url = str(args.url).trim()
+        if (!/^https:\/\//i.test(url)) return { ok: false, summary: '只允许 https 链接' }
+        const res = await fetch(url, { headers: { 'user-agent': 'QDOQMC/0.1.0' }, signal: AbortSignal.timeout(15_000) })
+        if (!res.ok) return { ok: false, summary: `HTTP ${res.status}` }
+        const text = await res.text()
+        return { ok: true, summary: text.slice(0, 20000) || '（空内容）' }
+      },
+    })
+
+    register({
+      name: 'restart_self',
+      description: '重启启动器自身（app.relaunch），用于让某些改动完全生效。',
+      parameters: EMPTY_PARAMS,
+      async handler() {
+        app.relaunch()
+        app.exit(0)
+        return { ok: true, summary: '正在重启启动器…' }
       },
     })
 

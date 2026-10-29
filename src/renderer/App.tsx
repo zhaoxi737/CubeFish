@@ -245,6 +245,16 @@ export function App() {
     }
   }, [hasApi, newInstanceName, notify, refreshInstalled])
 
+  const openFolder = useCallback(async (id: string) => {
+    try {
+      const result = await window.qdo.instances.openFolder(id, 'game')
+      if (!result.ok) notify(`打开失败：${result.error ?? '未知错误'}`)
+      else notify(`已在资源管理器打开：${result.path}`)
+    } catch (err) {
+      notify(`打开失败：${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [notify])
+
   const exportInstance = useCallback(async () => {
     if (!hasApi || !instance) return
     try {
@@ -482,7 +492,7 @@ export function App() {
           <span className="brand-mark">QDOQMC</span>
           <span className="brand-sub">大肥鱼开服</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P26 · 版本管理</span>
+          <span className="brand-tag">P27 · 版本列表</span>
         </div>
         <div className="titlebar-actions">
           <button type="button" className="ghost" onClick={() => setShowMods(true)} disabled={!instance}>
@@ -504,37 +514,59 @@ export function App() {
       </header>
 
       <main className="main">
-        <section className="stage">
-          <div className="instances-line">
-            <select
-              className="instance-select"
-              value={instance?.id ?? ''}
-              onChange={(event) => void switchInstance(event.target.value)}
-              disabled={Boolean(running)}
-            >
-              {instances.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                  {item.versionId ? ` · ${item.gameVersion ?? item.versionId}` : ' · 未装版本'}
-                </option>
-              ))}
-            </select>
+        <aside className="version-sidebar">
+          <div className="sidebar-head">
+            <span className="sidebar-title">版本</span>
             <button type="button" className="ghost tiny" onClick={() => setNewInstanceOpen(true)} disabled={Boolean(running)}>
               + 新建
             </button>
-            <button type="button" className="ghost tiny" onClick={() => setShowVersions(true)} disabled={Boolean(running)}>
+          </div>
+          <div className="sidebar-list">
+            {instances.map((item) => {
+              const active = item.id === (instance?.id ?? '')
+              return (
+                <div
+                  key={item.id}
+                  className={`ver-card ${active ? 'is-active' : ''}`}
+                  onClick={() => {
+                    if (!running) void switchInstance(item.id)
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !running) void switchInstance(item.id)
+                  }}
+                >
+                  <div className="ver-card-top">
+                    <span className="ver-card-name">{item.name}</span>
+                    {active ? <span className="ver-card-dot" /> : null}
+                  </div>
+                  <div className="ver-card-meta">
+                    {item.gameVersion ?? item.versionId ?? '未装版本'} · {item.loader}
+                  </div>
+                  <div className="ver-card-info">
+                    {item.memoryMb} MB · {item.accountName ?? item.playerName ?? 'Player'}
+                  </div>
+                  <div className="ver-card-actions" onClick={(event) => event.stopPropagation()}>
+                    <button type="button" className="ghost tiny" onClick={() => void openFolder(item.id)} title="打开游戏目录">
+                      📂 文件夹
+                    </button>
+                    <button type="button" className="ghost tiny" onClick={() => setShowVersions(true)} title="版本管理">
+                      ⋯
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div className="sidebar-foot">
+            <button type="button" className="ghost tiny" onClick={() => setShowVersions(true)}>
               版本管理
             </button>
-            {instance && instance.id !== 'default' ? (
-              <button
-                type="button"
-                className="ghost tiny danger"
-                onClick={() => void deleteInstance(instance.id)}
-                disabled={Boolean(running)}
-              >
-                删除
-              </button>
-            ) : null}
+          </div>
+        </aside>
+        <section className="stage">
+          <div className="stage-chips">
             <span className="chip">{instance?.gameVersion ?? instance?.versionId ?? '未选版本'}</span>
             <span className="chip">{instance?.loader ?? 'vanilla'}</span>
             <span className="chip">{instance?.memoryMb ?? 0} MB</span>

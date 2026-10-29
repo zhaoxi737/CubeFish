@@ -261,7 +261,7 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
 
       // 版本管理：打开面板截图 → UI 重命名来回一次 → 读取目录信息
       await win.webContents.executeJavaScript(
-        `(() => { const btn = [...document.querySelectorAll('.instances-line button')].find((b) => b.textContent?.trim() === '版本管理'); btn?.click(); return 'versions-open' })()`,
+        `(() => { const btn = [...document.querySelectorAll('.version-sidebar button')].find((b) => b.textContent?.trim() === '版本管理'); btn?.click(); return 'versions-open' })()`,
       )
       await wait(900)
       const versionShot = await shot('smoke-versions.png')
@@ -317,7 +317,7 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
       process.env.QDOQMC_SAVE_FILE = path.join(dir, 'smoke-export.zip')
       // 记录 toast 与产物
       await win.webContents.executeJavaScript(
-        `(() => { const btn = [...document.querySelectorAll('.instances-line button')].find((b) => b.textContent?.trim() === '导出'); btn?.click(); return 'export-clicked' })()`,
+        `(() => { const btn = [...document.querySelectorAll('.version-sidebar button')].find((b) => b.textContent?.trim() === '导出'); btn?.click(); return 'export-clicked' })()`,
       )
       await wait(1200)
       const exportInfo = (await win.webContents.executeJavaScript(
@@ -601,7 +601,7 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
 
       // 导入对话框：验证「选择…」把路径填进输入框
       await win.webContents.executeJavaScript(
-        `(() => { const btn = [...document.querySelectorAll('.instances-line button')].find((b) => b.textContent?.trim() === '+ 新建'); btn?.click(); return 'new-instance-open' })()`,
+        `(() => { const btn = [...document.querySelectorAll('.version-sidebar button')].find((b) => b.textContent?.trim() === '+ 新建'); btn?.click(); return 'new-instance-open' })()`,
       )
       await wait(600)
       await win.webContents.executeJavaScript(
@@ -616,6 +616,15 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
       )
       await wait(400)
       console.log('SMOKE_STEP pack-done')
+      // 左侧版本栏：点第一张卡片切回默认实例
+      await win.webContents.executeJavaScript(
+        `(() => { const card = document.querySelector('.ver-card'); card?.click(); return 'card-clicked' })()`,
+      )
+      await wait(1000)
+      const switchInfo = (await win.webContents.executeJavaScript(
+        `JSON.stringify({ active: document.querySelector('.ver-card.is-active .ver-card-name')?.textContent ?? '', toast: document.querySelector('.toast')?.textContent ?? '', cards: document.querySelectorAll('.ver-card').length })`,
+      )) as string
+
       const info = k.ctx.get('appMeta') as { version?: string } | undefined
       console.log(
         `SMOKE_RESULT ${JSON.stringify({
@@ -638,6 +647,7 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           gameLog: { info: JSON.parse(gameLogInfo), screenshot: gameLogShot },
           instanceExport: { info: JSON.parse(exportInfo), files: exportFiles, saved: exportFromDialog },
           versions: { info: JSON.parse(versionInfo), folders: JSON.parse(foldersInfo), rename: renameResult, screenshot: versionShot },
+          sidebar: JSON.parse(switchInfo),
           chatStatus: chat,
         })}`,
       )

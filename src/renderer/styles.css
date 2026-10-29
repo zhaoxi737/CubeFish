@@ -3501,5 +3501,189 @@ body {
   color: #60a5fa;
 }
 
+/* ============================================================
+   P31：左侧栏并入版本卡 + 启动按钮，中间留空，两侧可收起
+   ============================================================ */
+
+.main {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.version-sidebar {
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.sidebar-toggle {
+  margin-left: auto;
+}
+
+.sidebar-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.side-launch {
+  padding: 10px 12px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.side-hero {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.side-hero-meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.side-hero-name {
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.side-hero-sub {
+  font-size: 11px;
+  color: #93a5b7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.side-launch .launch {
+  width: 100%;
+  max-width: none;
+  padding: 14px 14px 12px;
+}
+
+.side-launch .launch-main {
+  font-size: 24px;
+}
+
+.side-launch .stop-btn {
+  width: 100%;
+}
+
+.main.left-collapsed .version-sidebar {
+  width: 48px;
+}
+
+.main.left-collapsed .sidebar-head {
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0;
+}
+
+.main.left-collapsed .sidebar-toggle {
+  margin: 0;
+}
+
+/* 右侧 AI 助手（可收起） */
+.chat-side {
+  width: 430px;
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.chat-side .chat {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-side-collapse {
+  position: absolute;
+  top: 12px;
+  left: 8px;
+  z-index: 5;
+  background: rgba(10, 15, 22, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #9fb3c8;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.chat-side-collapse:hover {
+  color: #fff;
+  border-color: rgba(77, 107, 254, 0.5);
+}
+
+.main.right-collapsed .chat-side {
+  width: 46px;
+}
+
+.chat-side-tab {
+  writing-mode: vertical-rl;
+  height: 100%;
+  background: rgba(10, 15, 22, 0.6);
+  border: 1px solid rgba(77, 107, 254, 0.3);
+  color: #cfe0ff;
+  font-weight: 700;
+  letter-spacing: 6px;
+  font-size: 15px;
+  border-radius: 0;
+}
+
+/* 中间留空 */
+.stage {
+  background: transparent;
+  justify-content: flex-start;
+  align-items: stretch;
+  gap: 12px;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.stage .update-banner,
+.stage .exit-card,
+.stage .warn-box {
+  max-width: 560px;
+}
+
+/* P31：个性化主题色 / 背景图（CSS 变量由 App 注入） */
+.app {
+  background: #05080c var(--app-bg, url('./assets/bg-user.jpg')) center / cover fixed no-repeat;
+}
+
+.brand-mark {
+  background: none !important;
+  color: var(--p31-accent, #4d6bfe);
+  -webkit-background-clip: initial !important;
+  -webkit-text-fill-color: var(--p31-accent, #4d6bfe);
+}
+
+.titlebar-actions .ghost.nav-strong {
+  color: #fff;
+  border-color: color-mix(in srgb, var(--p31-accent, #4d6bfe) 60%, transparent);
+  background: color-mix(in srgb, var(--p31-accent, #4d6bfe) 30%, transparent);
+}
+
+.dc-nav-item.is-active,
+.ver-card.is-active {
+  background: color-mix(in srgb, var(--p31-accent, #4d6bfe) 20%, transparent);
+  border-color: color-mix(in srgb, var(--p31-accent, #4d6bfe) 45%, transparent);
+}
+
+
 
 

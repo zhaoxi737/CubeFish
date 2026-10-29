@@ -158,6 +158,28 @@ export interface SettingsShape {
   downloadSource: DownloadSource
   /** P28：单文件分片下载数 1..16 */
   downloadThreads: number
+  /** P31：各实例 mods/资源包/光影 是否独立（true）；false = 共用（junction 指向共享目录） */
+  isolatedMods: boolean
+  /** P31：启动时用高性能显卡（写入 Windows 用户级 GPU 偏好） */
+  useHighPerformanceGpu: boolean
+  /** P31：首选 Java 路径；空 = 自动选择 */
+  preferredJavaPath: string
+  /** P31：手动添加的 java.exe 路径 */
+  manualJavaPaths: string[]
+  /** P31：启动窗口宽 0..16384；0 = 用游戏默认 */
+  launchWindowWidth: number
+  /** P31：启动窗口高 0..16384；0 = 用游戏默认 */
+  launchWindowHeight: number
+  /** P31：启动时全屏 */
+  launchFullscreen: boolean
+  /** P31：追加 JVM 参数（空格分隔，支持引号内空格） */
+  jvmArgs: string
+  /** P31：主题强调色（#hex 或常见色名） */
+  themeAccent: string
+  /** P31：自定义背景图路径；空 = 内置背景图 */
+  customBackground: string
+  /** P31：标题文本；空 = 'QDOQMC' */
+  titleText: string
 }
 
 export type SettingsPatch = Partial<SettingsShape>
@@ -295,6 +317,8 @@ export interface JavaRuntimeInfo {
   version: string
   major: number
   source: 'env' | 'path' | 'common' | 'mojang' | 'manual'
+  /** P31：是否是用户首选 Java（settings.preferredJavaPath） */
+  preferred?: boolean
 }
 
 export interface LaunchResult {

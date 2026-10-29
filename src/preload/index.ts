@@ -43,6 +43,12 @@ const api: QdoApi = {
   },
   java: {
     list: () => ipcRenderer.invoke(CH.javaList),
+    addManual: (path) => ipcRenderer.invoke(CH.javaAddManual, path),
+    setPreferred: (path) => ipcRenderer.invoke(CH.javaSetPreferred, path),
+  },
+  gpu: {
+    setEnabled: (enabled) => ipcRenderer.invoke(CH.gpuSet, enabled),
+    status: () => ipcRenderer.invoke(CH.gpuStatus),
   },
   content: {
     search: (query, opts) => ipcRenderer.invoke(CH.contentSearch, query, opts),

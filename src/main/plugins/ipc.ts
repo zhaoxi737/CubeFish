@@ -49,6 +49,7 @@ import type { ConflictService } from './conflict'
 import type { ContentKind, ContentService } from './content'
 import type { DiagnoseService } from './diagnose'
 import type { EntitlementService } from './entitlement'
+import type { GpuService } from './gpu'
 import type { IdentityService } from './identity'
 import type { InstancesService } from './instances'
 import type { InstallerService } from './installer'
@@ -90,6 +91,7 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     const mojang = use<MojangService>(ctx, 'mojang')
     const java = use<JavaService>(ctx, 'java')
     const launch = use<LaunchService>(ctx, 'launch')
+    const gpu = use<GpuService>(ctx, 'gpu')
     const loaders = use<LoadersService>(ctx, 'loaders')
     const installer = use<InstallerService>(ctx, 'installer')
     const content = use<ContentService>(ctx, 'content')
@@ -132,7 +134,12 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
       failedPlugins: [...config.summary.failed],
     }))
     handle<Readonly<SettingsShape>>(CH.settingsAll, () => settings.all())
-    handle<SettingsShape>(CH.settingsPatch, (patch: SettingsPatch) => settings.patch(patch))
+    handle<SettingsShape>(CH.settingsPatch, (patch: SettingsPatch) => {
+      const result = settings.patch(patch)
+      // P31：切换 isolatedMods 时重建所有实例的内容 junction
+      if (patch.isolatedMods !== undefined) instances.rebindContentDirs()
+      return result
+    })
     handle<LogRecord[]>(CH.logsTail, (limit?: number) => log.tail(limit ?? 200))
     handle<UpdateState>(CH.updateCheck, () => updater.check('manual'))
     handle<UpdateState>(CH.updateDownload, () => updater.download())
@@ -182,7 +189,7 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
       chat.clearHistory()
       return { ok: true }
     })
-    handle(CH.dialogPickFile, async (kind?: 'pack' | 'zip') => {
+    handle(CH.dialogPickFile, async (kind?: 'pack' | 'zip' | 'image' | 'java') => {
       // 自动化测试钩子：设置 QDOQMC_PICK_FILE 时跳过原生对话框
       const override = process.env.QDOQMC_PICK_FILE
       if (override) return override
@@ -191,7 +198,11 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
       const filters =
         kind === 'zip'
           ? [{ name: '导出包', extensions: ['zip'] }]
-          : [{ name: '整合包', extensions: ['zip', 'mrpack'] }]
+          : kind === 'image'
+            ? [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] }]
+            : kind === 'java'
+              ? [{ name: 'Java 可执行文件', extensions: ['exe'] }]
+              : [{ name: '整合包', extensions: ['zip', 'mrpack'] }]
       const result = await dialog.showOpenDialog(win, { properties: ['openFile'], filters })
       return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
     })
@@ -225,6 +236,13 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle<{ ok: boolean; cancelled: boolean }>(CH.versionCancel, () => mojang.cancel())
     handle<{ ok: boolean; bytes?: number; error?: string }>(CH.versionRemove, (versionId: string) => mojang.remove(versionId))
     handle<JavaRuntimeInfo[]>(CH.javaList, () => java.detect())
+    handle<JavaRuntimeInfo>(CH.javaAddManual, (exePath: string) => java.addManual(exePath))
+    handle<{ ok: boolean }>(CH.javaSetPreferred, (exePath: string) => {
+      java.setPreferred(exePath)
+      return { ok: true }
+    })
+    handle<{ ok: boolean; applied: number; message?: string }>(CH.gpuSet, (enabled: boolean) => gpu.setEnabled(enabled))
+    handle<{ enabled: boolean; entries: number }>(CH.gpuStatus, () => gpu.status())
     handle<LaunchResult>(CH.launchStart, (instanceId?: string) => launch.start(instanceId ?? 'default'))
     handle(CH.launchStop, () => launch.stop())
 

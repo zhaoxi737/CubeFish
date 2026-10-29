@@ -14,6 +14,7 @@ import { ensureDir, readJson } from '../lib/fsx'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { LogService } from './logger'
 import type { PathsService } from './paths'
+import type { SettingsService } from './settings'
 
 const execFileAsync = promisify(execFile)
 const JAVA_RUNTIME_ALL = 'https://launchermeta.mojang.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json'
@@ -36,6 +37,10 @@ export interface JavaService {
   /** 本地没有匹配的主版本时，下载 Mojang 运行时并返回它 */
   ensure(component: string, major: number, taskId: string): Promise<JavaRuntimeInfo>
   setProgressSink(sink: ((progress: TaskProgress) => void) | null): void
+  /** P31：探测一个 java.exe 并追加进 manualJavaPaths（去重），返回探测结果 */
+  addManual(exePath: string): Promise<JavaRuntimeInfo>
+  /** P31：把首选 Java 设为指定路径（写入 settings.preferredJavaPath） */
+  setPreferred(exePath: string): void
 }
 
 function parseMajor(version: string): number {
@@ -44,7 +49,7 @@ function parseMajor(version: string): number {
   return Number.parseInt(parts[0], 10) || 0
 }
 
-async function probe(exe: string): Promise<JavaRuntimeInfo | undefined> {
+async function probe(exe: string, source: JavaRuntimeInfo['source'], preferredPath: string): Promise<JavaRuntimeInfo | undefined> {
   try {
     const { stdout, stderr } = await execFileAsync(exe, ['-XshowSettings:properties', '-version'], {
       timeout: 8000,
@@ -62,7 +67,8 @@ async function probe(exe: string): Promise<JavaRuntimeInfo | undefined> {
       home,
       version,
       major: parseMajor(version),
-      source: 'common',
+      source,
+      preferred: preferredPath ? exe.toLowerCase() === preferredPath.toLowerCase() : false,
     }
   } catch {
     return undefined
@@ -87,6 +93,7 @@ export function createJavaPlugin(): LauncherPlugin<void> {
   return definePlugin('java', () => (ctx) => {
     const paths = use<PathsService>(ctx, 'paths')
     const log = use<LogService>(ctx, 'log')
+    const settings = use<SettingsService>(ctx, 'settings')
 
     let cache: { at: number; list: JavaRuntimeInfo[] } | null = null
     let sink: ((progress: TaskProgress) => void) | null = null
@@ -154,13 +161,31 @@ export function createJavaPlugin(): LauncherPlugin<void> {
         /* 还没有下载过 */
       }
 
+      // 5) 手动添加的 Java（P31）：显式意图优先，覆盖同名自动发现的 source 标签
+      const preferredPath = settings.get('preferredJavaPath')
+      for (const exe of settings.get('manualJavaPaths')) {
+        if (!exe || !existsSync(exe)) continue
+        const key = exe.toLowerCase()
+        const existing = result.find((info) => info.path.toLowerCase() === key)
+        if (existing) {
+          existing.source = 'manual'
+        } else {
+          seen.add(key)
+          result.push({ path: exe, home: path.dirname(path.dirname(exe)), version: '?', major: 0, source: 'manual' })
+        }
+      }
+
       // 逐个探测真实版本
       const probed: JavaRuntimeInfo[] = []
       for (const info of result) {
-        const real = await probe(info.path)
-        if (real) probed.push({ ...real, source: info.source })
+        const real = await probe(info.path, info.source, preferredPath)
+        if (real) probed.push(real)
       }
-      probed.sort((a, b) => b.major - a.major)
+      probed.sort((a, b) => {
+        if (a.preferred && !b.preferred) return -1
+        if (!a.preferred && b.preferred) return 1
+        return b.major - a.major
+      })
       cache = { at: Date.now(), list: probed }
       log.info('java', 'Java 运行时探测完成', { count: probed.length, majors: probed.map((j) => j.major) })
       return probed
@@ -168,6 +193,8 @@ export function createJavaPlugin(): LauncherPlugin<void> {
 
     async function select(major: number): Promise<JavaRuntimeInfo | undefined> {
       const all = await detect()
+      const preferred = all.find((j) => j.preferred)
+      if (preferred && preferred.major >= major) return preferred
       const exact = all.find((j) => j.major === major)
       if (exact) return exact
       const newer = all.filter((j) => j.major > major).sort((a, b) => a.major - b.major)
@@ -225,10 +252,30 @@ export function createJavaPlugin(): LauncherPlugin<void> {
       }
 
       cache = null
-      const info = await probe(path.join(targetRoot, 'bin', 'java.exe'))
+      const info = await probe(path.join(targetRoot, 'bin', 'java.exe'), 'mojang', settings.get('preferredJavaPath'))
       if (!info) throw new Error('Java 运行时下载完成但无法执行')
       log.info('java', '已下载 Mojang Java 运行时', { component, version: entry.version.name, major: info.major })
-      return { ...info, source: 'mojang' }
+      return info
+    }
+
+    async function addManual(exePath: string): Promise<JavaRuntimeInfo> {
+      const trimmed = exePath.trim()
+      if (!trimmed) throw new Error('请提供 java.exe / javaw.exe 路径')
+      const info = await probe(trimmed, 'manual', settings.get('preferredJavaPath'))
+      if (!info) throw new Error('无法探测该 Java 运行时（确认路径指向可执行的 java.exe/javaw.exe）')
+      const existing = settings.get('manualJavaPaths')
+      if (!existing.some((p) => p.toLowerCase() === trimmed.toLowerCase())) {
+        settings.patch({ manualJavaPaths: [...existing, trimmed] })
+      }
+      cache = null
+      log.info('java', '已手动添加 Java', { path: trimmed, major: info.major })
+      return info
+    }
+
+    function setPreferred(exePath: string): void {
+      settings.patch({ preferredJavaPath: exePath.trim() })
+      cache = null
+      log.info('java', '已设置首选 Java', { path: exePath.trim() })
     }
 
     ctx.provide('java', {
@@ -238,6 +285,8 @@ export function createJavaPlugin(): LauncherPlugin<void> {
       setProgressSink: (next) => {
         sink = next
       },
+      addManual,
+      setPreferred,
     } satisfies JavaService)
   })
 }

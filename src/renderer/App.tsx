@@ -95,6 +95,8 @@ export function App() {
   const [showLogs, setShowLogs] = useState(false)
   const [showVersions, setShowVersions] = useState(false)
   const [showPlugins, setShowPlugins] = useState(false)
+  const [leftCollapsed, setLeftCollapsed] = useState(false)
+  const [rightCollapsed, setRightCollapsed] = useState(false)
   const [instances, setInstances] = useState<InstanceSummary[]>([])
   const [newInstanceOpen, setNewInstanceOpen] = useState(false)
   const [newInstanceName, setNewInstanceName] = useState('')
@@ -311,6 +313,21 @@ export function App() {
   const taskBusy = Boolean(progress && progress.stage !== 'done' && progress.stage !== 'cancelled' && progress.stage !== 'failed')
 
   // 任务结束（完成/取消/失败）后自动收起进度卡，避免旧的安装结果一直挂在新操作下面
+  // P31：个性化（标题 / 主题色 / 背景图）应用到窗口与 CSS 变量
+  useEffect(() => {
+    if (!settings) return
+    document.title = settings.titleText?.trim() || 'QDOQMC'
+    const root = document.documentElement
+    root.style.setProperty('--p31-accent', /^#[0-9a-fA-F]{6}$/.test(settings.themeAccent) ? settings.themeAccent : '#4d6bfe')
+    const custom = settings.customBackground?.trim()
+    if (custom) {
+      const file = custom.replace(/\\/g, '/')
+      root.style.setProperty('--app-bg', `url("file:///${file}")`)
+    } else {
+      root.style.setProperty('--app-bg', "url('./assets/bg-user.jpg')")
+    }
+  }, [settings])
+
   useEffect(() => {
     if (!progress || (progress.stage !== 'done' && progress.stage !== 'cancelled' && progress.stage !== 'failed')) return
     const timer = window.setTimeout(
@@ -430,10 +447,10 @@ export function App() {
       <header className="titlebar">
         <div className="brand">
           <MascotImage size={34} className="brand-fish" />
-          <span className="brand-mark">QDOQMC</span>
+          <span className="brand-mark">{settings?.titleText?.trim() || 'QDOQMC'}</span>
           <span className="brand-sub">大肥鱼开服</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P29 · 下载中心</span>
+          <span className="brand-tag">P31 · 极简</span>
         </div>
         <div className="titlebar-actions">
           <button
@@ -445,20 +462,6 @@ export function App() {
             }}
           >
             下载
-          </button>
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => {
-              setDownloadTab('mod')
-              setDownloadOpen(true)
-            }}
-            disabled={!instance}
-          >
-            模组
-          </button>
-          <button type="button" className="ghost" onClick={() => setShowVersions(true)}>
-            版本
           </button>
           <button type="button" className="ghost" onClick={() => setShowPlugins(true)}>
             插件
@@ -475,74 +478,98 @@ export function App() {
         </div>
       </header>
 
-      <main className="main">
+      <main className={`main ${leftCollapsed ? 'left-collapsed' : ''} ${rightCollapsed ? 'right-collapsed' : ''}`}>
         <aside className="version-sidebar">
           <div className="sidebar-head">
-            <span className="sidebar-title">版本</span>
-            <button type="button" className="ghost tiny" onClick={() => setNewInstanceOpen(true)} disabled={Boolean(running)}>
-              + 新建
+            {!leftCollapsed ? <span className="sidebar-title">版本</span> : null}
+            <button type="button" className="ghost tiny sidebar-toggle" onClick={() => setLeftCollapsed((value) => !value)} title={leftCollapsed ? '展开版本栏' : '收起版本栏'}>
+              {leftCollapsed ? '▶' : '◀'}
             </button>
-          </div>
-          <div className="sidebar-list">
-            {instances.map((item) => {
-              const active = item.id === (instance?.id ?? '')
-              return (
-                <div
-                  key={item.id}
-                  className={`ver-card ${active ? 'is-active' : ''}`}
-                  onClick={() => {
-                    if (!running) void switchInstance(item.id)
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && !running) void switchInstance(item.id)
-                  }}
-                >
-                  <span className={`ver-icon ver-icon-${item.loader ?? 'vanilla'}`}>{LOADER_BADGE[item.loader ?? 'vanilla'] ?? 'V'}</span>
-                  <div className="ver-card-main">
-                    <div className="ver-card-name">{item.name}</div>
-                    <div className="ver-card-meta">
-                      {item.gameVersion ?? item.versionId ?? '未装版本'} · {item.loader ?? 'vanilla'}
-                    </div>
-                  </div>
-                  <div className="ver-card-tools" onClick={(event) => event.stopPropagation()}>
-                    <button type="button" onClick={() => void openFolder(item.id)} title="打开游戏目录">
-                      📂
-                    </button>
-                    <button type="button" onClick={() => setShowVersions(true)} title="版本管理">
-                      ⋯
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-          <div className="sidebar-foot">
-            <button type="button" className="ghost tiny" onClick={() => setShowVersions(true)}>
-              版本管理
-            </button>
-          </div>
-        </aside>
-        <section className="stage">
-          <div className="ver-hero">
-            <span className={`ver-hero-icon ver-icon-${instance?.loader ?? 'vanilla'}`}>
-              {LOADER_BADGE[instance?.loader ?? 'vanilla'] ?? 'V'}
-            </span>
-            <div className="ver-hero-main">
-              <div className="ver-hero-name">{instance?.name ?? '没有实例'}</div>
-              <div className="ver-hero-chips">
-                <span className="chip">{instance?.gameVersion ?? instance?.versionId ?? '未选版本'}</span>
-                <span className="chip">{instance?.loader ?? 'vanilla'}</span>
-                <span className="chip">{instance?.memoryMb ?? 0} MB</span>
-                <span className="chip" title={instance?.accountId ? `已绑定账号 ${instance.accountName}` : '跟随全局账号'}>
-                  {instance?.accountName ?? instance?.playerName ?? 'Player'}
-                </span>
-              </div>
-            </div>
-            <span className={`ver-hero-state ${instance?.installed ? 'is-ok' : ''}`}>{instance?.installed ? '已安装' : '未安装'}</span>
+            {!leftCollapsed ? (
+              <button type="button" className="ghost tiny" onClick={() => setNewInstanceOpen(true)} disabled={Boolean(running)}>
+                + 新建
+              </button>
+            ) : null}
           </div>
 
+          {!leftCollapsed ? (
+            <>
+              <div className="sidebar-list">
+                {instances.map((item) => {
+                  const active = item.id === (instance?.id ?? '')
+                  return (
+                    <div
+                      key={item.id}
+                      className={`ver-card ${active ? 'is-active' : ''}`}
+                      onClick={() => {
+                        if (!running) void switchInstance(item.id)
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' && !running) void switchInstance(item.id)
+                      }}
+                    >
+                      <span className={`ver-icon ver-icon-${item.loader ?? 'vanilla'}`}>{LOADER_BADGE[item.loader ?? 'vanilla'] ?? 'V'}</span>
+                      <div className="ver-card-main">
+                        <div className="ver-card-name">{item.name}</div>
+                        <div className="ver-card-meta">
+                          {item.gameVersion ?? item.versionId ?? '未装版本'} · {item.loader ?? 'vanilla'}
+                        </div>
+                      </div>
+                      <div className="ver-card-tools" onClick={(event) => event.stopPropagation()}>
+                        <button type="button" onClick={() => void openFolder(item.id)} title="打开游戏目录">
+                          📂
+                        </button>
+                        <button type="button" onClick={() => setShowVersions(true)} title="版本管理">
+                          ⋯
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="sidebar-foot">
+                <button type="button" className="ghost tiny" onClick={() => setShowVersions(true)}>
+                  版本管理
+                </button>
+              </div>
+
+              <div className="side-launch">
+                <div className="side-hero">
+                  <span className={`ver-icon ver-icon-${instance?.loader ?? 'vanilla'}`}>{LOADER_BADGE[instance?.loader ?? 'vanilla'] ?? 'V'}</span>
+                  <div className="side-hero-meta">
+                    <div className="side-hero-name">{instance?.name ?? '没有实例'}</div>
+                    <div className="side-hero-sub">
+                      {instance?.gameVersion ?? instance?.versionId ?? '未装版本'} · {instance?.loader ?? 'vanilla'} · {instance?.memoryMb ?? 0} MB
+                    </div>
+                  </div>
+                </div>
+                <button type="button" className="launch" onClick={() => void launch()} disabled={!canLaunch}>
+                  <span className="launch-main">{running ? '游戏运行中' : taskBusy ? '处理中…' : '启动游戏'}</span>
+                  <span className="launch-sub">
+                    {running
+                      ? `PID ${running.pid ?? '?'} · 点「结束游戏」`
+                      : canLaunch
+                        ? `${instance?.accountName ?? instance?.playerName ?? 'Player'}`
+                        : instance?.installed
+                          ? '先结束正在进行的任务'
+                          : '先在「下载」里装游戏'}
+                  </span>
+                  <MascotImage size={24} className="launch-fish" />
+                </button>
+                {running ? (
+                  <button type="button" className="ghost stop-btn" onClick={() => void stop()}>
+                    结束游戏
+                  </button>
+                ) : null}
+              </div>
+            </>
+          ) : null}
+        </aside>
+
+        <section className="stage">
           {update.status === 'available' || update.status === 'downloading' || update.status === 'ready' ? (
             <div className={`update-banner update-${update.status}`}>
               <div className="update-text">
@@ -562,63 +589,6 @@ export function App() {
                 </button>
               ) : null}
             </div>
-          ) : null}
-
-          <button type="button" className="launch" onClick={() => void launch()} disabled={!canLaunch}>
-            <span className="launch-main">{running ? '游戏运行中' : taskBusy ? '处理中…' : '启动游戏'}</span>
-            <span className="launch-sub">
-              {running
-                ? `PID ${running.pid ?? '?'} · 点下面「结束游戏」`
-                : canLaunch
-                  ? `${instance?.versionId} · ${instance?.accountName ?? '离线登录'} · ${instance?.playerName}`
-                  : instance?.installed
-                    ? '先结束正在进行的任务'
-                    : '先在「下载」里装一个游戏版本'}
-            </span>
-            <MascotImage size={26} className="launch-fish" />
-          </button>
-
-          <div className="quick-grid">
-            <button type="button" className="quick" onClick={() => setShowVersions(true)}>
-              <span className="quick-icon">⚙️</span>
-              <span className="quick-label">版本设置</span>
-              <span className="quick-note">内存 / 账号 / 文件夹</span>
-            </button>
-            <button
-              type="button"
-              className="quick"
-              onClick={() => {
-                setDownloadTab('mod')
-                setDownloadOpen(true)
-              }}
-            >
-              <span className="quick-icon">🔧</span>
-              <span className="quick-label">模组管理</span>
-              <span className="quick-note">搜索 / 更新 / 冲突</span>
-            </button>
-            <button
-              type="button"
-              className="quick"
-              onClick={() => {
-                setDownloadTab('game')
-                setDownloadOpen(true)
-              }}
-            >
-              <span className="quick-icon">⬇️</span>
-              <span className="quick-label">下载中心</span>
-              <span className="quick-note">游戏 / 模组 / 整合包</span>
-            </button>
-            <button type="button" className="quick" onClick={() => instance && void openFolder(instance.id)} disabled={!instance}>
-              <span className="quick-icon">📂</span>
-              <span className="quick-label">游戏目录</span>
-              <span className="quick-note">存档 / mods / 日志</span>
-            </button>
-          </div>
-
-          {running ? (
-            <button type="button" className="ghost stop-btn" onClick={() => void stop()}>
-              结束游戏
-            </button>
           ) : null}
 
           {exited ? (
@@ -664,7 +634,20 @@ export function App() {
           ) : null}
         </section>
 
-        <ChatPanel />
+        <aside className={`chat-side ${rightCollapsed ? 'is-collapsed' : ''}`}>
+          {rightCollapsed ? (
+            <button type="button" className="chat-side-tab" onClick={() => setRightCollapsed(false)} title="展开 AI 助手">
+              AI
+            </button>
+          ) : (
+            <>
+              <button type="button" className="chat-side-collapse" onClick={() => setRightCollapsed(true)} title="收起 AI 助手">
+                ▶
+              </button>
+              <ChatPanel />
+            </>
+          )}
+        </aside>
       </main>
 
       <footer className="statusbar">

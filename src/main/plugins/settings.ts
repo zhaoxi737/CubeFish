@@ -30,6 +30,17 @@ export const DEFAULT_SETTINGS: SettingsShape = {
   autoCheckUpdate: true,
   downloadSource: 'auto',
   downloadThreads: 4,
+  isolatedMods: true,
+  useHighPerformanceGpu: false,
+  preferredJavaPath: '',
+  manualJavaPaths: [],
+  launchWindowWidth: 0,
+  launchWindowHeight: 0,
+  launchFullscreen: false,
+  jvmArgs: '',
+  themeAccent: '#4d6bfe',
+  customBackground: '',
+  titleText: '',
 }
 
 const MASKED_KEYS: (keyof SettingsShape)[] = ['apiKey']
@@ -118,5 +129,36 @@ function sanitize(input: Partial<SettingsShape>): Partial<SettingsShape> {
   if (typeof input.downloadThreads === 'number' && Number.isFinite(input.downloadThreads)) {
     out.downloadThreads = Math.min(16, Math.max(1, Math.round(input.downloadThreads)))
   }
+  if (typeof input.isolatedMods === 'boolean') out.isolatedMods = input.isolatedMods
+  if (typeof input.useHighPerformanceGpu === 'boolean') out.useHighPerformanceGpu = input.useHighPerformanceGpu
+  if (typeof input.preferredJavaPath === 'string') out.preferredJavaPath = input.preferredJavaPath.trim()
+  if (Array.isArray(input.manualJavaPaths)) {
+    const seen = new Set<string>()
+    const paths: string[] = []
+    for (const item of input.manualJavaPaths) {
+      if (typeof item !== 'string') continue
+      const trimmed = item.trim()
+      if (!trimmed) continue
+      const key = trimmed.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      paths.push(trimmed)
+    }
+    out.manualJavaPaths = paths
+  }
+  if (typeof input.launchWindowWidth === 'number' && Number.isFinite(input.launchWindowWidth)) {
+    out.launchWindowWidth = Math.min(16384, Math.max(0, Math.round(input.launchWindowWidth)))
+  }
+  if (typeof input.launchWindowHeight === 'number' && Number.isFinite(input.launchWindowHeight)) {
+    out.launchWindowHeight = Math.min(16384, Math.max(0, Math.round(input.launchWindowHeight)))
+  }
+  if (typeof input.launchFullscreen === 'boolean') out.launchFullscreen = input.launchFullscreen
+  if (typeof input.jvmArgs === 'string') out.jvmArgs = input.jvmArgs.trim()
+  if (typeof input.themeAccent === 'string') {
+    const accent = input.themeAccent.trim()
+    out.themeAccent = /^(?:#[0-9a-fA-F]{3,8}|[a-zA-Z]{2,40})$/.test(accent) ? accent : DEFAULT_SETTINGS.themeAccent
+  }
+  if (typeof input.customBackground === 'string') out.customBackground = input.customBackground.trim()
+  if (typeof input.titleText === 'string') out.titleText = input.titleText.trim()
   return out
 }

@@ -15,6 +15,7 @@ import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { AuthService } from './auth'
 import type { InstancesService } from './instances'
 import type { JavaService } from './java'
+import type { GpuService } from './gpu'
 import type { LogService } from './logger'
 import type { ArgumentEntry, LibraryJson, MojangService, VersionJson } from './mojang'
 import type { PathsService } from './paths'
@@ -88,6 +89,30 @@ function expandArguments(entries: ArgumentEntry[], ctx: OsContext, values: Recor
   return out
 }
 
+/** 按空格切分自定义 JVM 参数，支持单/双引号内空格（如 -Dfoo="a b"）。 */
+function splitArgs(input: string): string[] {
+  const out: string[] = []
+  let current = ''
+  let quote: '"' | "'" | null = null
+  for (const ch of input) {
+    if (quote) {
+      if (ch === quote) quote = null
+      else current += ch
+    } else if (ch === '"' || ch === "'") {
+      quote = ch
+    } else if (/\s/.test(ch)) {
+      if (current) {
+        out.push(current)
+        current = ''
+      }
+    } else {
+      current += ch
+    }
+  }
+  if (current) out.push(current)
+  return out
+}
+
 export function createLaunchPlugin(): LauncherPlugin<void> {
   return definePlugin('launch', () => (ctx) => {
     const paths = use<PathsService>(ctx, 'paths')
@@ -98,6 +123,7 @@ export function createLaunchPlugin(): LauncherPlugin<void> {
     const instances = use<InstancesService>(ctx, 'instances')
     const mojang = use<MojangService>(ctx, 'mojang')
     const java = use<JavaService>(ctx, 'java')
+    const gpu = use<GpuService>(ctx, 'gpu')
     const telemetry = use<TelemetryService>(ctx, 'telemetry')
 
     const osContext = detectOsContext(process.platform, process.arch, '')
@@ -298,6 +324,9 @@ export function createLaunchPlugin(): LauncherPlugin<void> {
         const jvmTemplate = resolved.jvmArgs.length > 0 ? resolved.jvmArgs : ['-Djava.library.path=${natives_directory}']
         const jvmExpanded = expandArguments(jvmTemplate, osContext, values)
         jvm.push(...jvmExpanded)
+        // P31：用户追加的 JVM 参数（在 classpath 之前）
+        const extraJvm = splitArgs(settings.get('jvmArgs'))
+        if (extraJvm.length > 0) jvm.push(...extraJvm)
         if (!jvm.some((arg) => arg === '-cp' || arg === '-classpath')) jvm.push('-cp', classpath)
 
         let gameArgs: string[]
@@ -308,6 +337,13 @@ export function createLaunchPlugin(): LauncherPlugin<void> {
         } else {
           gameArgs = ['--username', playerName, '--version', instance.versionId, '--gameDir', gameDir]
         }
+
+        // P31：启动窗口选项
+        const launchWidth = settings.get('launchWindowWidth')
+        const launchHeight = settings.get('launchWindowHeight')
+        if (launchWidth > 0) gameArgs.push('--width', String(launchWidth))
+        if (launchHeight > 0) gameArgs.push('--height', String(launchHeight))
+        if (settings.get('launchFullscreen')) gameArgs.push('--fullscreen')
 
         const finalArgs = [...jvm, resolved.mainClass, ...gameArgs]
         // 默认中文：options.txt 里没有 lang 时补一个（不覆盖玩家已选的语言）
@@ -336,6 +372,11 @@ export function createLaunchPlugin(): LauncherPlugin<void> {
         const stamp = new Date().toISOString().replace(/[:.]/g, '-')
         const gameLogFile = path.join(logDir, `game-${stamp}.log`)
         const rawStream = createWriteStream(gameLogFile, { flags: 'a' })
+
+        // P31：高性能显卡——spawn 前把当前偏好写到该 java.exe（5s 节流，不重复全量写）
+        if (settings.get('useHighPerformanceGpu')) {
+          await gpu.apply(javaInfo.path)
+        }
 
         log.info('launch', '启动游戏进程', {
           version: instance.versionId,

@@ -9,6 +9,7 @@ import { createConflictPlugin } from './plugins/conflict'
 import { createContentPlugin } from './plugins/content'
 import { createDiagnosePlugin } from './plugins/diagnose'
 import { createEntitlementPlugin } from './plugins/entitlement'
+import { createGpuPlugin } from './plugins/gpu'
 import { createIdentityPlugin } from './plugins/identity'
 import { createInstancesPlugin } from './plugins/instances'
 import { createInstallerPlugin } from './plugins/installer'
@@ -82,6 +83,7 @@ export async function bootKernel(options: KernelOptions): Promise<Kernel> {
     createLlmPlugin(),
     createMojangPlugin(),
     createJavaPlugin(),
+    createGpuPlugin(),
     createInstancesPlugin(),
     createLoadersPlugin(),
     createInstallerPlugin(),

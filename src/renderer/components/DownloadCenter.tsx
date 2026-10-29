@@ -197,17 +197,31 @@ export function DownloadCenter({
       setSearching(true)
       setError(null)
       try {
-        const result = await window.qdo.content.search(text, {
-          type: contentKind,
-          mcVersion,
-          loader: loaderFilter,
-          limit: 20,
-          source,
-        })
-        setHits(result)
-        if (result.length === 0) {
-          const noKey = source !== 'modrinth' && !settings?.curseforgeApiKey
-          setError(noKey ? `${KIND_LABEL[contentKind]}没搜到：CurseForge 需要先在设置里填 API Key` : `没有搜到${KIND_LABEL[contentKind]}（先确认实例已绑定游戏版本）`)
+        const baseOpts = { type: contentKind, mcVersion, loader: loaderFilter, limit: 20 }
+        if (source === 'all') {
+          // 两个源并发、谁先到先显示：先出 Modrinth，CurseForge 到了再补进去
+          setHits([])
+          const modrinth = await window.qdo.content.search(text, { ...baseOpts, source: 'modrinth' })
+          setHits(modrinth)
+          const curseforge = await window.qdo.content
+            .search(text, { ...baseOpts, source: 'curseforge' })
+            .catch(() => [] as SearchHit[])
+          if (curseforge.length > 0) {
+            setHits((prev) =>
+              [...prev, ...curseforge.filter((item) => !prev.some((existing) => existing.projectId === item.projectId))]
+                .sort((a, b) => b.downloads - a.downloads),
+            )
+          }
+          if (modrinth.length === 0 && curseforge.length === 0) {
+            setError(`没有搜到${KIND_LABEL[contentKind]}（先确认实例已绑定游戏版本）`)
+          }
+        } else {
+          const result = await window.qdo.content.search(text, { ...baseOpts, source })
+          setHits(result)
+          if (result.length === 0) {
+            const noKey = source !== 'modrinth' && !settings?.curseforgeApiKey
+            setError(noKey ? `${KIND_LABEL[contentKind]}没搜到：CurseForge 需要先在设置里填 API Key` : `没有搜到${KIND_LABEL[contentKind]}（先确认实例已绑定游戏版本）`)
+          }
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))

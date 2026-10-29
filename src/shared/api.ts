@@ -89,6 +89,16 @@ export interface QdoApi {
   }
   java: {
     list(): Promise<JavaRuntimeInfo[]>
+    /** P31：探测并追加手动 Java 路径（去重） */
+    addManual(path: string): Promise<JavaRuntimeInfo>
+    /** P31：设为首选 Java */
+    setPreferred(path: string): Promise<{ ok: boolean }>
+  }
+  gpu: {
+    /** P31：立即把高性能显卡启用状态应用到所有探测到的 java.exe/javaw.exe */
+    setEnabled(enabled: boolean): Promise<{ ok: boolean; applied: number; message?: string }>
+    /** P31：读取设置状态 + 已写入注册表的条数 */
+    status(): Promise<{ enabled: boolean; entries: number }>
   }
   content: {
     search(
@@ -157,7 +167,7 @@ export interface QdoApi {
   }
   dialog: {
     /** 系统文件选择器；kind 决定文件类型过滤 */
-    pickFile(kind?: 'pack' | 'zip'): Promise<string | null>
+    pickFile(kind?: 'pack' | 'zip' | 'image' | 'java'): Promise<string | null>
     /** 系统保存对话框；返回目标路径或 null */
     pickSave(defaultName: string): Promise<string | null>
   }

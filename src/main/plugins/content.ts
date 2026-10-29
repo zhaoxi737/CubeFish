@@ -168,6 +168,26 @@ export function createContentPlugin(): LauncherPlugin<void> {
     /** P29：内容安装进度 sink（由 IPC 层注入，和 mojang.setProgressSink 同构） */
     let progressSink: ((progress: TaskProgress) => void) | null = null
 
+    /** P31：按内容类型解析落盘目录；mods/resourcepacks/shaderpacks 走版本隔离，modpacks 保持原样。 */
+    function contentDirFor(instanceId: string, instance: InstanceSummary, kind: ContentKind): string {
+      const folder = kindDir(kind)
+      if (folder === 'modpacks') return path.join(instance.gameDir, folder)
+      return instances.contentDir(instanceId, folder as 'mods' | 'resourcepacks' | 'shaderpacks')
+    }
+
+    /** P31：按相对路径解析落盘目录（mrpack/overrides 用）；mods/… 等前缀走版本隔离。 */
+    function destForRel(instanceId: string, instance: InstanceSummary, rel: string): string {
+      const normalized = rel.replace(/\\/g, '/')
+      const m = /^(mods|resourcepacks|shaderpacks)\/(.+)$/.exec(normalized)
+      if (m) {
+        return path.join(
+          instances.contentDir(instanceId, m[1] as 'mods' | 'resourcepacks' | 'shaderpacks'),
+          ...m[2].split('/'),
+        )
+      }
+      return path.join(instance.gameDir, ...normalized.split('/'))
+    }
+
     async function api<T>(pathname: string): Promise<T> {
       const wait = Math.max(0, lastRequest + MIN_INTERVAL_MS - Date.now())
       if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
@@ -470,8 +490,13 @@ export function createContentPlugin(): LauncherPlugin<void> {
       const dir = instance?.gameDir ?? path.join(paths.instances, instanceId, '.minecraft')
       const list = await readJson<InstalledContent[]>(contentFile(instanceId), [])
       return list.map((item) => {
-        const folder = kindDir((item.kind as ContentKind) ?? 'mod')
-        const normal = path.join(dir, folder, item.fileName)
+        const kind = (item.kind as ContentKind) ?? 'mod'
+        const folder = kindDir(kind)
+        const base =
+          instance && folder !== 'modpacks'
+            ? instances.contentDir(instanceId, folder as 'mods' | 'resourcepacks' | 'shaderpacks')
+            : path.join(dir, folder)
+        const normal = path.join(base, item.fileName)
         const disabled = `${normal}.disabled`
         return { ...item, enabled: existsSync(normal) || !existsSync(disabled) }
       })
@@ -485,8 +510,8 @@ export function createContentPlugin(): LauncherPlugin<void> {
       if (!instance) return { ok: false, error: '实例不存在' }
       const list = await installed(instanceId)
       const item = list.find((entry) => entry.fileName === fileName)
-      const folder = kindDir((item?.kind as ContentKind) ?? 'mod')
-      const normal = path.join(instance.gameDir, folder, fileName)
+      const base = contentDirFor(instanceId, instance, (item?.kind as ContentKind) ?? 'mod')
+      const normal = path.join(base, fileName)
       const disabled = `${normal}.disabled`
       try {
         const { rename } = await import('node:fs/promises')
@@ -511,11 +536,11 @@ export function createContentPlugin(): LauncherPlugin<void> {
       if (!instance) return { ok: false, error: '实例不存在' }
       const list = await installed(instanceId)
       const item = list.find((entry) => entry.fileName === fileName)
-      const folder = kindDir((item?.kind as ContentKind) ?? 'mod')
+      const base = contentDirFor(instanceId, instance, (item?.kind as ContentKind) ?? 'mod')
       try {
         const { rm } = await import('node:fs/promises')
-        await rm(path.join(instance.gameDir, folder, fileName), { force: true })
-        await rm(path.join(instance.gameDir, folder, `${fileName}.disabled`), { force: true })
+        await rm(path.join(base, fileName), { force: true })
+        await rm(path.join(base, `${fileName}.disabled`), { force: true })
         await saveInstalled(
           instanceId,
           list.filter((entry) => entry.fileName !== fileName),
@@ -573,7 +598,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
       }
 
       // 2) 下载主文件（P29：走 downloadWithTask，文件清单/字节/速度进 progress）
-      const targetDir = path.join(instance.gameDir, kindDir(kind))
+      const targetDir = contentDirFor(instanceId, instance, kind)
       const fileName = safeName(version.fileName || `${version.id}.jar`, `${version.id}.jar`)
       const dest = path.join(targetDir, fileName)
       const stats = await downloadWithTask(
@@ -783,7 +808,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
           if (!url) continue
           specs.push({
             url,
-            dest: path.join(instance.gameDir, ...rel.split('/')),
+            dest: destForRel(instance.id, instance, rel),
             sha1: file.hashes?.sha1,
             size: file.fileSize,
             label: rel,
@@ -805,7 +830,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
           if (!matched) continue
           const rel = matched[1]
           if (rel.includes('..')) continue
-          const dest = path.join(instance.gameDir, ...rel.split('/'))
+          const dest = destForRel(instance.id, instance, rel)
           await ensureDir(path.dirname(dest))
           writeFileSync(dest, entry.getData())
           overrides += 1
@@ -1119,7 +1144,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
         if (!downloadUrl) throw new Error('CurseForge 没有返回下载地址（可能被作者禁用）')
 
         const fileName = safeName(file.fileName, `cf-${cfId}.jar`)
-        const dest = path.join(instance.gameDir, kindDir(kind), fileName)
+        const dest = path.join(contentDirFor(instanceId, instance, kind), fileName)
         const sha1 = file.hashes?.find((hash) => hash.algo === 1)?.value
         const stats = await downloadWithTask(
           task,
@@ -1241,7 +1266,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
         }
         instances.setVersion(instance.id, versionId, mc, mc, loaderName)
 
-        const modsDir = path.join(instance.gameDir, 'mods')
+        const modsDir = instances.contentDir(instance.id, 'mods')
         await ensureDir(modsDir)
         const added: InstalledContent[] = []
         const addEntry = (fileName: string, projectId: string, versionNumber: string) => {
@@ -1323,7 +1348,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
           if (!name.startsWith(overridesPrefix)) continue
           const relative = name.slice(overridesPrefix.length)
           if (!relative || relative.includes('..')) continue
-          const dest = path.join(instance.gameDir, ...relative.split('/'))
+          const dest = destForRel(instance.id, instance, relative)
           await ensureDir(path.dirname(dest))
           writeFileSync(dest, entry.getData())
           overrides += 1
@@ -1472,8 +1497,8 @@ export function createContentPlugin(): LauncherPlugin<void> {
     }
 
     /** 实例 mods/ 下的文件路径（兼容 .disabled） */
-    function modFileCandidates(instance: InstanceSummary, fileName: string): { active: string; disabled: string } {
-      const normal = path.join(instance.gameDir, 'mods', fileName)
+    function modFileCandidates(instanceId: string, instance: InstanceSummary, fileName: string): { active: string; disabled: string } {
+      const normal = path.join(instances.contentDir(instanceId, 'mods'), fileName)
       return { active: normal, disabled: `${normal}.disabled` }
     }
 
@@ -1494,7 +1519,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
           if ((item.kind ?? 'mod') !== 'mod') continue
           // 整合包记录的文件名带目录前缀（mods/xxx.jar），不是简单文件名，跳过
           if (!item.fileName || item.fileName.includes('/') || item.fileName.includes('\\')) continue
-          const file = modFileCandidates(instance, item.fileName)
+          const file = modFileCandidates(instanceId, instance, item.fileName)
           const existing = existsSync(file.active) ? file.active : existsSync(file.disabled) ? file.disabled : undefined
           if (!existing) continue
           try {
@@ -1572,7 +1597,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
         const item = list.find((entry) => entry.fileName === fileName && (entry.kind ?? 'mod') === 'mod')
         if (!item) return { ok: false, error: '没有找到这个模组的安装记录' }
 
-        const files = modFileCandidates(instance, fileName)
+        const files = modFileCandidates(instanceId, instance, fileName)
         const wasDisabled = !existsSync(files.active) && existsSync(files.disabled)
         const oldPath = existsSync(files.active)
           ? files.active
@@ -1600,7 +1625,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
         await rename(oldPath, backup)
 
         // 3) 下载新文件（原本禁用的仍保持禁用）
-        const targetNormal = path.join(instance.gameDir, 'mods', newFileName)
+        const targetNormal = path.join(instances.contentDir(instanceId, 'mods'), newFileName)
         const dest = wasDisabled ? `${targetNormal}.disabled` : targetNormal
         try {
           await new Downloader({ cacheDir: paths.downloads, concurrency: 1 }).fetchOne({

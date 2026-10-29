@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import AdmZip from 'adm-zip'
 import type { InstanceSummary, LaunchDryRun, LaunchStep } from '../../shared/types'
@@ -41,6 +41,10 @@ export interface InstancesService {
   rename(id: string, name: string): InstanceSummary
   /** 实例的各个目录（PCL 式文件管理用） */
   folders(id: string): { root: string; game: string; mods: string; logs: string; versions: string }
+  /** P31：内容目录（mods/resourcepacks/shaderpacks）：隔离时在实例 .minecraft 下，共用时用 junction 指向共享目录 */
+  contentDir(id: string, kind: 'mods' | 'resourcepacks' | 'shaderpacks'): string
+  /** P31：按当前 isolatedMods 设置重建所有实例的内容 junction（开关切换时调用） */
+  rebindContentDirs(): void
   dryRun(id?: string): Promise<LaunchDryRun>
   /** 导出实例为 zip（mods/config/存档 等，跳过日志与缓存） */
   exportInstance(id?: string, dest?: string): Promise<{ ok: boolean; path?: string; bytes?: number; files?: number; error?: string }>
@@ -428,6 +432,85 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
       versions: paths.versions,
     })
 
+    /* ---------- P31：内容目录隔离 / 共用（junction） ---------- */
+
+    const contentKinds = ['mods', 'resourcepacks', 'shaderpacks'] as const
+    type ContentKindDir = (typeof contentKinds)[number]
+
+    const sharedContentDir = (kind: ContentKindDir): string => path.join(paths.data, 'shared', kind)
+
+    /** 确保 link 是指向 target 的 junction（Windows 无需管理员）；已有非空真实目录则不动并告警。 */
+    const ensureJunction = (link: string, target: string, id: string, kind: string): void => {
+      mkdirSync(target, { recursive: true })
+      const targetReal = realpathSync(target).toLowerCase()
+      let st: ReturnType<typeof lstatSync> | undefined
+      try {
+        st = lstatSync(link)
+      } catch {
+        st = undefined
+      }
+      if (st) {
+        if (st.isSymbolicLink()) {
+          try {
+            if (realpathSync(link).toLowerCase() === targetReal) return
+          } catch {
+            /* 悬空 junction：重建 */
+          }
+          rmSync(link, { force: true })
+        } else if (st.isDirectory()) {
+          if (readdirSync(link).length > 0) {
+            log.warn('instances', '内容目录已是真实目录且非空，保持不动（共用未生效）', { id, kind, link })
+            return
+          }
+          rmSync(link, { recursive: true, force: true })
+        } else {
+          rmSync(link, { force: true })
+        }
+      }
+      try {
+        symlinkSync(target, link, 'junction')
+        log.info('instances', '已建立内容 junction', { id, kind, target })
+      } catch (err) {
+        log.warn('instances', '建立内容 junction 失败', { id, kind, error: err instanceof Error ? err.message : String(err) })
+      }
+    }
+
+    /** 只移除 junction（绝不删真实目录），回到实例隔离。 */
+    const unlinkJunction = (link: string, id: string, kind: string): void => {
+      let st: ReturnType<typeof lstatSync> | undefined
+      try {
+        st = lstatSync(link)
+      } catch {
+        st = undefined
+      }
+      if (!st?.isSymbolicLink()) return
+      try {
+        rmSync(link, { force: true })
+        mkdirSync(link, { recursive: true })
+        log.info('instances', '已解除内容 junction（回到实例隔离）', { id, kind })
+      } catch (err) {
+        log.warn('instances', '解除内容 junction 失败', { id, kind, error: err instanceof Error ? err.message : String(err) })
+      }
+    }
+
+    const contentDir = (id: string, kind: ContentKindDir): string => {
+      const link = path.join(gameDir(id), kind)
+      if (settings.get('isolatedMods')) return link
+      ensureJunction(link, sharedContentDir(kind), id, kind)
+      return link
+    }
+
+    const rebindContentDirs = (): void => {
+      const isolated = settings.get('isolatedMods')
+      for (const instance of list()) {
+        for (const kind of contentKinds) {
+          const link = path.join(gameDir(instance.id), kind)
+          if (isolated) unlinkJunction(link, instance.id, kind)
+          else contentDir(instance.id, kind)
+        }
+      }
+    }
+
     ctx.provide('instances', {
       list,
       get,
@@ -444,6 +527,8 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
       setAccount,
       rename,
       folders,
+      contentDir,
+      rebindContentDirs,
       dryRun,
       exportInstance,
       importInstance,

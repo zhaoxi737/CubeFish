@@ -180,6 +180,10 @@ async function runSettingsSmoke(win: BrowserWindowType, startedAt: number): Prom
           loginButton: [...document.querySelectorAll('.dialog button')].map((el) => el.textContent ?? '').find((text) => text.includes('微软账号')) ?? '',
           clientIdField: Boolean([...document.querySelectorAll('.field-label')].find((el) => el.textContent?.includes('client_id'))),
           curseforgeKeyField: Boolean([...document.querySelectorAll('.field-label')].find((el) => el.textContent?.includes('CurseForge'))),
+          titleField: Boolean([...document.querySelectorAll('.field-label')].find((el) => el.textContent?.includes('标题'))),
+          accentInput: Boolean(document.querySelector('input[type="color"]')),
+          gpuToggle: Boolean([...document.querySelectorAll('.field-inline span')].find((el) => (el.textContent ?? '').includes('高性能显卡'))),
+          javaRadios: document.querySelectorAll('input[name="java-pref"]').length,
           cfTest: ${JSON.stringify(cfText)}
         })`,
       )) as string
@@ -527,7 +531,11 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
 
       // ---- P29：下载中心 · 模组页（搜索 / 预览 / 检查更新 / 冲突检查） ----
       await win.webContents.executeJavaScript(
-        `(() => { const btn = [...document.querySelectorAll('.titlebar-actions button')].find((b) => b.textContent?.trim() === '模组'); btn?.click(); return 'dc-mods' })()`,
+        `(() => { const btn = [...document.querySelectorAll('.titlebar-actions button')].find((b) => b.textContent?.trim() === '下载'); btn?.click(); return 'dc-open' })()`,
+      )
+      await wait(1000)
+      await win.webContents.executeJavaScript(
+        `(() => { const item = [...document.querySelectorAll('.dc-nav-item')].find((el) => (el.textContent ?? '').includes('模组')); item?.click(); return 'dc-mods' })()`,
       )
       await wait(3200)
       const modsShot = await shot('smoke-mods.png')
@@ -780,7 +788,11 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
       let cfShot = ''
       if (process.env.QDOQMC_CF_API_BASE || process.env.QDOQMC_CF_API_KEY) {
         await win.webContents.executeJavaScript(
-          `(() => { const btn = [...document.querySelectorAll('.titlebar-actions button')].find((b) => b.textContent?.trim() === '模组'); btn?.click(); return 'dc' })()`,
+          `(() => { const btn = [...document.querySelectorAll('.titlebar-actions button')].find((b) => b.textContent?.trim() === '下载'); btn?.click(); return 'dc' })()`,
+        )
+        await wait(1000)
+        await win.webContents.executeJavaScript(
+          `(() => { const item = [...document.querySelectorAll('.dc-nav-item')].find((el) => (el.textContent ?? '').includes('模组')); item?.click(); return 'dc-mods' })()`,
         )
         await wait(1800)
         // 把「来源」切到 CurseForge，看真实/模拟结果

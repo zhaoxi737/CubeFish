@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { AccountState, AccountSummary, DeviceCodeInfo, SettingsPatch, SettingsShape } from '../../shared/types'
+import type { AccountState, AccountSummary, DeviceCodeInfo, JavaRuntimeInfo, SettingsPatch, SettingsShape } from '../../shared/types'
 
 interface Props {
   settings: SettingsShape
@@ -18,6 +18,9 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
   const [accounts, setAccounts] = useState<AccountSummary[]>([])
   const [cfTesting, setCfTesting] = useState(false)
   const [cfResult, setCfResult] = useState<{ ok: boolean; text: string } | null>(null)
+  const [javas, setJavas] = useState<JavaRuntimeInfo[]>([])
+  const [gpuStatus, setGpuStatus] = useState<{ enabled: boolean; entries: number } | null>(null)
+  const [gpuBusy, setGpuBusy] = useState(false)
 
   const refreshAccounts = useCallback(async () => {
     if (typeof window.qdo === 'undefined') return
@@ -37,6 +40,15 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
       .then((state) => setAccount(state))
       .catch(() => undefined)
     void refreshAccounts()
+    // P31：Java 列表 + 显卡状态
+    void window.qdo.java
+      .list()
+      .then((list) => setJavas(list))
+      .catch(() => setJavas([]))
+    void window.qdo.gpu
+      .status()
+      .then((status) => setGpuStatus(status))
+      .catch(() => setGpuStatus(null))
   }, [refreshAccounts])
 
   const loginMicrosoft = useCallback(async () => {
@@ -107,6 +119,17 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
         msClientId: draft.msClientId,
         marketPublicKey: draft.marketPublicKey,
         curseforgeApiKey: draft.curseforgeApiKey,
+        isolatedMods: draft.isolatedMods,
+        useHighPerformanceGpu: draft.useHighPerformanceGpu,
+        preferredJavaPath: draft.preferredJavaPath,
+        manualJavaPaths: draft.manualJavaPaths,
+        launchWindowWidth: draft.launchWindowWidth,
+        launchWindowHeight: draft.launchWindowHeight,
+        launchFullscreen: draft.launchFullscreen,
+        jvmArgs: draft.jvmArgs,
+        themeAccent: draft.themeAccent,
+        customBackground: draft.customBackground,
+        titleText: draft.titleText,
       })
     } finally {
       setSaving(false)
@@ -128,6 +151,57 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
             <strong>不填也能用：</strong>装游戏、装模组、查冲突、修崩溃全部离线可用。<br />
             想用满两个能力再填：<strong>模型 API Key</strong>（AI 对话）和<strong>微软 client_id</strong>（正版登录）。
           </div>
+
+          <div className="settings-group-title">个性化</div>
+          <label className="field">
+            <span className="field-label">启动器标题文字</span>
+            <input
+              value={draft.titleText}
+              onChange={(event) => update('titleText', event.target.value)}
+              placeholder="QDOQMC（留空用默认）"
+              spellCheck={false}
+            />
+            <span className="field-hint">左上角显示的名字，随便改。</span>
+          </label>
+
+          <label className="field">
+            <span className="field-label">主题强调色</span>
+            <input
+              type="color"
+              value={/^#[0-9a-fA-F]{6}$/.test(draft.themeAccent) ? draft.themeAccent : '#4d6bfe'}
+              onChange={(event) => update('themeAccent', event.target.value)}
+              style={{ width: 64, height: 34, padding: 2, background: 'transparent', border: '1px solid var(--border)' }}
+            />
+            <span className="field-hint">影响按钮、高亮、边框等强调色（默认 DeepSeek 蓝）。</span>
+          </label>
+
+          <label className="field">
+            <span className="field-label">自定义背景图</span>
+            <div className="pack-row">
+              <input
+                value={draft.customBackground}
+                onChange={(event) => update('customBackground', event.target.value)}
+                placeholder="留空 = 用内置背景图（可粘贴图片绝对路径）"
+                spellCheck={false}
+              />
+              <button
+                type="button"
+                className="ghost"
+                onClick={async () => {
+                  const picked = await window.qdo.dialog.pickFile('image')
+                  if (picked) update('customBackground', picked)
+                }}
+              >
+                选择…
+              </button>
+              {draft.customBackground ? (
+                <button type="button" className="ghost tiny" onClick={() => update('customBackground', '')}>
+                  恢复默认
+                </button>
+              ) : null}
+            </div>
+          </label>
+
           <div className="settings-group-title">更新与网络</div>
           <label className="field">
             <span className="field-label">更新清单地址（latest.json）</span>
@@ -201,6 +275,132 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
             />
             <span className="field-hint">离线进游戏时显示的名字。登录微软账号后会自动改用正版 ID。</span>
           </label>
+
+          <div className="settings-group-title">启动选项</div>
+          <div className="settings-row">
+            <label className="field">
+              <span className="field-label">窗口宽 / 高（0 = 默认）</span>
+              <div className="pack-row">
+                <input
+                  type="number"
+                  min={0}
+                  max={16384}
+                  step={16}
+                  value={draft.launchWindowWidth}
+                  onChange={(event) => update('launchWindowWidth', Number(event.target.value) || 0)}
+                />
+                <span className="field-hint">×</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={16384}
+                  step={16}
+                  value={draft.launchWindowHeight}
+                  onChange={(event) => update('launchWindowHeight', Number(event.target.value) || 0)}
+                />
+              </div>
+            </label>
+            <label className="field field-inline">
+              <input
+                type="checkbox"
+                checked={draft.launchFullscreen}
+                onChange={(event) => update('launchFullscreen', event.target.checked)}
+              />
+              <span>启动时全屏</span>
+            </label>
+          </div>
+
+          <label className="field">
+            <span className="field-label">额外 JVM 参数</span>
+            <input
+              value={draft.jvmArgs}
+              onChange={(event) => update('jvmArgs', event.target.value)}
+              placeholder="例如 -XX:+UseG1GC"
+              spellCheck={false}
+            />
+            <span className="field-hint">追加到游戏启动命令里（高级，不确定就留空）。</span>
+          </label>
+
+          <label className="field field-inline">
+            <input
+              type="checkbox"
+              checked={draft.isolatedMods}
+              onChange={(event) => update('isolatedMods', event.target.checked)}
+            />
+            <span>版本隔离（每个版本的 mods / 资源包 / 光影各自独立）</span>
+            <span className="field-hint">关闭后所有实例共用同一份 mods（PCL 里的「版本独立」）。切换后下次启动生效。</span>
+          </label>
+
+          <div className="settings-group-title">性能</div>
+          <label className="field field-inline">
+            <input
+              type="checkbox"
+              checked={draft.useHighPerformanceGpu}
+              disabled={gpuBusy}
+              onChange={async (event) => {
+                const enabled = event.target.checked
+                update('useHighPerformanceGpu', enabled)
+                setGpuBusy(true)
+                try {
+                  const result = await window.qdo.gpu.setEnabled(enabled)
+                  if (!result.ok && result.message) onNotify?.(result.message)
+                  else if (result.ok) onNotify?.(enabled ? `已开启高性能显卡（已应用到 ${result.applied} 个 Java）` : '已关闭高性能显卡')
+                  setGpuStatus({ enabled, entries: result.applied })
+                } catch (err) {
+                  onNotify?.(`显卡设置失败：${err instanceof Error ? err.message : String(err)}`)
+                } finally {
+                  setGpuBusy(false)
+                }
+              }}
+            />
+            <span>使用高性能显卡（NVIDIA 独显优先跑游戏）</span>
+            <span className="field-hint">
+              {gpuBusy ? '正在写入显卡偏好…' : gpuStatus ? `当前：${gpuStatus.enabled ? '已开启' : '已关闭'} · 已应用到 ${gpuStatus.entries} 个 Java` : '开关会写入 Windows 显卡偏好，重启游戏后生效。'}
+            </span>
+          </label>
+
+          <div className="settings-group-title">Java 运行环境</div>
+          {javas.length === 0 ? (
+            <div className="field-hint">正在检测本机 Java…（没检测到就点下面「手动添加」）</div>
+          ) : (
+            javas.map((java) => (
+              <label className="field field-inline" key={java.path}>
+                <input
+                  type="radio"
+                  name="java-pref"
+                  checked={draft.preferredJavaPath === java.path}
+                  onChange={() => update('preferredJavaPath', java.path)}
+                />
+                <span>
+                  Java {java.major}（{java.version}）· {java.source}
+                  {java.preferred ? <em className="field-hint"> · 推荐</em> : null}
+                </span>
+              </label>
+            ))
+          )}
+          <div className="pack-row">
+            <button
+              type="button"
+              className="ghost"
+              onClick={async () => {
+                const picked = await window.qdo.dialog.pickFile('java')
+                if (!picked) return
+                try {
+                  const info = await window.qdo.java.addManual(picked)
+                  setJavas((prev) => [...prev.filter((item) => item.path !== info.path), info])
+                  update('manualJavaPaths', [...new Set([...draft.manualJavaPaths, info.path])])
+                  onNotify?.(`已添加 Java ${info.major}（${info.version}）`)
+                } catch (err) {
+                  onNotify?.(`添加 Java 失败：${err instanceof Error ? err.message : String(err)}`)
+                }
+              }}
+            >
+              + 手动添加 Java
+            </button>
+            <button type="button" className="ghost tiny" onClick={() => update('preferredJavaPath', '')}>
+              自动选择
+            </button>
+          </div>
 
           <div className="settings-group-title">AI 助手</div>
           <label className="field">

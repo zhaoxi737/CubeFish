@@ -624,7 +624,11 @@ node_modules/.bin/electron . --chat="帮我检查下这个实例有没有冲突"
 | P30 | CurseForge 内容源 + Key 测试 | 真机真 Key：搜索 20 条真实结果（GeckoLib / JEI / Cloth Config…）带 CurseForge 徽章；`testCurseForge` = 基础 OK / 详情 OK / 搜索 OK（884–1208ms）；`source:'all'` 合并两源；mock 下 `install cf-111` 落盘 `cf-fake-mod.jar` 且 content.json 记录 `source:'curseforge'` |
 | P30 | 设置页新增 CurseForge Key + 测试按钮 | 输入框（密码型）+ 三项分报结果；无 Key / 403 时给中文提示，不影响 Modrinth |
 | P30 | 实例删除 + 游戏版本卸载 | smoke 实测：版本管理点「删除」删掉「Smoke Fabric 包」实例（count 3→2，toast 已删除）；新增 `versions.remove` 卸载版本文件并解绑实例、释放磁盘 |
+| P31 | 主界面重构：左侧栏=版本列表+版本卡+启动，中间留空，两侧可收起 | 顶栏去掉「模组/版本」；中间只剩更新横幅/退出诊断；左右侧栏都可收起；smoke 87s 通过 |
+| P31 | 设置：个性化 + 启动选项 + Java + 高性能显卡 + 版本隔离 | 设置页新增 7 组：个性化（标题/主题色/背景图）、启动选项（宽高/全屏/JVM）、Java（列出 4 个/选择/手动添加）、显卡开关（写 UserGpuPreferences）、版本隔离开关；settings smoke 断言 title/accent/gpu/javaRadios 全 true |
+| P31 | 下载中心增量显示 | `source:'all'` 先出 Modrinth、CurseForge 到了再补（不再等慢源） |
 
 > 汇总口径：每阶段都跑过 `npm run smoke` 与打包版 `--smoke`；涉及游戏启动的阶段有真实窗口标题与启动标记日志。
 > P28 另附 `scripts/p28-check.mjs`（下载器/镜像/分片实测，不启动 UI）和 [docs/P28-NOTES.md](P28-NOTES.md)（实现与实测数据）。
 > P29 另附 `scripts/p29-check.mjs`、[docs/P29-NOTES.md](P29-NOTES.md) 和 [docs/P29-SPEC.md](P29-SPEC.md)（接口契约）。
+> P31 另附 `scripts/p31-check.mjs` 和 [docs/P31-NOTES.md](P31-NOTES.md)（GPU 注册表 / Java / junction 实测）。

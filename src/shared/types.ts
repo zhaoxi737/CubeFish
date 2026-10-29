@@ -681,7 +681,7 @@ export interface FixAction {
   id: string
   label: string
   description: string
-  kind: 'disable-mod' | 'set-memory' | 'install-dependency' | 'clear-crash-reports'
+  kind: 'disable-mod' | 'set-memory' | 'install-dependency' | 'clear-crash-reports' | 'install-version'
   /** 展示用的补充信息（如目标文件名、内存值） */
   detail?: string
 }

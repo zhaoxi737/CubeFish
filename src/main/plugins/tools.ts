@@ -465,6 +465,42 @@ export function createToolsPlugin(): LauncherPlugin<void> {
     })
 
     register({
+      name: 'fix_mod_conflict',
+      description:
+        '一键解决「模组版本互相冲突」（例如 Iris 要求 Sodium 0.6.x 但装了 0.8.x）：自动读报错、解析冲突、换成兼容版本并安装。用户说“模组不兼容/进不去游戏/提示 Incompatible mods”时优先用这个，一步到位。',
+      parameters: EMPTY_PARAMS,
+      async handler() {
+        const instanceId = activeId()
+        const diagnosis = await diagnose.run(instanceId)
+        if (!diagnosis.found) {
+          return { ok: false, summary: `没读到崩溃/报错信息：${diagnosis.summary}`, data: diagnosis }
+        }
+        if (diagnosis.category !== 'mod-version-conflict') {
+          return {
+            ok: false,
+            summary: `这次不是模组版本冲突（诊断：${diagnosis.category} / ${diagnosis.summary}）。可以改用 diagnose_crash 看详情。`,
+            data: diagnosis,
+          }
+        }
+        const actions = await diagnose.fixes(instanceId)
+        const versionFix = actions.find((action) => action.kind === 'install-version')
+        if (!versionFix) {
+          return {
+            ok: false,
+            summary: `识别到版本冲突，但没在 Modrinth 找到可用的兼容版本。${diagnosis.summary}`,
+            data: { diagnosis, actions },
+          }
+        }
+        const result = await diagnose.applyFix(instanceId, versionFix.id)
+        return {
+          ok: result.ok,
+          summary: result.ok ? `${versionFix.label} → ${result.message}` : `修复失败：${result.message}`,
+          data: { diagnosis, actions, result },
+        }
+      },
+    })
+
+    register({
       name: 'auto_fix_crash',
       description:
         '按最近一次崩溃归因给出一键修复动作；传 fixId 则直接执行该修复（如禁用可疑模组、调大内存、安装缺失前置）。',

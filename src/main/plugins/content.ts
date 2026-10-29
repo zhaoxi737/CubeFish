@@ -3,7 +3,7 @@
  * API 参考 docs/RESEARCH-P1-P2.md §4。
  */
 import AdmZip from 'adm-zip'
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, rmSync, writeFileSync } from 'node:fs'
 import { readFile, rename, rm } from 'node:fs/promises'
 import path from 'node:path'
 import type {
@@ -107,6 +107,13 @@ export interface ContentService {
     instanceId: string,
     projectId: string,
     opts?: { mcVersion?: string; loader?: string },
+  ): Promise<ContentInstallResult>
+  /** P37：安装指定版本（解决模组版本冲突时用） */
+  installVersionById(
+    instanceId: string,
+    projectId: string,
+    versionId: string,
+    kind?: ContentKind,
   ): Promise<ContentInstallResult>
   installed(instanceId: string): Promise<InstalledContent[]>
   toggle(instanceId: string, fileName: string): Promise<{ ok: boolean; enabled?: boolean; error?: string }>
@@ -507,11 +514,48 @@ export function createContentPlugin(): LauncherPlugin<void> {
       })
     }
 
+    /** P37：安装新版本前，清掉同一项目旧版本的文件（避免 duplicate mods） */
+    async function removeProjectFiles(instanceId: string, projectId: string): Promise<number> {
+      const instance = instances.get(instanceId)
+      if (!instance) return 0
+      const file = contentFile(instanceId)
+      const list = await readJson<InstalledContent[]>(file, [])
+      if (!Array.isArray(list) || list.length === 0) return 0
+      let removed = 0
+      const keep: InstalledContent[] = []
+      for (const item of list) {
+        if (item.projectId !== projectId) {
+          keep.push(item)
+          continue
+        }
+        const kind = (item.kind as ContentKind) ?? 'mod'
+        const folder = kindDir(kind)
+        const base =
+          folder !== 'modpacks'
+            ? instances.contentDir(instanceId, folder as 'mods' | 'resourcepacks' | 'shaderpacks')
+            : path.join(instance.gameDir, folder)
+        for (const candidate of [path.join(base, item.fileName), `${path.join(base, item.fileName)}.disabled`]) {
+          try {
+            if (existsSync(candidate)) {
+              rmSync(candidate, { force: true })
+              removed += 1
+            }
+          } catch {
+            /* 文件被占用就跳过 */
+          }
+        }
+      }
+      if (removed > 0) {
+        await writeJsonAtomic(file, keep)
+        log.info('content', '已移除旧版本文件', { instanceId, projectId, removed })
+      }
+      return removed
+    }
+
     async function toggle(
       instanceId: string,
       fileName: string,
-    ): Promise<{ ok: boolean; enabled?: boolean; error?: string }> {
-      const instance = instances.get(instanceId)
+    ): Promise<{ ok: boolean; enabled?: boolean; error?: string }> {      const instance = instances.get(instanceId)
       if (!instance) return { ok: false, error: '实例不存在' }
       const list = await installed(instanceId)
       const item = list.find((entry) => entry.fileName === fileName)
@@ -593,7 +637,8 @@ export function createContentPlugin(): LauncherPlugin<void> {
             }
             if (!depVersion) continue
             const existing = await installed(instanceId)
-            if (existing.some((item) => item.versionId === depVersion!.id)) continue
+            // P37：同一个项目已经有任何版本了就不再装依赖版本，否则会出现两份同 mod（duplicate mods）
+            if (existing.some((item) => item.versionId === depVersion!.id || item.projectId === depVersion!.projectId)) continue
             const files = await installVersion(instanceId, depVersion, 'mod', depth + 1, progressTask)
             if (files.length > 0) depCount += 1
           } catch (err) {
@@ -674,6 +719,8 @@ export function createContentPlugin(): LauncherPlugin<void> {
           emitTask(task, 'failed', true, error)
           return { ok: false, projectId, title: project.title, files: [], dependenciesInstalled: 0, error }
         }
+        // P37：先把旧版本文件清掉，避免同一模组两份 jar
+        await removeProjectFiles(instanceId, projectId)
         const files = await installVersion(instanceId, version, kind, 0, task)
         const after = await installed(instanceId)
         const dependenciesInstalled = Math.max(0, after.length - before.length - 1)
@@ -694,8 +741,44 @@ export function createContentPlugin(): LauncherPlugin<void> {
       }
     }
 
-    /* ---------- .mrpack 整合包 ---------- */
+    /** P37：按版本 id 精确安装（安装冲突修复指定的版本） */
+    async function installVersionById(
+      instanceId: string,
+      projectId: string,
+      versionId: string,
+      kind: ContentKind = 'mod',
+    ): Promise<ContentInstallResult> {
+      const task = createTask('安装指定版本', '安装指定版本')
+      try {
+        const raw = await api<RawVersion>(`/version/${encodeURIComponent(versionId)}`)
+        const info = toVersionInfo(raw)
+        task.title = `安装 ${projectId} ${info.versionNumber}`
+        task.message = task.title
+        emitTask(task, 'content', true)
+        const before = await installed(instanceId)
+        // P37：安装指定版本时同样先清掉同项目旧文件
+        await removeProjectFiles(instanceId, projectId)
+        const files = await installVersion(instanceId, info, kind, 0, task)
+        const after = await installed(instanceId)
+        emitTask(task, 'done', true)
+        log.info('content', '已安装指定版本', { projectId, versionId, versionNumber: info.versionNumber })
+        return {
+          ok: true,
+          projectId,
+          title: info.versionNumber,
+          versionNumber: info.versionNumber,
+          files,
+          dependenciesInstalled: Math.max(0, after.length - before.length - 1),
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        emitTask(task, 'failed', true, message)
+        log.error('content', '安装指定版本失败', { projectId, versionId, error: message })
+        return { ok: false, projectId, files: [], dependenciesInstalled: 0, error: message }
+      }
+    }
 
+    /* ---------- .mrpack 整合包 ---------- */
     interface MrpackFile {
       path?: string
       hashes?: { sha1?: string; sha512?: string }
@@ -1747,6 +1830,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
       update,
       testCurseForge,
       preview,
+      installVersionById,
       setProgressSink: (next) => {
         progressSink = next
       },

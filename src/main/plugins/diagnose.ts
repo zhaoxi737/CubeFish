@@ -7,6 +7,7 @@ import path from 'node:path'
 import type { Diagnosis, FixAction, FixResult } from '../../shared/types'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { ContentService } from './content'
+import type { ContentVersionInfo } from '../../shared/types'
 import type { InstancesService } from './instances'
 import type { LogService } from './logger'
 import type { SettingsService } from './settings'
@@ -33,6 +34,16 @@ interface Signature {
 }
 
 const SIGNATURES: Signature[] = [
+  {
+    category: 'mod-version-conflict',
+    severity: 'error',
+    test: /Incompatible mods found|Some of your mods are incompatible|模组.{0,120}?不兼容|requires version .{0,60}?of mod|需要\s*模组\s*'[^']+'\s*\([a-z0-9_-]+\)\s*的\s*任意|is incompatible with any version of mod/i,
+    summary: '模组版本互相冲突：一个模组要求的版本和已安装的对不上',
+    suggestions: [
+      '点「一键修复」，会按提示把冲突的模组换成兼容版本',
+      '一般优先升级那个“要求方”模组（如 Iris），不行再降级“被要求方”（如 Sodium）',
+    ],
+  },
   {
     category: 'missing-dependency',
     severity: 'error',
@@ -229,6 +240,59 @@ export function createDiagnosePlugin(): LauncherPlugin<void> {
       const diagnosis = await run(instanceId)
       const actions: FixAction[] = []
 
+      // P37：模组版本冲突 → 给出「换版本」的修复方案
+      if (diagnosis.category === 'mod-version-conflict') {
+        const info = parseIncompatibleMods(diagnosis.evidence.join('\n'))
+        const mcv = instance.gameVersion ?? instance.mcVersion
+        const loader = instance.loader === 'fabric' ? 'fabric' : undefined
+        const byNewest = (a: ContentVersionInfo, b: ContentVersionInfo) => {
+          // 优先正式版，再按版本号从新到旧
+          const rank = (item: ContentVersionInfo) => (item.versionType === 'release' ? 0 : 1)
+          return rank(a) - rank(b) || cmpVersion(b.versionNumber, a.versionNumber)
+        }
+        // 方案 A（优先）：升级「要求方」（如 Iris），让它兼容已装的模组
+        if (info.requiringSlug) {
+          try {
+            const list = await content.versions(info.requiringSlug, { mcVersion: mcv, loader })
+            const min = info.minRequiringVersion
+            const candidate = list
+              .filter((item) => !min || cmpVersion(item.versionNumber, min) >= 0)
+              .sort(byNewest)[0]
+            if (candidate) {
+              actions.push({
+                id: `version:${info.requiringSlug}:${candidate.id}`,
+                label: `升级 ${info.requiringName ?? info.requiringSlug} 到 ${candidate.versionNumber}`,
+                description: `让它兼容已装的 ${info.requiredName ?? ''} ${info.installedVersion ?? ''}`,
+                kind: 'install-version',
+                detail: candidate.versionNumber,
+              })
+            }
+          } catch {
+            /* 查询失败就跳过这个方案 */
+          }
+        }
+        // 方案 B：把「被要求方」换成它要求的版本范围（如 Sodium 0.6.x）
+        if (info.requiredSlug && info.requiredRange) {
+          try {
+            const list = await content.versions(info.requiredSlug, { mcVersion: mcv, loader })
+            const candidate = list
+              .filter((item) => versionInRange(item.versionNumber, info.requiredRange as string))
+              .sort(byNewest)[0]
+            if (candidate) {
+              actions.push({
+                id: `version:${info.requiredSlug}:${candidate.id}`,
+                label: `把 ${info.requiredName ?? info.requiredSlug} 换成 ${candidate.versionNumber}`,
+                description: `满足 ${info.requiringName ?? ''} 要求的 ${info.requiredRange}`,
+                kind: 'install-version',
+                detail: candidate.versionNumber,
+              })
+            }
+          } catch {
+            /* 查询失败就跳过这个方案 */
+          }
+        }
+      }
+
       if (diagnosis.category === 'out-of-memory') {
         const current = instance.memoryMb
         const next = Math.min(current + 2048, 16384)
@@ -345,6 +409,18 @@ export function createDiagnosePlugin(): LauncherPlugin<void> {
             refresh: true,
           }
         }
+        if (fixId.startsWith('version:')) {
+          const rest = fixId.slice('version:'.length)
+          const split = rest.indexOf(':')
+          if (split <= 0) return { ok: false, message: `版本修复参数不合法：${fixId}` }
+          const slug = rest.slice(0, split)
+          const versionId = rest.slice(split + 1)
+          const result = await content.installVersionById(instanceId, slug, versionId)
+          if (!result.ok) return { ok: false, message: `安装失败：${result.error ?? '未知错误'}` }
+          telemetry.record('diagnose:fix', { instanceId, kind: 'install-version', project: slug })
+          log.info('diagnose', '已安装冲突修复版本', { instanceId, slug, versionId })
+          return { ok: true, message: `已安装 ${slug} ${result.versionNumber ?? ''}，重新启动试试`, refresh: true }
+        }
         if (fixId === 'clear-crash') {
           const crashDir = path.join(instance.gameDir, 'crash-reports')
           let removed = 0
@@ -393,6 +469,94 @@ export function createDiagnosePlugin(): LauncherPlugin<void> {
 
 /** Fabric 的 HARD_DEP 行能直接给出「谁缺谁、缺哪个版本」。 */
 const HARD_DEP = /HARD_DEP(?:_NO_CANDIDATE)?\s+([^\s]+)\s+([^\s{]+)\s+\{depends\s+([^\s@]+)/
+
+/* ---------------- P37：模组版本冲突解析 ---------------- */
+
+interface IncompatibleInfo {
+  requiringSlug?: string
+  requiringName?: string
+  requiringVersion?: string
+  requiredSlug?: string
+  requiredName?: string
+  requiredRange?: string
+  installedVersion?: string
+  /** 要求方至少要升级到的版本（错误里 “below X” 的那条） */
+  minRequiringVersion?: string
+}
+
+function parseIncompatibleMods(text: string): IncompatibleInfo {
+  const info: IncompatibleInfo = {}
+  const zh =
+    /模组\s*'([^']+)'\s*\(([a-z0-9_-]+)\)\s*([^\s，。]+)\s*需要\s*模组\s*'([^']+)'\s*\(([a-z0-9_-]+)\)\s*的\s*任意\s*([^\s，。]+)\s*版本[，,]?\s*但已经安装了的版本\s*([^\s，。]+)/i.exec(
+      text,
+    )
+  if (zh) {
+    info.requiringName = zh[1]
+    info.requiringSlug = zh[2]
+    info.requiringVersion = zh[3]
+    info.requiredName = zh[4]
+    info.requiredSlug = zh[5]
+    info.requiredRange = zh[6]
+    info.installedVersion = zh[7]
+  }
+  if (!info.requiredSlug) {
+    const en =
+      /Mod\s*'([^']+)'\s*\(([a-z0-9_-]+)\)\s*([^\s,]+)\s*requires\s*version\s*([^\s,]+)\s*of\s*mod\s*'([^']+)'\s*\(([a-z0-9_-]+)\)/i.exec(
+        text,
+      )
+    if (en) {
+      info.requiringName = en[1]
+      info.requiringSlug = en[2]
+      info.requiringVersion = en[3]
+      info.requiredRange = en[4]
+      info.requiredName = en[5]
+      info.requiredSlug = en[6]
+    }
+  }
+  const boundZh = /与\s*模组\s*'([^']+)'\s*\(([a-z0-9_-]+)\)\s*的\s*([^\s，。]+)\s*以下任意版本\s*不兼容/i.exec(text)
+  if (boundZh) info.minRequiringVersion = boundZh[3]
+  if (!info.minRequiringVersion) {
+    const boundEn = /incompatible with any version of mod\s*'([^']+)'\s*\(([a-z0-9_-]+)\)\s*below\s*([^\s,!]+)/i.exec(text)
+    if (boundEn) info.minRequiringVersion = boundEn[3]
+  }
+  return info
+}
+
+/** "1.8.13+mc1.21.1" / "mc1.21.1-0.8.13-fabric" → "1.8.13" / "0.8.13" */
+function leadingVersion(versionNumber: string): string {
+  const cleaned = versionNumber
+    .split('+')[0]
+    .replace(/^mc[0-9.]+-/i, '')
+    .replace(/^v/i, '')
+    .trim()
+  const match = /(\d+\.\d+(?:\.\d+)?)/.exec(cleaned)
+  return match ? match[1] : cleaned
+}
+
+function cmpVersion(a: string, b: string): number {
+  const pa = leadingVersion(a)
+    .split(/[.\-]/)
+    .map((part) => Number.parseInt(part, 10) || 0)
+  const pb = leadingVersion(b)
+    .split(/[.\-]/)
+    .map((part) => Number.parseInt(part, 10) || 0)
+  for (let index = 0; index < Math.max(pa.length, pb.length); index += 1) {
+    const diff = (pa[index] ?? 0) - (pb[index] ?? 0)
+    if (diff !== 0) return diff
+  }
+  return 0
+}
+
+/** 版本号是否落在 "0.6.x" / "0.6.*" / "0.6" 这类区间里 */
+function versionInRange(versionNumber: string, range: string): boolean {
+  const parts = range.replace(/x/gi, '*').split('.').filter(Boolean)
+  const actual = leadingVersion(versionNumber).split(/[.\-]/)
+  for (let index = 0; index < parts.length; index += 1) {
+    if (parts[index] === '*') return true
+    if (actual[index] !== parts[index]) return false
+  }
+  return true
+}
 
 function refine(diagnosis: Diagnosis, text: string): Diagnosis {
   if (diagnosis.category !== 'missing-dependency') return diagnosis

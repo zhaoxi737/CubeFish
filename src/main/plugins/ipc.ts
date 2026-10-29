@@ -8,6 +8,8 @@ import type {
   ChatReply,
   ConflictReport,
   ContentInstallResult,
+  ContentPreview,
+  ContentUpdate,
   ContentVersionInfo,
   CursePackInspectResult,
   CursePackInstallResult,
@@ -43,7 +45,7 @@ import type {
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { ChatService } from './chat'
 import type { ConflictService } from './conflict'
-import type { ContentService } from './content'
+import type { ContentKind, ContentService } from './content'
 import type { DiagnoseService } from './diagnose'
 import type { EntitlementService } from './entitlement'
 import type { IdentityService } from './identity'
@@ -104,6 +106,7 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     java.setProgressSink((progress: TaskProgress) => push(EVT.progress, progress))
     loaders.setProgressSink((progress: TaskProgress) => push(EVT.progress, progress))
     updater.setProgressSink((progress: TaskProgress) => push(EVT.progress, progress))
+    content.setProgressSink((progress: TaskProgress) => push(EVT.progress, progress))
     launch.setGameStateSink((state) => push(EVT.gameState, state))
 
     const handle = <T>(channel: string, handler: (...args: any[]) => T | Promise<T>): void => {
@@ -254,6 +257,12 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle(CH.contentInspectCurse, (source: string) => content.inspectCursePack(source))
     handle(CH.contentInspectPack, (source: string) => content.inspectPack(source))
     handle(CH.contentInstallPack, (source: string) => content.installPack(source))
+    // P29：模组更新检查 / 单个更新 / 图片画廊预览
+    handle<ContentUpdate[]>(CH.contentUpdates, (instanceId: string) => content.updates(instanceId))
+    handle(CH.contentUpdate, (instanceId: string, fileName: string) => content.update(instanceId, fileName))
+    handle<ContentPreview>(CH.contentPreview, (projectId: string, kind: ContentKind) =>
+      content.preview(projectId, kind),
+    )
     handle<ConflictReport>(CH.conflictAnalyze, (instanceId?: string) => conflict.analyze(instanceId ?? 'default'))
     handle<Diagnosis>(CH.diagnoseRun, (instanceId?: string) => diagnose.run(instanceId ?? 'default'))
     handle<FixAction[]>(CH.diagnoseFixes, (instanceId?: string) => diagnose.fixes(instanceId ?? 'default'))

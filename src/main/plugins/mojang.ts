@@ -15,6 +15,7 @@ import path from 'node:path'
 import type {
   DownloadSource,
   InstallResult,
+  ProgressFile,
   StageProgress,
   TaskProgress,
   VersionList,
@@ -49,6 +50,8 @@ const PROBE_TIMEOUT_MS = 6000
 const SOURCE_CACHE_MS = 15 * 60 * 1000
 /** progress 推送节流：每 200ms 最多一次 */
 const PROGRESS_INTERVAL_MS = 200
+/** P29：逐文件清单最多显示 200 条（assets 常上千个） */
+const MAX_PROGRESS_FILES = 200
 
 const MOJANG_HOSTS = new Set([
   'launchermeta.mojang.com',
@@ -264,6 +267,9 @@ interface DownloaderOptionsLike {
   threads?: number
   signal?: AbortSignal
   onProgress?: (done: number, total: number, bytes: number, label?: string, stats?: DownloadProgressStats) => void
+  /** P29：文件清单 / 单文件状态回调 */
+  onFiles?: (files: { name: string; size?: number }[]) => void
+  onFileState?: (index: number, state: ProgressFile['state']) => void
 }
 
 export function createMojangPlugin(): LauncherPlugin<void> {
@@ -293,6 +299,8 @@ export function createMojangPlugin(): LauncherPlugin<void> {
         threads: options.threads ?? threadsOf(),
         signal: options.signal,
         onProgress: options.onProgress,
+        onFiles: options.onFiles,
+        onFileState: options.onFileState,
         onVerbose: (message, data) => log.warn('mojang', message, data),
       })
 
@@ -426,6 +434,20 @@ export function createMojangPlugin(): LauncherPlugin<void> {
       let lastEmit = 0
       let lastPercent = 0
 
+      // ---- P29：当前阶段的逐文件清单（PCL 式） ----
+      let progressFiles: ProgressFile[] = []
+      const setProgressFiles = (files: { name: string; size?: number }[]): void => {
+        progressFiles = files.slice(0, MAX_PROGRESS_FILES).map((file) => ({
+          name: file.name,
+          size: file.size,
+          state: 'pending' as const,
+        }))
+      }
+      const setProgressFileState = (index: number, state: ProgressFile['state']): void => {
+        const file = progressFiles[index]
+        if (file) file.state = state
+      }
+
       const stageOf = (name: string): StageState => stages.find((item) => item.stage === name) ?? stages[0]
       const snapshot = (): StageProgress[] =>
         stages.map(({ stage, label, done, total, bytes, bytesTotal, state }) => ({
@@ -493,6 +515,9 @@ export function createMojangPlugin(): LauncherPlugin<void> {
           filesTotal: sum.filesTotal,
           stages: snapshot(),
           source,
+          // P29：任务标题 + 当前阶段文件清单
+          title: `安装 ${versionId}`,
+          files: progressFiles.length > 0 ? progressFiles.map((file) => ({ ...file })) : undefined,
         })
       }
 
@@ -571,12 +596,21 @@ export function createMojangPlugin(): LauncherPlugin<void> {
         libStage.state = 'running'
         libStage.total = downloadSpecs.length
         libStage.bytesTotal = downloadSpecs.reduce((sum, spec) => sum + (spec.size ?? 0), 0)
+        setProgressFiles(downloadSpecs.map((spec) => ({ name: spec.label ?? path.basename(spec.dest), size: spec.size })))
         emit('libraries', true, '下载库文件')
 
         const libDownloader = dl({
           concurrency: 8,
           threads: threadCount,
           signal,
+          onFiles: (files) => {
+            setProgressFiles(files)
+            emit('libraries')
+          },
+          onFileState: (index, state) => {
+            setProgressFileState(index, state)
+            emit('libraries')
+          },
           onProgress: (done, total, bytes, label, stats) => {
             libStage.done = done
             libStage.total = total
@@ -610,6 +644,7 @@ export function createMojangPlugin(): LauncherPlugin<void> {
           assetStage.state = 'running'
           assetStage.total = 1
           assetStage.bytesTotal = indexSize
+          setProgressFiles([{ name: `asset index ${assetIndexId}`, size: indexSize }])
           emit('assets', true, `下载资源索引 ${assetIndexId}`)
 
           const indexDest = path.join(paths.assets, 'indexes', `${assetIndexId}.json`)
@@ -643,6 +678,14 @@ export function createMojangPlugin(): LauncherPlugin<void> {
             concurrency: 16,
             threads: threadCount,
             signal,
+            onFiles: (files) => {
+              setProgressFiles(files)
+              emit('assets')
+            },
+            onFileState: (index, state) => {
+              setProgressFileState(index, state)
+              emit('assets')
+            },
             onProgress: (done, total, bytes, label, stats) => {
               assetStage.done = done + 1
               assetStage.total = total + 1
@@ -678,6 +721,7 @@ export function createMojangPlugin(): LauncherPlugin<void> {
 
         // 日志配置
         const loggingStage = stageOf('logging')
+        progressFiles = []
         const loggingFile = json.logging?.client?.file
         if (loggingFile) {
           loggingStage.state = 'running'
@@ -736,6 +780,8 @@ export function createMojangPlugin(): LauncherPlugin<void> {
         const message = err instanceof Error ? err.message : String(err)
         telemetry.record('install:error', { versionId, error: message })
         log.error('mojang', '版本安装失败', { versionId, error: message, source })
+        // P29：失败时发一次 stage:'failed'，前端把任务标记为失败（保留已下载文件供续传）
+        emit('failed', true, message)
         return { ok: false, versionId, ms, error: message }
       } finally {
         activeInstalls.delete(taskId)

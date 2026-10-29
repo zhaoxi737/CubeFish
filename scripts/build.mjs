@@ -73,7 +73,7 @@ async function main() {
   await cp(path.join(root, 'src/renderer/styles.css'), path.join(out, 'renderer/styles.css'))
 
   // 美术资源（ComfyUI 生成，见 art/README.md）：存在才拷贝，缺了也不让构建失败
-  const artFiles = ['mascot-fish.png', 'tile-grass.png', 'bg-hero.png', 'icon-pack.png']
+  const artFiles = ['mascot-fish.png', 'tile-grass.png', 'bg-hero.png', 'icon-pack.png', 'bg-user.jpg']
   const artOut = path.join(out, 'renderer', 'assets')
   for (const name of artFiles) {
     const file = path.join(root, 'art', name)

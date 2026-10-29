@@ -7,6 +7,8 @@ import type {
   LoginStatus,
   ConflictReport,
   ContentInstallResult,
+  ContentPreview,
+  ContentUpdate,
   ContentVersionInfo,
   CursePackInspectResult,
   CursePackInstallResult,
@@ -101,6 +103,16 @@ export interface QdoApi {
     inspectCursePack(source: string): Promise<CursePackInspectResult>
     inspectPack(source: string): Promise<PackInspect>
     installPack(source: string): Promise<ModpackInstallResult & { kind?: 'curseforge' | 'modrinth'; resolved?: number; bundled?: number; overrides?: number }>
+    // ---- P29：模组更新检查 / 资源预览 ----
+    /** 检查实例内已装模组的最新版本（可能为空数组） */
+    updates(instanceId: string): Promise<ContentUpdate[]>
+    /** 更新某个模组到最新版本（下载新文件 → 删旧文件 → 更新 content.json） */
+    update(
+      instanceId: string,
+      fileName: string,
+    ): Promise<{ ok: boolean; fileName?: string; version?: string; error?: string }>
+    /** 资源/光影/模组的图片画廊预览（网络失败返回空 gallery） */
+    preview(projectId: string, kind: 'mod' | 'resourcepack' | 'shader' | 'modpack' | 'datapack'): Promise<ContentPreview>
   }
   conflict: {
     analyze(instanceId?: string): Promise<ConflictReport>

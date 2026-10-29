@@ -455,10 +455,22 @@ export function createLoadersPlugin(): LauncherPlugin<void> {
       }
 
       const choices: LoaderChoice[] = []
+      // 三个来源并行查、各自 8 秒超时：任何一个上游慢/挂都不拖垮整个面板
+      const withTimeout = <T,>(promise: Promise<T>, ms: number, label: string): Promise<T> =>
+        Promise.race([
+          promise,
+          new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`${label} 查询超时`)), ms)),
+        ])
+
+      const [fabricSettled, forgeSettled, neoSettled] = await Promise.allSettled([
+        withTimeout(fabricVersions(gameVersion), 8000, 'Fabric'),
+        withTimeout(forgeChoice(gameVersion), 8000, 'Forge'),
+        neoforgePrefix(gameVersion) ? withTimeout(neoforgeVersions(gameVersion), 8000, 'NeoForge') : Promise.resolve(null),
+      ])
 
       // Fabric：过滤 beta，保留历史正式版（stable 只用于 recommended，不能当唯一版本）
-      try {
-        const list = await fabricVersions(gameVersion)
+      if (fabricSettled.status === 'fulfilled') {
+        const list = fabricSettled.value
         const versions = list
           .map((entry) => entry.version)
           .filter((version) => !version.includes('-beta'))
@@ -469,29 +481,27 @@ export function createLoadersPlugin(): LauncherPlugin<void> {
             ? { loader: 'fabric', versions, recommended: stable ?? versions[0] }
             : { loader: 'fabric', versions: [], note: 'Fabric 没有可用版本' },
         )
-      } catch {
-        choices.push({ loader: 'fabric', versions: [], note: '查询失败，可稍后重试' })
+      } else {
+        choices.push({ loader: 'fabric', versions: [], note: `Fabric ${String(fabricSettled.reason?.message ?? '查询失败')}` })
       }
 
       // Forge
-      try {
-        choices.push(await forgeChoice(gameVersion))
-      } catch {
-        choices.push({ loader: 'forge', versions: [], note: '查询失败，可稍后重试' })
+      if (forgeSettled.status === 'fulfilled') {
+        choices.push(forgeSettled.value)
+      } else {
+        choices.push({ loader: 'forge', versions: [], note: `Forge ${String(forgeSettled.reason?.message ?? '查询失败')}` })
       }
 
       // NeoForge：1.20.2 起才有客户端构建（更早走 Forge，不出现该项）
-      if (neoforgePrefix(gameVersion)) {
-        try {
-          const versions = (await neoforgeVersions(gameVersion)).reverse().slice(0, 20)
-          choices.push(
-            versions.length > 0
-              ? { loader: 'neoforge', versions, recommended: versions[0] }
-              : { loader: 'neoforge', versions: [], note: `NeoForge 没有支持 ${gameVersion} 的版本` },
-          )
-        } catch {
-          choices.push({ loader: 'neoforge', versions: [], note: '查询失败，可稍后重试' })
-        }
+      if (neoSettled.status === 'fulfilled' && neoSettled.value) {
+        const versions = neoSettled.value.reverse().slice(0, 20)
+        choices.push(
+          versions.length > 0
+            ? { loader: 'neoforge', versions, recommended: versions[0] }
+            : { loader: 'neoforge', versions: [], note: `NeoForge 没有支持 ${gameVersion} 的版本` },
+        )
+      } else if (neoSettled.status === 'rejected') {
+        choices.push({ loader: 'neoforge', versions: [], note: `NeoForge ${String(neoSettled.reason?.message ?? '查询失败')}` })
       }
 
       log.info('loaders', '加载器可用性查询完成', {

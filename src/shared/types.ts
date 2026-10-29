@@ -205,7 +205,16 @@ export interface VersionList {
   installed: string[]
 }
 
-export type InstallStage = 'version' | 'libraries' | 'assets' | 'logging' | 'legacy' | 'done' | 'cancelled'
+export type InstallStage =
+  | 'version'
+  | 'libraries'
+  | 'assets'
+  | 'logging'
+  | 'legacy'
+  | 'done'
+  | 'cancelled'
+  /** P29：安装失败（整合包/原版安装出错时发一次，前端据此把任务标记为失败） */
+  | 'failed'
 
 /** 下载源：auto = 自动测速选最快，official = Mojang 官方，bmclapi = 国内镜像 */
 export type DownloadSource = 'auto' | 'official' | 'bmclapi'
@@ -225,6 +234,16 @@ export interface StageProgress {
   /** 该阶段总字节（未知时 0） */
   bytesTotal: number
   state: 'pending' | 'running' | 'done'
+}
+
+/** P29：下载任务里的单个文件（PCL 式文件清单） */
+export interface ProgressFile {
+  /** 显示名：库坐标 / mod 文件名 / assets 的 key */
+  name: string
+  /** 字节数，未知省略 */
+  size?: number
+  /** 该文件当前状态 */
+  state: 'pending' | 'running' | 'done' | 'failed' | 'skipped'
 }
 
 export interface TaskProgress {
@@ -252,6 +271,11 @@ export interface TaskProgress {
   stages?: StageProgress[]
   /** 实际使用的下载源 */
   source?: DownloadSource
+  // ---- P29 新增（全部可选，旧发射方不受影响） ----
+  /** 当前阶段的文件清单（最多 200 条，按 PCL 的样式逐行显示） */
+  files?: ProgressFile[]
+  /** 任务标题，例如「安装 1.21.11」「安装整合包 Fabulously Optimized」 */
+  title?: string
 }
 
 export interface InstallResult {
@@ -353,6 +377,37 @@ export interface ContentInstallResult {
   files: string[]
   dependenciesInstalled: number
   error?: string
+}
+
+/* ---------- P29：模组更新检查 / 资源预览 ---------- */
+
+/** 模组更新项 */
+export interface ContentUpdate {
+  /** 实例内的文件名（mods/ 下） */
+  fileName: string
+  projectId?: string
+  title?: string
+  /** 当前版本号（来自 content.json） */
+  currentVersion?: string
+  /** Modrinth 上的最新版本号 */
+  latestVersion?: string
+  /** 最新文件名（覆盖安装用） */
+  latestFileName?: string
+  gameVersions?: string[]
+  loaders?: string[]
+}
+
+/** 资源预览（图片画廊） */
+export interface ContentPreview {
+  projectId: string
+  title: string
+  description: string
+  iconUrl?: string
+  /** 画廊图片（绝对 https URL，前端直接 <img>） */
+  gallery: string[]
+  downloads: number
+  gameVersions: string[]
+  loaders: string[]
 }
 
 export interface FabricInstallResult {

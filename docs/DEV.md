@@ -617,6 +617,11 @@ node_modules/.bin/electron . --chat="帮我检查下这个实例有没有冲突"
 | P27 | PCL 式常驻左侧版本列表 | 侧栏卡片 2 张、点卡片切实例 `sidebar.active=默认实例` |
 | P28 | 下载清晰化：加载器可用性 + PCL 式进度 + 镜像/分片加速 | 1.20.1 → Fabric 20 个版本可选 / Forge 20 个 / NeoForge 不支持；下载中 6%、451 KB/s、剩余 4 分 29 秒、文件 14/76、取消后「已取消」；真机 auto 选源 official 510 KB/s vs bmclapi 154 KB/s → 选 official；分片 x4 实测 4 次 206 + sha1 正确 |
 | P28 | ComfyUI 美术接入 | 本机 SD1.5 出图 4 张（吉祥物/草地砖/背景/图标），构建自动拷入 `out/renderer/assets`，缺图回退 SVG |
+| P29 | PCL 式下载中心 + 主界面重组 | 左侧分类 6 项；主界面只剩版本卡片/启动/4 个快捷入口；smoke 实测 mods 20 条、资源包 20、光影 20、整合包 20 |
+| P29 | 逐文件下载进度（含整合包） | 任务页 75 个文件逐行状态 + 大小，`filesDone` 0→1→2 递增；整合包 100% 完成页 |
+| P29 | 资源/光影预览 + 模组更新检查 | Sodium 画廊 6 张图渲染成功；检查更新实测 1 项「0.8.14 → 0.8.15-beta.1」可一键更新 |
+| P29 | 用户背景图接入 | `uploads/…png` → `art/bg-user.jpg`（1920×1079, 306KB），构建自动打包 |
 
 > 汇总口径：每阶段都跑过 `npm run smoke` 与打包版 `--smoke`；涉及游戏启动的阶段有真实窗口标题与启动标记日志。
 > P28 另附 `scripts/p28-check.mjs`（下载器/镜像/分片实测，不启动 UI）和 [docs/P28-NOTES.md](P28-NOTES.md)（实现与实测数据）。
+> P29 另附 `scripts/p29-check.mjs`、[docs/P29-NOTES.md](P29-NOTES.md) 和 [docs/P29-SPEC.md](P29-SPEC.md)（接口契约）。

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { TaskProgress } from '../../shared/types'
 
 const STAGE_ICON: Record<string, string> = {
@@ -12,6 +13,14 @@ const STAGE_HINT: Record<string, string> = {
   assets: '贴图、音效、语言文件等游戏资源',
   logging: '崩溃日志的格式化配置',
   content: '模组 / 资源包文件',
+}
+
+const FILE_ICON: Record<string, string> = {
+  done: '✓',
+  running: '▶',
+  pending: '○',
+  failed: '✕',
+  skipped: '↷',
 }
 
 function mb(bytes: number | undefined): string {
@@ -66,6 +75,13 @@ export function ProgressCard({ progress, busy, title, onCancel }: Props) {
   const bytesTotal = progress.bytesTotal ?? 0
   const bytes = progress.bytes ?? 0
   const currentStage = progress.stage
+  const listRef = useRef<HTMLDivElement | null>(null)
+
+  // 文件列表自动跟到「正在下载」那一行
+  useEffect(() => {
+    const el = listRef.current?.querySelector('.task-file.state-running')
+    if (el) el.scrollIntoView({ block: 'nearest' })
+  }, [progress.currentFile])
 
   return (
     <div className={`progress-card ${done ? 'is-done' : ''} ${cancelled ? 'is-cancelled' : ''}`}>
@@ -141,6 +157,20 @@ export function ProgressCard({ progress, busy, title, onCancel }: Props) {
             )
           })}
         </ul>
+      ) : null}
+
+      {progress.files && progress.files.length > 0 ? (
+        <div className="task-files" ref={listRef}>
+          {progress.files.map((file, index) => (
+            <div className={`task-file state-${file.state}`} key={`${file.name}-${index}`}>
+              <span className="task-file-icon">{FILE_ICON[file.state] ?? '○'}</span>
+              <span className="task-file-name" title={file.name}>
+                {file.name}
+              </span>
+              <span className="task-file-size">{file.size ? mb(file.size) : ''}</span>
+            </div>
+          ))}
+        </div>
       ) : null}
 
       {busy && onCancel ? (

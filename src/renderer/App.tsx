@@ -16,13 +16,10 @@ import type {
 import { ChatPanel } from './components/ChatPanel'
 import { SettingsDialog } from './components/SettingsDialog'
 import { LogDrawer } from './components/LogDrawer'
-import { ModsDialog } from './components/ModsDialog'
 import { VersionManager } from './components/VersionManager'
-import { FishMascot } from './components/FishMascot'
 import { MascotImage } from './components/MascotImage'
 import { PluginsDialog } from './components/PluginsDialog'
-import { ProgressCard } from './components/ProgressCard'
-import { VersionPicker, type LoaderKind } from './components/VersionPicker'
+import { DownloadCenter, type DownloadTab } from './components/DownloadCenter'
 
 const FALLBACK_INFO: AppInfo = {
   name: 'QDOQMC',
@@ -39,6 +36,13 @@ const FALLBACK_INFO: AppInfo = {
   logsDir: '',
   plugins: [],
   failedPlugins: [],
+}
+
+const LOADER_BADGE: Record<string, string> = {
+  vanilla: 'V',
+  fabric: 'F',
+  forge: 'G',
+  neoforge: 'N',
 }
 
 const STAGE_LABEL: Record<string, string> = {
@@ -76,13 +80,9 @@ export function App() {
   const [instance, setInstance] = useState<InstanceSummary | null>(null)
   const [versions, setVersions] = useState<VersionList | null>(null)
   const [installed, setInstalled] = useState<string[]>([])
-  const [selected, setSelected] = useState('')
-  const [installing, setInstalling] = useState(false)
   const [progress, setProgress] = useState<TaskProgress | null>(null)
-  const [availability, setAvailability] = useState<LoaderAvailability | null>(null)
-  const [availabilityLoading, setAvailabilityLoading] = useState(false)
-  const [loaderKind, setLoaderKind] = useState<LoaderKind>('vanilla')
-  const [loaderVersion, setLoaderVersion] = useState('')
+  const [downloadOpen, setDownloadOpen] = useState(false)
+  const [downloadTab, setDownloadTab] = useState<DownloadTab>('game')
   const [running, setRunning] = useState<{ pid?: number } | null>(null)
   const [exited, setExited] = useState<GameStateEvent | null>(null)
   const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null)
@@ -93,7 +93,6 @@ export function App() {
   const [toast, setToast] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [showLogs, setShowLogs] = useState(false)
-  const [showMods, setShowMods] = useState(false)
   const [showVersions, setShowVersions] = useState(false)
   const [showPlugins, setShowPlugins] = useState(false)
   const [instances, setInstances] = useState<InstanceSummary[]>([])
@@ -102,8 +101,6 @@ export function App() {
   const [importPath, setImportPath] = useState('')
   const activeIdRef = useRef('default')
   const listening = useRef(false)
-  // 加载器可用性按游戏版本做 5 分钟内存缓存：来回切版本不用每次都打上游接口
-  const availCache = useRef(new Map<string, { at: number; value: LoaderAvailability }>())
 
   const hasApi = typeof window !== 'undefined' && typeof window.qdo !== 'undefined'
 
@@ -196,9 +193,6 @@ export function App() {
           if (cancelled) return
           setVersions(list)
           setInstalled(installedList)
-          const bound = active?.gameVersion ?? active?.versionId
-          const preferred = bound && list.versions.some((v) => v.id === bound) ? bound : list.latest.release
-          setSelected(preferred)
         } catch (err) {
           if (!cancelled) notify(`版本清单获取失败：${err instanceof Error ? err.message : String(err)}`)
         }
@@ -226,8 +220,6 @@ export function App() {
         activeIdRef.current = summary.id
         setInstance(summary)
         await refreshInstalled()
-        const bound = summary.gameVersion ?? summary.versionId
-        if (bound) setSelected(bound)
         notify(`已切换到「${summary.name}」`)
       } catch (err) {
         notify(`切换实例失败：${err instanceof Error ? err.message : String(err)}`)
@@ -315,93 +307,17 @@ export function App() {
     [hasApi, notify, refreshInstalled],
   )
 
-  const loadAvailability = useCallback(
-    async (gameVersion: string, force = false) => {
-      if (!hasApi || !gameVersion) return
-      const cached = !force ? availCache.current.get(gameVersion) : undefined
-      if (cached && Date.now() - cached.at < 5 * 60 * 1000) {
-        setAvailability(cached.value)
-        setAvailabilityLoading(false)
-        setLoaderKind((current) => {
-          if (current === 'vanilla') return current
-          const found = cached.value.loaders.find((item) => item.loader === current)
-          return found && found.versions.length > 0 ? current : 'vanilla'
-        })
-        return
-      }
-      setAvailabilityLoading(true)
-      try {
-        const result = await window.qdo.loaders.available(gameVersion)
-        availCache.current.set(gameVersion, { at: Date.now(), value: result })
-        setAvailability(result)
-        // 用户已经选过加载器且新版本仍支持 → 保留；不支持则退回原版
-        setLoaderKind((current) => {
-          if (current === 'vanilla') return current
-          const found = result.loaders.find((item) => item.loader === current)
-          return found && found.versions.length > 0 ? current : 'vanilla'
-        })
-      } catch (err) {
-        setAvailability(null)
-        notify(`查询加载器失败：${err instanceof Error ? err.message : String(err)}`)
-      } finally {
-        setAvailabilityLoading(false)
-      }
-    },
-    [hasApi, notify],
-  )
+  // 有任务在跑（安装/更新），主按钮和启动按钮据此禁用
+  const taskBusy = Boolean(progress && progress.stage !== 'done' && progress.stage !== 'cancelled' && progress.stage !== 'failed')
 
+  // 任务结束（完成/取消/失败）后自动收起进度卡，避免旧的安装结果一直挂在新操作下面
   useEffect(() => {
-    if (!hasApi || !selected) return
-    void loadAvailability(selected)
-  }, [hasApi, loadAvailability, selected])
-
-  const loaderChoice = availability?.loaders.find((item) => item.loader === loaderKind)
-  const effectiveLoaderVersion =
-    loaderChoice && loaderChoice.versions.includes(loaderVersion)
-      ? loaderVersion
-      : (loaderChoice?.recommended ?? loaderChoice?.versions[0] ?? '')
-
-  const chooseLoader = useCallback(
-    (kind: LoaderKind) => {
-      setLoaderKind(kind)
-      const found = availability?.loaders.find((item) => item.loader === kind)
-      setLoaderVersion(found?.recommended ?? found?.versions[0] ?? '')
-    },
-    [availability],
-  )
-
-  const runInstall = useCallback(async () => {
-    if (!hasApi || !selected || installing || !instance) return
-    setInstalling(true)
-    setExited(null)
-    setProgress({ taskId: 'local', kind: 'install', stage: 'version', done: 0, total: 1, bytes: 0, message: '开始安装' })
-    try {
-      const result = await window.qdo.installer.run({
-        instanceId: instance.id,
-        gameVersion: selected,
-        loader: loaderKind,
-        loaderVersion: loaderKind === 'vanilla' ? undefined : effectiveLoaderVersion || undefined,
-      })
-      if (!result.ok) {
-        if ((result.error ?? '').includes('已取消')) notify('已取消安装，已下载的文件会保留，下次续传')
-        else notify(`安装失败：${result.error ?? '未知错误'}`)
-      } else {
-        const loaderText = result.loader && result.loader !== 'vanilla' ? ` + ${result.loader} ${result.loaderVersion ?? ''}` : '（原版）'
-        notify(`安装完成：${selected}${loaderText}，已绑定到「${instance.name}」（${Math.round((result.ms ?? 0) / 1000)}s）`)
-      }
-      await refreshInstalled()
-    } catch (err) {
-      notify(`安装失败：${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setInstalling(false)
-    }
-  }, [effectiveLoaderVersion, hasApi, installing, instance, loaderKind, notify, refreshInstalled, selected])
-
-  // 任务结束（完成/取消）后自动收起进度卡，避免旧的安装结果一直挂在新操作下面
-  useEffect(() => {
-    if (!progress || (progress.stage !== 'done' && progress.stage !== 'cancelled')) return
+    if (!progress || (progress.stage !== 'done' && progress.stage !== 'cancelled' && progress.stage !== 'failed')) return
     const timer = window.setTimeout(
-      () => setProgress((current) => (current && (current.stage === 'done' || current.stage === 'cancelled') ? null : current)),
+      () =>
+        setProgress((current) =>
+          current && (current.stage === 'done' || current.stage === 'cancelled' || current.stage === 'failed') ? null : current,
+        ),
       6000,
     )
     return () => window.clearTimeout(timer)
@@ -418,7 +334,7 @@ export function App() {
   }, [hasApi, notify])
 
   const launch = useCallback(async () => {
-    if (!hasApi || running || installing) return
+    if (!hasApi || running || taskBusy) return
     if (!instance?.installed) {
       notify('还没有安装游戏版本，请先在上方选择并安装。')
       return
@@ -435,7 +351,7 @@ export function App() {
     } catch (err) {
       notify(`启动失败：${err instanceof Error ? err.message : String(err)}`)
     }
-  }, [hasApi, installing, instance?.id, instance?.installed, notify, running])
+  }, [hasApi, taskBusy, instance?.id, instance?.installed, notify, running])
 
   const stop = useCallback(async () => {
     if (!hasApi) return
@@ -505,8 +421,7 @@ export function App() {
     [fixBusy, hasApi, instance?.id, notify, refreshInstalled],
   )
 
-  const canLaunch = Boolean(instance?.installed) && !running && !installing
-  const progressPct = progress && progress.total > 0 ? Math.min(100, Math.round((progress.done / progress.total) * 100)) : 0
+  const canLaunch = Boolean(instance?.installed) && !running && !taskBusy
   const failed = info.failedPlugins
 
   return (
@@ -518,11 +433,32 @@ export function App() {
           <span className="brand-mark">QDOQMC</span>
           <span className="brand-sub">大肥鱼开服</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P28 · 下载面板</span>
+          <span className="brand-tag">P29 · 下载中心</span>
         </div>
         <div className="titlebar-actions">
-          <button type="button" className="ghost" onClick={() => setShowMods(true)} disabled={!instance}>
+          <button
+            type="button"
+            className="ghost nav-strong"
+            onClick={() => {
+              setDownloadTab('game')
+              setDownloadOpen(true)
+            }}
+          >
+            下载
+          </button>
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => {
+              setDownloadTab('mod')
+              setDownloadOpen(true)
+            }}
+            disabled={!instance}
+          >
             模组
+          </button>
+          <button type="button" className="ghost" onClick={() => setShowVersions(true)}>
+            版本
           </button>
           <button type="button" className="ghost" onClick={() => setShowPlugins(true)}>
             插件
@@ -563,21 +499,18 @@ export function App() {
                     if (event.key === 'Enter' && !running) void switchInstance(item.id)
                   }}
                 >
-                  <div className="ver-card-top">
-                    <span className="ver-card-name">{item.name}</span>
-                    {active ? <span className="ver-card-dot" /> : null}
+                  <span className={`ver-icon ver-icon-${item.loader ?? 'vanilla'}`}>{LOADER_BADGE[item.loader ?? 'vanilla'] ?? 'V'}</span>
+                  <div className="ver-card-main">
+                    <div className="ver-card-name">{item.name}</div>
+                    <div className="ver-card-meta">
+                      {item.gameVersion ?? item.versionId ?? '未装版本'} · {item.loader ?? 'vanilla'}
+                    </div>
                   </div>
-                  <div className="ver-card-meta">
-                    {item.gameVersion ?? item.versionId ?? '未装版本'} · {item.loader}
-                  </div>
-                  <div className="ver-card-info">
-                    {item.memoryMb} MB · {item.accountName ?? item.playerName ?? 'Player'}
-                  </div>
-                  <div className="ver-card-actions" onClick={(event) => event.stopPropagation()}>
-                    <button type="button" className="ghost tiny" onClick={() => void openFolder(item.id)} title="打开游戏目录">
-                      📂 文件夹
+                  <div className="ver-card-tools" onClick={(event) => event.stopPropagation()}>
+                    <button type="button" onClick={() => void openFolder(item.id)} title="打开游戏目录">
+                      📂
                     </button>
-                    <button type="button" className="ghost tiny" onClick={() => setShowVersions(true)} title="版本管理">
+                    <button type="button" onClick={() => setShowVersions(true)} title="版本管理">
                       ⋯
                     </button>
                   </div>
@@ -592,14 +525,22 @@ export function App() {
           </div>
         </aside>
         <section className="stage">
-          <div className="stage-chips">
-            <span className="chip">{instance?.gameVersion ?? instance?.versionId ?? '未选版本'}</span>
-            <span className="chip">{instance?.loader ?? 'vanilla'}</span>
-            <span className="chip">{instance?.memoryMb ?? 0} MB</span>
-            <span className="chip" title={instance?.accountId ? `已绑定账号 ${instance.accountName}` : '跟随全局账号'}>
-              {instance?.accountName ?? instance?.playerName ?? 'Player'}
+          <div className="ver-hero">
+            <span className={`ver-hero-icon ver-icon-${instance?.loader ?? 'vanilla'}`}>
+              {LOADER_BADGE[instance?.loader ?? 'vanilla'] ?? 'V'}
             </span>
-            <span className="chip subtle">版本隔离</span>
+            <div className="ver-hero-main">
+              <div className="ver-hero-name">{instance?.name ?? '没有实例'}</div>
+              <div className="ver-hero-chips">
+                <span className="chip">{instance?.gameVersion ?? instance?.versionId ?? '未选版本'}</span>
+                <span className="chip">{instance?.loader ?? 'vanilla'}</span>
+                <span className="chip">{instance?.memoryMb ?? 0} MB</span>
+                <span className="chip" title={instance?.accountId ? `已绑定账号 ${instance.accountName}` : '跟随全局账号'}>
+                  {instance?.accountName ?? instance?.playerName ?? 'Player'}
+                </span>
+              </div>
+            </div>
+            <span className={`ver-hero-state ${instance?.installed ? 'is-ok' : ''}`}>{instance?.installed ? '已安装' : '未安装'}</span>
           </div>
 
           {update.status === 'available' || update.status === 'downloading' || update.status === 'ready' ? (
@@ -623,46 +564,56 @@ export function App() {
             </div>
           ) : null}
 
-          <VersionPicker
-            instanceName={instance?.name ?? '默认实例'}
-            versions={versions}
-            installed={installed}
-            selected={selected}
-            onSelect={setSelected}
-            availability={availability}
-            availabilityLoading={availabilityLoading}
-            choice={loaderKind}
-            onChoice={chooseLoader}
-            loaderVersion={effectiveLoaderVersion}
-            onLoaderVersion={setLoaderVersion}
-            currentVersionId={instance?.versionId}
-            currentLoader={instance?.loader}
-            busy={installing || Boolean(running)}
-            onInstall={() => void runInstall()}
-            onRetry={() => void loadAvailability(selected, true)}
-            downloadSource={settings?.downloadSource}
-          />
-
-          {progress ? (
-            <ProgressCard
-              progress={progress}
-              busy={installing}
-              title={selected ? `正在准备 ${selected}` : '正在安装'}
-              onCancel={() => void cancelInstall()}
-            />
-          ) : null}
-
           <button type="button" className="launch" onClick={() => void launch()} disabled={!canLaunch}>
-            <span className="launch-main">{running ? '游戏运行中' : installing ? '安装中…' : '启动游戏'}</span>
+            <span className="launch-main">{running ? '游戏运行中' : taskBusy ? '处理中…' : '启动游戏'}</span>
             <span className="launch-sub">
               {running
-                ? `PID ${running.pid ?? '?'} · 点击右侧按钮结束`
+                ? `PID ${running.pid ?? '?'} · 点下面「结束游戏」`
                 : canLaunch
                   ? `${instance?.versionId} · ${instance?.accountName ?? '离线登录'} · ${instance?.playerName}`
-                  : '先安装一个游戏版本'}
+                  : instance?.installed
+                    ? '先结束正在进行的任务'
+                    : '先在「下载」里装一个游戏版本'}
             </span>
             <MascotImage size={26} className="launch-fish" />
           </button>
+
+          <div className="quick-grid">
+            <button type="button" className="quick" onClick={() => setShowVersions(true)}>
+              <span className="quick-icon">⚙️</span>
+              <span className="quick-label">版本设置</span>
+              <span className="quick-note">内存 / 账号 / 文件夹</span>
+            </button>
+            <button
+              type="button"
+              className="quick"
+              onClick={() => {
+                setDownloadTab('mod')
+                setDownloadOpen(true)
+              }}
+            >
+              <span className="quick-icon">🔧</span>
+              <span className="quick-label">模组管理</span>
+              <span className="quick-note">搜索 / 更新 / 冲突</span>
+            </button>
+            <button
+              type="button"
+              className="quick"
+              onClick={() => {
+                setDownloadTab('game')
+                setDownloadOpen(true)
+              }}
+            >
+              <span className="quick-icon">⬇️</span>
+              <span className="quick-label">下载中心</span>
+              <span className="quick-note">游戏 / 模组 / 整合包</span>
+            </button>
+            <button type="button" className="quick" onClick={() => instance && void openFolder(instance.id)} disabled={!instance}>
+              <span className="quick-icon">📂</span>
+              <span className="quick-label">游戏目录</span>
+              <span className="quick-note">存档 / mods / 日志</span>
+            </button>
+          </div>
 
           {running ? (
             <button type="button" className="ghost stop-btn" onClick={() => void stop()}>
@@ -812,13 +763,30 @@ export function App() {
             void (async () => {
               await switchInstance(id)
               setShowVersions(false)
-              setShowMods(true)
+              setDownloadTab('mod')
+              setDownloadOpen(true)
             })()
           }}
         />
       ) : null}
-      {showMods && instance ? (
-        <ModsDialog instance={instance} onClose={() => setShowMods(false)} onNotify={notify} onRefresh={() => void refreshInstalled()} />
+      {downloadOpen && instance ? (
+        <DownloadCenter
+          instance={instance}
+          tab={downloadTab}
+          onTab={setDownloadTab}
+          versions={versions}
+          installedVersions={installed}
+          settings={settings}
+          progress={progress}
+          taskBusy={taskBusy}
+          onCancelTask={() => void cancelInstall()}
+          onClose={() => setDownloadOpen(false)}
+          onNotify={notify}
+          onRefresh={() => {
+            void refreshInstalled()
+            void window.qdo.versions.installed().then(setInstalled).catch(() => undefined)
+          }}
+        />
       ) : null}
       {showPlugins ? <PluginsDialog onClose={() => setShowPlugins(false)} onNotify={notify} /> : null}
       {showSettings && settings ? (

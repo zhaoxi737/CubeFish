@@ -15,6 +15,7 @@ import { copyFile, link, readdir, rename, rm, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
+import type { ProgressFile } from '../../shared/types'
 import { ensureDir, fileSize, sha1File } from './fsx'
 
 export interface DownloadSpec {
@@ -63,6 +64,11 @@ export interface DownloaderOptions {
   signal?: AbortSignal
   onProgress?: (done: number, total: number, bytes: number, label?: string, stats?: DownloadProgressStats) => void
   onVerbose?: (message: string, data?: unknown) => void
+  // ---- P29：PCL 式文件级进度（可选，旧调用方不受影响） ----
+  /** 下载开始前回调一次：本次要下的文件清单 */
+  onFiles?: (files: { name: string; size?: number }[]) => void
+  /** 单文件状态变化（含 running/done/failed/skipped），index 为 files 下标；≥100ms 合并一次 */
+  onFileState?: (index: number, state: ProgressFile['state']) => void
 }
 
 const DEFAULT_UA = 'QDOQMC/0.1.0 (+https://qdoqmc.example/contact)'
@@ -75,6 +81,8 @@ const SHARD_MIN_CHUNK = 1024 * 1024
 const SHARD_ATTEMPTS = 3
 /** progress 推送节流：每 200ms 最多一次 */
 const PROGRESS_INTERVAL_MS = 200
+/** 文件状态推送节流：至少 100ms 合并一次（P29） */
+const FILE_STATE_INTERVAL_MS = 120
 /** 速度统计窗口 */
 const SPEED_WINDOW_MS = 2000
 /** 空闲超时：60s 没有数据才放弃（慢网但仍在传输时不中断） */
@@ -172,6 +180,13 @@ export class Downloader {
   private readonly signal?: AbortSignal
   private readonly onProgress?: DownloaderOptions['onProgress']
   private readonly onVerbose?: DownloaderOptions['onVerbose']
+  private readonly onFiles?: DownloaderOptions['onFiles']
+  private readonly onFileState?: DownloaderOptions['onFileState']
+
+  // ---- P29 文件级状态（≥100ms 合并；每次 downloadAll/fetchOne 重置） ----
+  private pendingFileStates = new Map<number, ProgressFile['state']>()
+  private fileStateTimer?: ReturnType<typeof setTimeout>
+  private lastFileStateAt = 0
 
   // ---- P28 实时进度状态（每次 downloadAll 重置） ----
   private filesTotal = 0
@@ -192,6 +207,8 @@ export class Downloader {
     this.signal = options.signal
     this.onProgress = options.onProgress
     this.onVerbose = options.onVerbose
+    this.onFiles = options.onFiles
+    this.onFileState = options.onFileState
   }
 
   private async verify(file: string, spec: DownloadSpec): Promise<boolean> {
@@ -243,6 +260,50 @@ export class Downloader {
     this.currentLabel = undefined
     this.speedSamples = []
     this.lastEmitAt = 0
+    this.resetFileStates()
+  }
+
+  /* ---------- P29：PCL 式文件清单 / 单文件状态 ---------- */
+
+  private resetFileStates(): void {
+    if (this.fileStateTimer) {
+      clearTimeout(this.fileStateTimer)
+      this.fileStateTimer = undefined
+    }
+    this.pendingFileStates.clear()
+    this.lastFileStateAt = 0
+  }
+
+  /** 下载前一次性把文件清单交给上层（name 优先用 label）。 */
+  private announceFiles(specs: DownloadSpec[]): void {
+    this.onFiles?.(specs.map((spec) => ({ name: spec.label ?? path.basename(spec.dest), size: spec.size })))
+  }
+
+  /**
+   * 文件状态合并推送：同一 index 同一窗口内只保留最新状态，
+   * 每 ≥120ms 最多 flush 一次，避免逐字节/逐文件刷爆 IPC。
+   */
+  private queueFileState(index: number, state: ProgressFile['state']): void {
+    if (!this.onFileState) return
+    this.pendingFileStates.set(index, state)
+    if (this.fileStateTimer) return
+    const wait = Math.max(0, FILE_STATE_INTERVAL_MS - (Date.now() - this.lastFileStateAt))
+    this.fileStateTimer = setTimeout(() => {
+      this.fileStateTimer = undefined
+      this.flushFileStates()
+    }, wait)
+  }
+
+  private flushFileStates(): void {
+    if (this.fileStateTimer) {
+      clearTimeout(this.fileStateTimer)
+      this.fileStateTimer = undefined
+    }
+    if (!this.onFileState || this.pendingFileStates.size === 0) return
+    const entries = [...this.pendingFileStates.entries()]
+    this.pendingFileStates.clear()
+    this.lastFileStateAt = Date.now()
+    for (const [index, state] of entries) this.onFileState(index, state)
   }
 
   private bytesNow(): number {
@@ -300,11 +361,19 @@ export class Downloader {
   /** 单文件：已存在且校验通过则跳过；缓存命中直接链接。 */
   async fetchOne(spec: DownloadSpec): Promise<'skipped' | 'downloaded'> {
     this.resetProgress([spec])
+    this.announceFiles([spec])
+    this.queueFileState(0, 'running')
     const connections = new Semaphore(this.connectionLimit())
     try {
-      return await this.fetchInternal(spec, 0, connections)
+      const result = await this.fetchInternal(spec, 0, connections)
+      this.queueFileState(0, result === 'skipped' ? 'skipped' : 'done')
+      return result
+    } catch (err) {
+      if (!isAbortError(err)) this.queueFileState(0, 'failed')
+      throw err
     } finally {
       this.activeBytes.delete(0)
+      this.flushFileStates()
     }
   }
 
@@ -313,6 +382,7 @@ export class Downloader {
     this.checkAborted()
     const stats: DownloadStats = { skipped: 0, downloaded: 0, bytes: 0, failed: [] }
     this.resetProgress(specs)
+    this.announceFiles(specs)
     this.emitProgress(undefined, true)
 
     const connections = new Semaphore(this.connectionLimit())
@@ -330,13 +400,16 @@ export class Downloader {
         cursor += 1
         if (index >= specs.length) return
         const spec = specs[index]
+        this.queueFileState(index, 'running')
         try {
           const result = await this.fetchInternal(spec, index, connections)
           if (result === 'skipped') {
             stats.skipped += 1
+            this.queueFileState(index, 'skipped')
           } else {
             stats.downloaded += 1
             stats.bytes += spec.size ?? 0
+            this.queueFileState(index, 'done')
           }
         } catch (err) {
           if (isAbortError(err)) {
@@ -344,6 +417,7 @@ export class Downloader {
             return
           }
           stats.failed.push(spec)
+          this.queueFileState(index, 'failed')
         } finally {
           this.activeBytes.delete(index)
           this.filesDone += 1
@@ -353,6 +427,7 @@ export class Downloader {
     }
 
     await Promise.all(Array.from({ length: workerCount }, () => worker()))
+    this.flushFileStates()
     if (abortedError) throw abortedError
     this.filesDone = specs.length
     this.emitProgress('完成', true)

@@ -53,6 +53,10 @@ export const CH = {
   contentInspectCurse: 'content:inspect-curse',
   contentInspectPack: 'content:inspect-pack',
   contentInstallPack: 'content:install-pack',
+  // P29：模组更新检查 / 更新 / 资源预览
+  contentUpdates: 'content:updates',
+  contentUpdate: 'content:update',
+  contentPreview: 'content:preview',
   conflictAnalyze: 'conflict:analyze',
   diagnoseRun: 'diagnose:run',
   diagnoseFixes: 'diagnose:fixes',

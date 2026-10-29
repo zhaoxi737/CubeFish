@@ -257,36 +257,16 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
 
     try {
       await wait(2400)
-      // 等首屏的加载器可用性查完（否则主截图会显示"查询中…"）
-      for (let attempt = 0; attempt < 15; attempt += 1) {
-        const ready = (await win.webContents.executeJavaScript(
-          `(() => {
-            const notes = [...document.querySelectorAll('.dl-loader-note')].map((el) => el.textContent ?? '')
-            return notes.length > 0 && !notes.some((text) => text.includes('查询中'))
-          })()`,
-        )) as boolean
-        if (ready) break
-        await wait(1000)
-      }
-      await wait(400)
       const firstShot = await shot('smoke.png')
 
-      // ---- P28：先收起所有弹窗，回到主界面 ----
+      // ---- P29：打开下载中心（游戏页），看版本 ↔ 加载器可用性 ----
       await win.webContents.executeJavaScript(
-        `(() => {
-          for (let i = 0; i < 4; i += 1) {
-            const btn = [...document.querySelectorAll('.dialog-head button')].find((b) => b.textContent?.trim() === '关闭')
-            if (btn) btn.click()
-          }
-          return document.querySelectorAll('.overlay').length
-        })()`,
+        `(() => { const btn = [...document.querySelectorAll('.titlebar-actions button')].find((b) => b.textContent?.trim() === '下载'); btn?.click(); return 'dc-open' })()`,
       )
-      await wait(800)
-
-      // ---- P28：加载器可用性面板 ----
+      await wait(1500)
       const loaderPicked = (await win.webContents.executeJavaScript(
         `(() => {
-          const sel = document.querySelector('.dl-select')
+          const sel = document.querySelector('.dc-row select')
           if (!sel) return 'no-select'
           const target = [...sel.options].find((option) => option.value === '1.20.1') ?? [...sel.options][0]
           if (!target) return 'empty'
@@ -296,39 +276,32 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           return target.value
         })()`,
       )) as string
-      // 等加载器可用性查完（首次要打 3 个上游接口，最多等 12 秒）
-      for (let attempt = 0; attempt < 12; attempt += 1) {
-        const ready = (await win.webContents.executeJavaScript(
-          `![...document.querySelectorAll('.dl-loader-note')].some((el) => (el.textContent ?? '').includes('查询中'))`,
-        )) as boolean
-        if (ready) break
-        await wait(1000)
-      }
-      await wait(600)
+      // 首次查询要打 3 个上游接口，直接给足时间（约 2~3 秒）
+      await wait(6000)
       const loaderShot = await shot('smoke-loader.png')
       const loaderInfo = (await win.webContents.executeJavaScript(
         `JSON.stringify({
           picked: ${JSON.stringify(loaderPicked)},
-          cards: [...document.querySelectorAll('.dl-loader')].map((el) => (el.textContent ?? '').trim().replace(/\\s+/g, ' ')),
-          install: document.querySelector('.dl-go')?.textContent ?? ''
+          cards: [...document.querySelectorAll('.dc-loader')].map((el) => (el.textContent ?? '').trim().replace(/\\s+/g, ' ')),
+          install: document.querySelector('.dc-actions .primary')?.textContent ?? ''
         })`,
       )) as string
       await win.webContents.executeJavaScript(
-        `(() => { const card = [...document.querySelectorAll('.dl-loader')].find((el) => (el.textContent ?? '').includes('Fabric')); card?.click(); return 'fabric-picked' })()`,
+        `(() => { const card = [...document.querySelectorAll('.dc-loader')].find((el) => (el.textContent ?? '').includes('Fabric')); card?.click(); return 'fabric-picked' })()`,
       )
       await wait(700)
       const loaderDetail = (await win.webContents.executeJavaScript(
         `JSON.stringify({
-          loaderVersion: document.querySelector('.dl-select-narrow')?.value ?? '',
-          install: document.querySelector('.dl-go')?.textContent ?? ''
+          loaderVersion: document.querySelectorAll('.dc-row select')[1]?.value ?? '',
+          install: document.querySelector('.dc-actions .primary')?.textContent ?? ''
         })`,
       )) as string
       console.log('SMOKE_STEP loaders-done')
 
-      // ---- P28：PCL 式下载进度（真下载 6 秒后取消） ----
+      // ---- P29：真下载 + 逐文件清单（下载任务页） ----
       const downloadPicked = (await win.webContents.executeJavaScript(
         `(() => {
-          const sel = document.querySelector('.dl-select')
+          const sel = document.querySelector('.dc-row select')
           if (!sel) return 'no-select'
           const next = [...sel.options].find((option) => !(option.textContent ?? '').includes('✓'))
           if (!next) return 'none'
@@ -338,30 +311,37 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           return next.value
         })()`,
       )) as string
-      // 等这个版本的加载器可用性查完、安装按钮可点（首次要打上游接口）
       let downloadStart = 'disabled'
-      for (let attempt = 0; attempt < 15; attempt += 1) {
+      for (let attempt = 0; attempt < 20; attempt += 1) {
         await wait(1000)
         downloadStart = (await win.webContents.executeJavaScript(
-          `(() => { const btn = document.querySelector('.dl-go'); if (!btn || btn.disabled) return 'disabled'; btn.click(); return 'clicked' })()`,
+          `(() => {
+            const card = [...document.querySelectorAll('.dc-loader')].find((el) => (el.textContent ?? '').includes('原版'))
+            card?.click()
+            const btn = document.querySelector('.dc-actions .primary')
+            if (!btn || btn.disabled) return 'disabled'
+            btn.click()
+            return 'clicked'
+          })()`,
         )) as string
         if (downloadStart === 'clicked') break
       }
-      await wait(6500)
+      await wait(1500)
+      await win.webContents.executeJavaScript(
+        `(() => { const item = [...document.querySelectorAll('.dc-nav-item')].find((el) => (el.textContent ?? '').includes('下载任务')); item?.click(); return 'task-tab' })()`,
+      )
+      await wait(5500)
       const downloadSnap = (await win.webContents.executeJavaScript(
         `JSON.stringify({
           title: document.querySelector('.progress-title')?.textContent ?? '',
           pct: document.querySelector('.progress-pct')?.textContent ?? '',
           facts: document.querySelector('.progress-facts')?.textContent ?? '',
           current: document.querySelector('.progress-current code')?.textContent ?? '',
+          files: [...document.querySelectorAll('.task-file')].slice(0, 6).map((el) => (el.textContent ?? '').trim().replace(/\\s+/g, ' ')),
+          fileCount: document.querySelectorAll('.task-file').length,
           stages: [...document.querySelectorAll('.progress-stage')].map((el) => (el.textContent ?? '').trim().replace(/\\s+/g, ' '))
         })`,
       )) as string
-      // 滚到底，让进度卡完整入镜（中间列现在内容多、可滚动）
-      await win.webContents.executeJavaScript(
-        `(() => { const el = document.querySelector('.stage'); if (el) el.scrollTop = el.scrollHeight; return 'scrolled' })()`,
-      )
-      await wait(500)
       const downloadShot = await shot('smoke-download.png')
       const cancelClicked = (await win.webContents.executeJavaScript(
         `(() => { const btn = [...document.querySelectorAll('.progress-actions button')].find((el) => (el.textContent ?? '').includes('取消')); if (!btn) return 'no-cancel'; btn.click(); return 'clicked' })()`,
@@ -370,6 +350,12 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
       const cancelInfo = (await win.webContents.executeJavaScript(
         `JSON.stringify({ title: document.querySelector('.progress-title')?.textContent ?? '', toast: document.querySelector('.toast')?.textContent ?? '' })`,
       )) as string
+      // 收起下载中心，免得后面的截图都带着它
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.dc-head .ghost')].find((b) => b.textContent?.trim() === '关闭'); btn?.click(); return 'dc-closed' })()`,
+      )
+      await wait(900)
+
       console.log('SMOKE_STEP download-done')
       // 等进度卡/取消提示自己收起，后面的截图别带着它
       await wait(8000)
@@ -491,10 +477,6 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
         `window.qdo.chat.send('/status').then((r) => r.text)`,
       )) as string
 
-      // 打开「模组」市场，截一张真实 Modrinth 搜索结果的图
-      await win.webContents.executeJavaScript(
-        `(() => { const btn = [...document.querySelectorAll('.titlebar-actions button')].find((b) => b.textContent?.trim() === '模组'); btn?.click(); return 'mods' })()`,
-      )
       // 打开「插件」面板：验证插件列表与启用状态
       await win.webContents.executeJavaScript(
         `(() => { const btn = [...document.querySelectorAll('.titlebar-actions button')].find((b) => b.textContent?.trim() === '插件'); btn?.click(); return 'plugins' })()`,
@@ -533,49 +515,96 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
       }
       await wait(300)
 
-      // 点「冲突检查」前的模组面板
+      // ---- P29：下载中心 · 模组页（搜索 / 预览 / 检查更新 / 冲突检查） ----
       await win.webContents.executeJavaScript(
-        `(() => { const btn = [...document.querySelectorAll('.titlebar-actions button')].find((b) => b.textContent?.trim() === '模组'); btn?.click(); return 'mods' })()`,
+        `(() => { const btn = [...document.querySelectorAll('.titlebar-actions button')].find((b) => b.textContent?.trim() === '模组'); btn?.click(); return 'dc-mods' })()`,
       )
-      await wait(2600)
+      await wait(3200)
       const modsShot = await shot('smoke-mods.png')
       const modsInfo = (await win.webContents.executeJavaScript(
-        `JSON.stringify({ rows: document.querySelectorAll('.mod-row').length, first: document.querySelector('.mod-title')?.textContent ?? '' })`,
+        `JSON.stringify({
+          rows: document.querySelectorAll('.dc-item').length,
+          first: document.querySelector('.dc-item-title')?.textContent ?? '',
+          installed: document.querySelectorAll('.dc-installed-row').length
+        })`,
       )) as string
 
-      // 切到「资源包」标签，验证内容类型切换 + 资源包搜索
-      await win.webContents.executeJavaScript(
-        `(() => { const btn = [...document.querySelectorAll('.kind-tab')].find((b) => b.textContent?.trim() === '资源包'); btn?.click(); return 'rp' })()`,
-      )
-      await wait(2800)
-      const rpShot = await shot('smoke-resourcepack.png')
-      const rpInfo = (await win.webContents.executeJavaScript(
-        `JSON.stringify({ rows: document.querySelectorAll('.mod-row').length, activeTab: document.querySelector('.kind-tab.is-active')?.textContent ?? '' })`,
+      // 点列表项看图片预览（有些项目本身没有 gallery，挨个试前 4 个）
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        await win.webContents.executeJavaScript(
+          `(() => { const items = [...document.querySelectorAll('.dc-item')]; items[${attempt}]?.click(); return 'preview' })()`,
+        )
+        await wait(2200)
+        const hasImage = (await win.webContents.executeJavaScript(
+          `Boolean(document.querySelector('.dc-preview-img'))`,
+        )) as boolean
+        if (hasImage) break
+      }
+      const previewShot = await shot('smoke-preview.png')
+      const previewInfo = (await win.webContents.executeJavaScript(
+        `JSON.stringify({
+          open: Boolean(document.querySelector('.dc-preview-img')),
+          title: document.querySelector('.dc-preview-head')?.textContent ?? '',
+          desc: (document.querySelector('.dc-preview-desc')?.textContent ?? '').slice(0, 80)
+        })`,
       )) as string
-      // 切到「整合包」标签，验证整合包搜索与一键安装入口
-      await win.webContents.executeJavaScript(
-        `(() => { const btn = [...document.querySelectorAll('.kind-tab')].find((b) => b.textContent?.trim() === '整合包'); btn?.click(); return 'modpack' })()`,
-      )
-      await wait(2800)
-      const modpackShot = await shot('smoke-modpack.png')
-      const modpackInfo = (await win.webContents.executeJavaScript(
-        `JSON.stringify({ rows: document.querySelectorAll('.mod-row').length, activeTab: document.querySelector('.kind-tab.is-active')?.textContent ?? '' })`,
-      )) as string
-      // 切回模组，再做冲突检查
-      await win.webContents.executeJavaScript(
-        `(() => { const btn = [...document.querySelectorAll('.kind-tab')].find((b) => b.textContent?.trim() === '模组'); btn?.click(); return 'mod' })()`,
-      )
-      await wait(900)
 
-      // 点「冲突检查」，截一张冲突报告
+      // 检查更新（已装模组 vs Modrinth）
       await win.webContents.executeJavaScript(
-        `(() => { const btn = [...document.querySelectorAll('.drawer-actions button')].find((b) => b.textContent?.includes('冲突检查')); btn?.click(); return 'check' })()`,
+        `(() => { const btn = [...document.querySelectorAll('.dc-search button')].find((b) => (b.textContent ?? '').includes('检查更新')); btn?.click(); return 'updates' })()`,
       )
-      await wait(1200)
+      await wait(3200)
+      const updatesShot = await shot('smoke-updates.png')
+      const updatesInfo = (await win.webContents.executeJavaScript(
+        `JSON.stringify({
+          rows: document.querySelectorAll('.dc-updates .dc-installed-row').length,
+          text: document.querySelector('.dc-report')?.textContent ?? document.querySelector('.dc-updates')?.textContent ?? ''
+        })`,
+      )) as string
+
+      // 冲突检查
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.dc-search button')].find((b) => (b.textContent ?? '').includes('冲突检查')); btn?.click(); return 'conflict' })()`,
+      )
+      await wait(2200)
       const conflictShot = await shot('smoke-conflict.png')
       const conflictInfo = (await win.webContents.executeJavaScript(
-        `JSON.stringify({ issues: document.querySelectorAll('.conflict-item').length, text: document.querySelector('.conflict-head')?.textContent ?? '' })`,
+        `JSON.stringify({ text: document.querySelector('.dc-report')?.textContent ?? '', bad: Boolean(document.querySelector('.dc-report.is-bad')) })`,
       )) as string
+
+      // 资源包页（只按游戏版本过滤）
+      await win.webContents.executeJavaScript(
+        `(() => { const item = [...document.querySelectorAll('.dc-nav-item')].find((el) => (el.textContent ?? '').includes('资源包')); item?.click(); return 'rp' })()`,
+      )
+      await wait(3000)
+      const rpShot = await shot('smoke-resourcepack.png')
+      const rpInfo = (await win.webContents.executeJavaScript(
+        `JSON.stringify({ rows: document.querySelectorAll('.dc-item').length, head: document.querySelector('.dc-head h2')?.textContent ?? '' })`,
+      )) as string
+
+      // 光影页
+      await win.webContents.executeJavaScript(
+        `(() => { const item = [...document.querySelectorAll('.dc-nav-item')].find((el) => (el.textContent ?? '').includes('光影')); item?.click(); return 'shader' })()`,
+      )
+      await wait(3000)
+      const shaderShot = await shot('smoke-shader.png')
+      const shaderInfo = (await win.webContents.executeJavaScript(
+        `JSON.stringify({ rows: document.querySelectorAll('.dc-item').length })`,
+      )) as string
+
+      // 整合包页整页截图（在线搜索）
+      await win.webContents.executeJavaScript(
+        `(() => { const item = [...document.querySelectorAll('.dc-nav-item')].find((el) => (el.textContent ?? '').includes('整合包')); item?.click(); return 'modpack' })()`,
+      )
+      await wait(3200)
+      const modpackShot = await shot('smoke-modpack.png')
+      const modpackInfo = (await win.webContents.executeJavaScript(
+        `JSON.stringify({ rows: document.querySelectorAll('.dc-item').length })`,
+      )) as string
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.dc-head .ghost')].find((b) => b.textContent?.trim() === '关闭'); btn?.click(); return 'dc-closed' })()`,
+      )
+      await wait(600)
 
       console.log('SMOKE_STEP gamelog-start')
       // 游戏日志：写一份假的 latest.log，打开日志抽屉 → 游戏日志 tab → 截图
@@ -620,7 +649,7 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
       await wait(500)
 
       console.log('SMOKE_STEP gamelog-done')
-      // 本机整合包：生成一个自带 mods 的 CurseForge 包，走 UI「预览 → 安装」
+      // ---- P29：本机整合包（生成一个自带 mods 的 CurseForge 包，走「预览 → 安装 → 任务进度」） ----
       const packPath = path.join(dir, 'smoke-pack.zip')
       try {
         const packZip = new AdmZip()
@@ -647,54 +676,57 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
       }
 
       await win.webContents.executeJavaScript(
-        `(() => {
-          if (!document.querySelector('.mods-search')) {
-            const modsBtn = [...document.querySelectorAll('.titlebar-actions button')].find((b) => b.textContent?.trim() === '模组')
-            modsBtn?.click()
-          }
-          return 'ensure-mods'
-        })()`,
+        `(() => { const btn = [...document.querySelectorAll('.titlebar-actions button')].find((b) => b.textContent?.trim() === '下载'); btn?.click(); return 'dc-open' })()`,
       )
-      await wait(800)
+      await wait(1200)
       await win.webContents.executeJavaScript(
-        `(() => { const tab = [...document.querySelectorAll('.kind-tab')].find((b) => b.textContent?.trim() === '整合包'); tab?.click(); return 'pack-tab' })()`,
+        `(() => { const item = [...document.querySelectorAll('.dc-nav-item')].find((el) => (el.textContent ?? '').includes('整合包')); item?.click(); return 'pack-tab' })()`,
       )
-      await wait(900)
+      await wait(1500)
       process.env.QDOQMC_PICK_FILE = packPath
       await win.webContents.executeJavaScript(
-        `(() => { const pick = [...document.querySelectorAll('.pack-row button')].find((x) => x.textContent?.trim() === '选择文件…'); pick?.click(); return 'pick-clicked' })()`,
+        `(() => { const pick = [...document.querySelectorAll('.dc-row button')].find((x) => x.textContent?.trim() === '选择文件…'); pick?.click(); return 'pick-clicked' })()`,
       )
-      await wait(700)
+      await wait(800)
       const pickedPath = (await win.webContents.executeJavaScript(
-        `document.querySelector('.pack-row input')?.value ?? ''`,
+        `document.querySelector('.dc-input')?.value ?? ''`,
       )) as string
       await win.webContents.executeJavaScript(
-        `(() => {
-          const input = document.querySelector('.pack-row input')
-          if (!input) return 'no-input'
-          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
-          setter.call(input, ${JSON.stringify(packPath)})
-          input.dispatchEvent(new Event('input', { bubbles: true }))
-          const preview = [...document.querySelectorAll('.pack-row button')].find((b) => b.textContent?.trim() === '预览')
-          preview?.click()
-          return 'preview-clicked'
-        })()`,
+        `(() => { const btn = [...document.querySelectorAll('.dc-row button')].find((b) => b.textContent?.trim() === '预览'); btn?.click(); return 'preview-clicked' })()`,
       )
       await wait(1600)
       const packShot = await shot('smoke-pack.png')
       const packInfo = (await win.webContents.executeJavaScript(
         `JSON.stringify({
-          preview: document.querySelector('.pack-preview')?.textContent ?? '',
-          previewOk: Boolean(document.querySelector('.pack-preview:not(.is-bad)'))
+          preview: document.querySelector('.dc-pack')?.textContent ?? '',
+          previewOk: Boolean(document.querySelector('.dc-pack:not(.is-bad)'))
         })`,
       )) as string
       await win.webContents.executeJavaScript(
-        `(() => { const btn = [...document.querySelectorAll('.pack-row button')].find((b) => b.textContent?.trim() === '安装'); btn?.click(); return 'install-clicked' })()`,
+        `(() => { const btn = [...document.querySelectorAll('.dc-row button')].find((b) => b.textContent?.trim() === '安装'); btn?.click(); return 'install-clicked' })()`,
       )
       let packDone = JSON.stringify({ toast: '', loader: 'vanilla', waited: 0 })
       let packDoneShot = packShot
-      for (let attempt = 0; attempt < 30; attempt += 1) {
-        await wait(2000)
+      let packTaskShot = packShot
+      let packTaskInfo = JSON.stringify({ files: 0, pct: '', facts: '' })
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        await wait(1500)
+        // 整合包安装会切到任务页，先把任务页的文件清单拍下来
+        if (attempt === 1) {
+          await win.webContents.executeJavaScript(
+            `(() => { const item = [...document.querySelectorAll('.dc-nav-item')].find((el) => (el.textContent ?? '').includes('下载任务')); item?.click(); return 'task' })()`,
+          )
+          await wait(900)
+          packTaskShot = await shot('smoke-pack-progress.png')
+          packTaskInfo = (await win.webContents.executeJavaScript(
+            `JSON.stringify({
+              title: document.querySelector('.progress-title')?.textContent ?? '',
+              pct: document.querySelector('.progress-pct')?.textContent ?? '',
+              facts: document.querySelector('.progress-facts')?.textContent ?? '',
+              files: document.querySelectorAll('.task-file').length
+            })`,
+          )) as string
+        }
         const state = (await win.webContents.executeJavaScript(
           `window.qdo.instances.list().then((list) => JSON.stringify({
             toast: document.querySelector('.toast')?.textContent ?? '',
@@ -711,6 +743,10 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           break
         }
       }
+      await win.webContents.executeJavaScript(
+        `(() => { const btn = [...document.querySelectorAll('.dc-head .ghost')].find((b) => b.textContent?.trim() === '关闭'); btn?.click(); return 'dc-closed' })()`,
+      )
+      await wait(600)
 
       // 导入对话框：验证「选择…」把路径填进输入框
       await win.webContents.executeJavaScript(
@@ -728,6 +764,7 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
         `(() => { const btn = [...document.querySelectorAll('.dialog-foot button')].find((b) => b.textContent?.trim() === '取消'); btn?.click(); return 'cancel' })()`,
       )
       await wait(400)
+
       console.log('SMOKE_STEP pack-done')
       // 左侧版本栏：点第一张卡片切回默认实例
       await win.webContents.executeJavaScript(
@@ -747,16 +784,27 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           version: info?.version ?? app.getVersion(),
           plugins: k.summary.plugins,
           failed: k.summary.failed,
-          screenshots: [firstShot, aiShot, pluginsShot, marketShot, modsShot, rpShot, modpackShot, conflictShot],
+          screenshots: [firstShot, aiShot, pluginsShot, marketShot, modsShot, previewShot, updatesShot, rpShot, shaderShot, modpackShot, conflictShot],
           ui: JSON.parse(uiText),
           ai: JSON.parse(aiInfo),
           pluginPanel: JSON.parse(pluginsInfo),
           market: JSON.parse(marketInfo),
           mods: JSON.parse(modsInfo),
+          preview: { info: JSON.parse(previewInfo), screenshot: previewShot },
+          updates: { info: JSON.parse(updatesInfo), screenshot: updatesShot },
           resourcepack: JSON.parse(rpInfo),
+          shader: { info: JSON.parse(shaderInfo), screenshot: shaderShot },
           modpack: JSON.parse(modpackInfo),
           conflict: JSON.parse(conflictInfo),
-          pack: { preview: JSON.parse(packInfo), done: JSON.parse(packDone), screenshot: packShot, doneScreenshot: packDoneShot, pickedPath },
+          pack: {
+            preview: JSON.parse(packInfo),
+            done: JSON.parse(packDone),
+            task: JSON.parse(packTaskInfo),
+            screenshot: packShot,
+            doneScreenshot: packDoneShot,
+            taskScreenshot: packTaskShot,
+            pickedPath,
+          },
           importPicker: { picked: importPicked },
           gameLog: { info: JSON.parse(gameLogInfo), screenshot: gameLogShot },
           instanceExport: { info: JSON.parse(exportInfo), files: exportFiles, saved: exportFromDialog },

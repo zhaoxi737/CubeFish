@@ -4,21 +4,26 @@
  */
 import AdmZip from 'adm-zip'
 import { existsSync, writeFileSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, rename, rm } from 'node:fs/promises'
 import path from 'node:path'
 import type {
   ContentInstallResult,
+  ContentPreview,
+  ContentUpdate,
   ContentVersionInfo,
   InstalledContent,
   CursePackInspectResult,
   CursePackInstallResult,
+  InstanceSummary,
   PackInspect,
   ModpackInspectResult,
   ModpackInstallResult,
+  ProgressFile,
   SearchHit,
+  TaskProgress,
 } from '../../shared/types'
-import { Downloader, type DownloadSpec } from '../lib/downloader'
-import { ensureDir, readJson, safeName, writeJsonAtomic } from '../lib/fsx'
+import { Downloader, type DownloadSpec, type DownloadStats } from '../lib/downloader'
+import { ensureDir, readJson, safeName, sha1File, writeJsonAtomic } from '../lib/fsx'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { InstancesService } from './instances'
 import type { LoadersService } from './loaders'
@@ -66,6 +71,20 @@ interface RawVersion {
   }[]
 }
 
+/** P29：Modrinth /project/<id> 与 /projects?ids= 的最小字段集 */
+interface RawProject {
+  id: string
+  slug?: string
+  title?: string
+  description?: string
+  icon_url?: string | null
+  gallery?: { url?: string | null; featured?: boolean }[]
+  downloads?: number
+  game_versions?: string[]
+  loaders?: string[]
+  project_type?: string
+}
+
 export interface ContentService {
   search(
     query: string,
@@ -97,6 +116,18 @@ export interface ContentService {
   installPack(source: string, opts?: { name?: string }): Promise<ModpackInstallResult & { kind?: 'curseforge' | 'modrinth'; resolved?: number; bundled?: number; overrides?: number }>
   /** 下载任意已解析的版本文件到实例对应目录（含依赖递归） */
   installVersion(instanceId: string, version: ContentVersionInfo, kind: ContentKind, depth?: number): Promise<string[]>
+  // ---- P29：模组更新检查 / 资源预览 ----
+  /** 检查实例内已装模组的最新版本（Modrinth）。没有可更新的返回空数组 */
+  updates(instanceId: string): Promise<ContentUpdate[]>
+  /** 把某个模组更新到最新（下载新文件 → 删除旧文件 → 更新 content.json） */
+  update(
+    instanceId: string,
+    fileName: string,
+  ): Promise<{ ok: boolean; fileName?: string; version?: string; error?: string }>
+  /** 资源/光影/模组的图片画廊预览 */
+  preview(projectId: string, kind: ContentKind): Promise<ContentPreview>
+  /** IPC 层注入，用于把内容安装进度推给渲染进程（P29，与 mojang 的 sink 同构） */
+  setProgressSink(sink: ((progress: TaskProgress) => void) | null): void
 }
 
 function kindDir(kind: ContentKind): string {
@@ -123,6 +154,8 @@ export function createContentPlugin(): LauncherPlugin<void> {
     const telemetry = use<TelemetryService>(ctx, 'telemetry')
 
     let lastRequest = 0
+    /** P29：内容安装进度 sink（由 IPC 层注入，和 mojang.setProgressSink 同构） */
+    let progressSink: ((progress: TaskProgress) => void) | null = null
 
     async function api<T>(pathname: string): Promise<T> {
       const wait = Math.max(0, lastRequest + MIN_INTERVAL_MS - Date.now())
@@ -134,6 +167,166 @@ export function createContentPlugin(): LauncherPlugin<void> {
       })
       if (!res.ok) throw new Error(`Modrinth ${pathname} 请求失败: HTTP ${res.status}`)
       return (await res.json()) as T
+    }
+
+    /** P29：POST（/version_files/update 批量更新检查用），同样 350ms 限速 + 20s 超时。 */
+    async function apiPost<T>(pathname: string, body: unknown): Promise<T> {
+      const wait = Math.max(0, lastRequest + MIN_INTERVAL_MS - Date.now())
+      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
+      lastRequest = Date.now()
+      const res = await fetch(`${BASE}${pathname}`, {
+        method: 'POST',
+        headers: { 'user-agent': UA, accept: 'application/json', 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(20_000),
+      })
+      if (!res.ok) throw new Error(`Modrinth ${pathname} 请求失败: HTTP ${res.status}`)
+      return (await res.json()) as T
+    }
+
+    /** 画廊/图标 URL 绝对化：Modrinth 常返回 `//cdn.modrinth.com/...`。 */
+    function absoluteImageUrl(url?: string | null): string | undefined {
+      const value = (url ?? '').trim()
+      if (!value) return undefined
+      if (value.startsWith('//')) return `https:${value}`
+      if (value.startsWith('http://')) return `https://${value.slice('http://'.length)}`
+      if (/^https:\/\//i.test(value)) return value
+      if (value.startsWith('/')) return `https://cdn.modrinth.com${value}`
+      return value
+    }
+
+    /* ---------- P29：内容安装的 PCL 式进度 ---------- */
+
+    /** 各阶段进度合并窗口（与下载器解耦，保证 IPC 不被刷爆） */
+    const CONTENT_PROGRESS_INTERVAL_MS = 200
+    /** 文件清单最多 200 条（前端逐行显示） */
+    const MAX_PROGRESS_FILES = 200
+
+    interface ContentTask {
+      taskId: string
+      /** 例如「安装整合包 Fabulously Optimized」 */
+      title: string
+      message: string
+      files: ProgressFile[]
+      bytes: number
+      bytesTotal: number
+      speed?: number
+      etaMs?: number
+      lastEmit: number
+    }
+
+    let taskSeq = 0
+
+    function createTask(title: string, message = title): ContentTask {
+      taskSeq += 1
+      return {
+        taskId: `content-${Date.now()}-${taskSeq}`,
+        title,
+        message,
+        files: [],
+        bytes: 0,
+        bytesTotal: 0,
+        lastEmit: 0,
+      }
+    }
+
+    function filesDoneOf(task: ContentTask): number {
+      let done = 0
+      for (const file of task.files) {
+        if (file.state === 'done' || file.state === 'skipped') done += 1
+      }
+      return done
+    }
+
+    function percentOf(task: ContentTask): number {
+      if (task.bytesTotal > 0) return Math.min(100, Math.round((task.bytes / task.bytesTotal) * 1000) / 10)
+      if (task.files.length > 0) {
+        return Math.min(100, Math.round((filesDoneOf(task) / task.files.length) * 1000) / 10)
+      }
+      return 0
+    }
+
+    /** 发一次进度（默认 200ms 节流；阶段切换/完成/失败用 force）。 */
+    function emitTask(task: ContentTask, stage: 'content' | 'done' | 'failed', force = false, message?: string): void {
+      if (!progressSink) return
+      const now = Date.now()
+      if (!force && now - task.lastEmit < CONTENT_PROGRESS_INTERVAL_MS) return
+      task.lastEmit = now
+      const filesDone = filesDoneOf(task)
+      const filesTotal = task.files.length
+      progressSink({
+        taskId: task.taskId,
+        kind: 'content',
+        stage,
+        title: task.title,
+        message: message ?? task.message,
+        done: filesDone,
+        total: filesTotal,
+        bytes: Math.round(task.bytes),
+        bytesTotal: Math.round(task.bytesTotal),
+        speed: task.speed && task.speed > 0 ? Math.round(task.speed) : undefined,
+        etaMs: task.etaMs,
+        filesDone,
+        filesTotal,
+        percent: stage === 'done' ? 100 : percentOf(task),
+        files: task.files.slice(0, MAX_PROGRESS_FILES).map((file) => ({ ...file })),
+      })
+    }
+
+    function kindLabel(kind: ContentKind): string {
+      switch (kind) {
+        case 'resourcepack':
+          return '资源包'
+        case 'shader':
+          return '光影'
+        case 'modpack':
+          return '整合包'
+        case 'datapack':
+          return '数据包'
+        default:
+          return '模组'
+      }
+    }
+
+    /**
+     * 用下载器跑一批文件并把 file/bytes/速度/ETA 转成 TaskProgress：
+     * 支持在一个任务里多次调用（依赖递归/CurseForge 逐个解析），文件清单累加。
+     */
+    async function downloadWithTask(
+      task: ContentTask,
+      specs: DownloadSpec[],
+      concurrency = 8,
+    ): Promise<DownloadStats> {
+      if (specs.length === 0) return { skipped: 0, downloaded: 0, bytes: 0, failed: [] }
+      const baseBytes = task.bytes
+      let offset = task.files.length
+      const downloader = new Downloader({
+        cacheDir: paths.downloads,
+        concurrency,
+        onVerbose: (message, data) => log.warn('content', message, data),
+        onFiles: (files) => {
+          offset = task.files.length
+          for (const file of files) task.files.push({ name: file.name, size: file.size, state: 'pending' })
+          task.bytesTotal += files.reduce((sum, file) => sum + (file.size ?? 0), 0)
+          emitTask(task, 'content', true)
+        },
+        onFileState: (index, state) => {
+          const file = task.files[offset + index]
+          if (!file) return
+          file.state = state
+          emitTask(task, 'content')
+        },
+        onProgress: (_done, _total, bytes, _label, stats) => {
+          task.bytes = baseBytes + bytes
+          if (stats) {
+            task.speed = stats.speed
+            task.etaMs = stats.etaMs
+          }
+          emitTask(task, 'content')
+        },
+      })
+      const stats = await downloader.downloadAll(specs)
+      return stats
     }
 
     function toVersionInfo(raw: RawVersion): ContentVersionInfo {
@@ -296,10 +489,13 @@ export function createContentPlugin(): LauncherPlugin<void> {
       version: ContentVersionInfo,
       kind: ContentKind,
       depth = 0,
+      task?: ContentTask,
     ): Promise<string[]> {
       const instance = instances.get(instanceId)
       if (!instance) throw new Error(`实例不存在: ${instanceId}`)
       if (!version.fileUrl) throw new Error(`版本 ${version.versionNumber} 没有可下载文件`)
+      // P29：没有外部任务时也建一个（sink 为空时 emitTask 自动 no-op）
+      const progressTask = task ?? createTask(`安装${kindLabel(kind)} ${version.fileName || version.versionNumber}`)
 
       // 1) 必需依赖先装（递归，最多 3 层）
       let depCount = 0
@@ -320,7 +516,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
             if (!depVersion) continue
             const existing = await installed(instanceId)
             if (existing.some((item) => item.versionId === depVersion!.id)) continue
-            const files = await installVersion(instanceId, depVersion, 'mod', depth + 1)
+            const files = await installVersion(instanceId, depVersion, 'mod', depth + 1, progressTask)
             if (files.length > 0) depCount += 1
           } catch (err) {
             log.warn('content', '依赖安装失败', { projectId: dep.projectId, error: String(err) })
@@ -328,18 +524,24 @@ export function createContentPlugin(): LauncherPlugin<void> {
         }
       }
 
-      // 2) 下载主文件
+      // 2) 下载主文件（P29：走 downloadWithTask，文件清单/字节/速度进 progress）
       const targetDir = path.join(instance.gameDir, kindDir(kind))
       const fileName = safeName(version.fileName || `${version.id}.jar`, `${version.id}.jar`)
       const dest = path.join(targetDir, fileName)
-      const downloader = new Downloader({ cacheDir: paths.downloads, concurrency: 1 })
-      await downloader.fetchOne({
-        url: version.fileUrl,
-        dest,
-        sha1: version.sha1 || undefined,
-        size: version.fileSize || undefined,
-        label: fileName,
-      })
+      const stats = await downloadWithTask(
+        progressTask,
+        [
+          {
+            url: version.fileUrl,
+            dest,
+            sha1: version.sha1 || undefined,
+            size: version.fileSize || undefined,
+            label: fileName,
+          },
+        ],
+        1,
+      )
+      if (stats.failed.length > 0) throw new Error(`下载失败：${fileName}`)
 
       // 3) 记录 manifest（冲突分析与回滚用）
       const list = await installed(instanceId)
@@ -365,11 +567,15 @@ export function createContentPlugin(): LauncherPlugin<void> {
       projectId: string,
       opts: { mcVersion?: string; loader?: string } = {},
     ): Promise<ContentInstallResult> {
+      const task = createTask('安装内容', '安装内容')
       try {
         const project = await api<{ id: string; title: string; project_type: string }>(
           `/project/${encodeURIComponent(projectId)}`,
         )
         const kind = (project.project_type ?? 'mod') as ContentKind
+        task.title = `安装${kindLabel(kind)} ${project.title ?? projectId}`
+        task.message = task.title
+        emitTask(task, 'content', true)
         const instance = instances.get(instanceId)
         const mcv = opts.mcVersion ?? instance?.gameVersion ?? (instance?.loader === 'vanilla' ? instance?.versionId : undefined)
         const loader =
@@ -378,18 +584,14 @@ export function createContentPlugin(): LauncherPlugin<void> {
         const before = await installed(instanceId)
         const version = await pickVersion(projectId, { mcVersion: mcv, loader })
         if (!version) {
-          return {
-            ok: false,
-            projectId,
-            title: project.title,
-            files: [],
-            dependenciesInstalled: 0,
-            error: `没有匹配的版本（游戏版本 ${mcv ?? '不限'} / 加载器 ${loader ?? '不限'}）`,
-          }
+          const error = `没有匹配的版本（游戏版本 ${mcv ?? '不限'} / 加载器 ${loader ?? '不限'}）`
+          emitTask(task, 'failed', true, error)
+          return { ok: false, projectId, title: project.title, files: [], dependenciesInstalled: 0, error }
         }
-        const files = await installVersion(instanceId, version, kind)
+        const files = await installVersion(instanceId, version, kind, 0, task)
         const after = await installed(instanceId)
         const dependenciesInstalled = Math.max(0, after.length - before.length - 1)
+        emitTask(task, 'done', true)
         return {
           ok: true,
           projectId,
@@ -401,6 +603,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         log.error('content', '安装失败', { projectId, error: message })
+        emitTask(task, 'failed', true, message)
         return { ok: false, projectId, files: [], dependenciesInstalled: 0, error: message }
       }
     }
@@ -467,13 +670,20 @@ export function createContentPlugin(): LauncherPlugin<void> {
     }
 
     async function installModpack(source: string, opts?: { name?: string }): Promise<ModpackInstallResult> {
+      const task = createTask('安装整合包', '安装整合包')
       try {
         const { index, zip } = parseIndex(await readSource(source))
         const deps = index.dependencies ?? {}
         const mc = deps.minecraft as string
         if (deps['quilt-loader']) {
-          return { ok: false, error: '暂不支持 Quilt 整合包（支持 Fabric / NeoForge / Forge / 原版）' }
+          const error = '暂不支持 Quilt 整合包（支持 Fabric / NeoForge / Forge / 原版）'
+          emitTask(task, 'failed', true, error)
+          return { ok: false, error }
         }
+        const packName = opts?.name ?? index.name ?? '整合包'
+        task.title = `安装整合包 ${packName}`
+        task.message = task.title
+        emitTask(task, 'content', true)
 
         const instance = instances.create(opts?.name ?? index.name ?? '整合包')
         instances.setActive(instance.id)
@@ -525,12 +735,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
           filePaths.push({ rel, sha1: file.hashes?.sha1 ?? '' })
         }
 
-        const downloader = new Downloader({
-          cacheDir: paths.downloads,
-          concurrency: 8,
-          onVerbose: (message, data) => log.warn('content', message, data),
-        })
-        const stats = await downloader.downloadAll(specs)
+        const stats = await downloadWithTask(task, specs, 8)
         if (stats.failed.length > 0) {
           throw new Error(`${stats.failed.length} 个整合包文件下载失败（首个：${stats.failed[0].label}）`)
         }
@@ -585,6 +790,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
           files: specs.length,
           overrides,
         })
+        emitTask(task, 'done', true, '安装完成')
         return {
           ok: true,
           packName: index.name ?? instance.name,
@@ -599,6 +805,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
         const message = err instanceof Error ? err.message : String(err)
         log.error('content', '整合包安装失败', { error: message })
         telemetry.record('content:modpack:error', { error: message })
+        emitTask(task, 'failed', true, message)
         return { ok: false, error: message }
       }
     }
@@ -606,10 +813,18 @@ export function createContentPlugin(): LauncherPlugin<void> {
     async function installModpackProject(projectId: string, name?: string): Promise<ModpackInstallResult> {
       try {
         const version = await pickVersion(projectId)
-        if (!version?.fileUrl) return { ok: false, error: '这个整合包没有可下载的 .mrpack 文件' }
+        if (!version?.fileUrl) {
+          const error = '这个整合包没有可下载的 .mrpack 文件'
+          const task = createTask(`安装整合包 ${name ?? projectId}`)
+          emitTask(task, 'failed', true, error)
+          return { ok: false, error }
+        }
         return installModpack(version.fileUrl, { name })
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+        const message = err instanceof Error ? err.message : String(err)
+        const task = createTask(`安装整合包 ${name ?? projectId}`)
+        emitTask(task, 'failed', true, message)
+        return { ok: false, error: message }
       }
     }
 
@@ -627,6 +842,8 @@ export function createContentPlugin(): LauncherPlugin<void> {
       fileName?: string
       downloadUrl?: string
       displayName?: string
+      /** 文件字节数（CF API 的 fileLength，用于文件清单显示） */
+      fileLength?: number
     }
 
     const CF_API = (): string => (process.env.QDOQMC_CF_API_BASE || 'https://api.curseforge.com').replace(/\/+$/, '')
@@ -688,13 +905,26 @@ export function createContentPlugin(): LauncherPlugin<void> {
     }
 
     async function installCursePack(source: string, opts?: { name?: string }): Promise<CursePackInstallResult> {
+      const task = createTask('安装整合包', '安装整合包')
       try {
         const { manifest, zip } = readCurseManifest(await readSource(source))
         const mc = manifest.minecraft?.version as string
         const primary = manifest.minecraft?.modLoaders?.find((item) => item.primary) ?? manifest.minecraft?.modLoaders?.[0]
         const parsed = parseCurseLoader(primary?.id)
-        if (!parsed) return { ok: false, error: `无法识别的加载器：${primary?.id ?? '（未声明）'}` }
-        if (parsed.loader === 'quilt') return { ok: false, error: '暂不支持 Quilt 整合包' }
+        if (!parsed) {
+          const error = `无法识别的加载器：${primary?.id ?? '（未声明）'}`
+          emitTask(task, 'failed', true, error)
+          return { ok: false, error }
+        }
+        if (parsed.loader === 'quilt') {
+          const error = '暂不支持 Quilt 整合包'
+          emitTask(task, 'failed', true, error)
+          return { ok: false, error }
+        }
+        const packName = opts?.name ?? manifest.name ?? 'CF 整合包'
+        task.title = `安装整合包 ${packName}`
+        task.message = task.title
+        emitTask(task, 'content', true)
 
         const instance = instances.create(opts?.name ?? manifest.name ?? 'CF 整合包')
         instances.setActive(instance.id)
@@ -734,7 +964,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
           })
         }
 
-        // 1) 包内自带的 mods（离线包）
+        // 1) 包内自带的 mods（离线包）：直接落盘，进度里记为 done
         let bundled = 0
         for (const entry of zip.getEntries()) {
           if (entry.isDirectory) continue
@@ -743,6 +973,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
           const fileName = name.slice('mods/'.length)
           writeFileSync(path.join(modsDir, ...fileName.split('/')), entry.getData())
           addEntry(fileName, `curse:bundled:${fileName}`, 'bundled')
+          task.files.push({ name: fileName, size: entry.header?.size, state: 'done' })
           bundled += 1
         }
 
@@ -753,20 +984,41 @@ export function createContentPlugin(): LauncherPlugin<void> {
           if (!CF_KEY() && bundled === 0) {
             throw new Error('这个整合包只带文件清单（没有内置 mods），需要配置 CurseForge API Key 才能下载')
           }
+          // 先逐个把 fileID 解析成文件名/下载地址，再统一并发下载（P29：同样有文件级进度）
+          const specs: DownloadSpec[] = []
+          const resolvedNames: { fileName: string; projectId: string; versionNumber: string }[] = []
+          let scanned = 0
           for (const file of files) {
             if (file.required === false) continue
             if (!file.projectID || !file.fileID) continue
             if (!CF_KEY()) continue
+            if (specs.length >= 200) break
             const info = await cfFileInfo(file.projectID, file.fileID)
-            const dest = path.join(modsDir, info.fileName as string)
-            await new Downloader({ cacheDir: paths.downloads, concurrency: 1 }).fetchOne({
+            specs.push({
               url: info.downloadUrl as string,
-              dest,
+              dest: path.join(modsDir, info.fileName as string),
+              size: info.fileLength && info.fileLength > 0 ? info.fileLength : undefined,
               label: info.fileName as string,
             })
-            addEntry(info.fileName as string, `curse:${file.projectID}`, String(file.fileID))
+            resolvedNames.push({
+              fileName: info.fileName as string,
+              projectId: `curse:${file.projectID}`,
+              versionNumber: String(file.fileID),
+            })
+            scanned += 1
+            if (scanned % 10 === 0) {
+              task.message = `${task.title}（解析文件 ${scanned}/${files.length}）`
+              emitTask(task, 'content')
+            }
+          }
+          task.message = task.title
+          const stats = await downloadWithTask(task, specs, 8)
+          if (stats.failed.length > 0) {
+            throw new Error(`${stats.failed.length} 个 CurseForge 文件下载失败（首个：${stats.failed[0].label}）`)
+          }
+          for (const entry of resolvedNames) {
+            addEntry(entry.fileName, entry.projectId, entry.versionNumber)
             resolved += 1
-            if (resolved >= 200) break
           }
         }
 
@@ -804,6 +1056,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
           bundled,
           overrides,
         })
+        emitTask(task, 'done', true, '安装完成')
         return {
           ok: true,
           packName: manifest.name ?? instance.name,
@@ -819,6 +1072,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
         const message = err instanceof Error ? err.message : String(err)
         log.error('content', 'CurseForge 整合包安装失败', { error: message })
         telemetry.record('content:curse-pack:error', { error: message })
+        emitTask(task, 'failed', true, message)
         return { ok: false, error: message }
       }
     }
@@ -880,13 +1134,274 @@ export function createContentPlugin(): LauncherPlugin<void> {
 
     async function installPack(source: string, opts?: { name?: string }): Promise<ModpackInstallResult & { kind?: 'curseforge' | 'modrinth'; resolved?: number; bundled?: number; overrides?: number }> {
       const inspected = await inspectPack(source)
-      if (!inspected.ok) return { ok: false, error: inspected.error ?? '无法识别整合包' }
+      if (!inspected.ok) {
+        const error = inspected.error ?? '无法识别整合包'
+        const task = createTask('安装整合包')
+        emitTask(task, 'failed', true, error)
+        return { ok: false, error }
+      }
       if (inspected.kind === 'curseforge') {
         const result = await installCursePack(source, opts)
         return { ...result, kind: 'curseforge' }
       }
       const result = await installModpack(source, opts)
       return { ...result, kind: 'modrinth' }
+    }
+
+    /* ---------- P29：模组更新检查 / 更新 / 图片预览 ---------- */
+
+    /** 当前实例的加载器标签（vanilla 不传，避免 Modrinth 全过滤掉） */
+    function loaderTags(instance: InstanceSummary): string[] {
+      const loader = instance.loader
+      if (loader === 'fabric' || loader === 'forge' || loader === 'neoforge' || loader === 'quilt') return [loader]
+      if (instance.versionId?.startsWith('fabric-loader')) return ['fabric']
+      if (instance.versionId?.startsWith('neoforge')) return ['neoforge']
+      if (instance.versionId?.startsWith('forge')) return ['forge']
+      return []
+    }
+
+    /** 当前游戏版本（gameVersion 优先，加载器实例也指向原版版本号） */
+    function gameVersionTags(instance: InstanceSummary): string[] {
+      const version = instance.gameVersion ?? instance.mcVersion
+      return version ? [version] : []
+    }
+
+    /** Modrinth 官方批量接口：sha1 → 最新 version 对象（不在返回里 = 无匹配/已删） */
+    async function queryLatestVersions(
+      instance: InstanceSummary,
+      hashes: string[],
+    ): Promise<Record<string, RawVersion>> {
+      const body: Record<string, unknown> = { hashes, algorithm: 'sha1' }
+      const loaders = loaderTags(instance)
+      if (loaders.length > 0) body.loaders = loaders
+      const gameVersions = gameVersionTags(instance)
+      if (gameVersions.length > 0) body.game_versions = gameVersions
+      return apiPost<Record<string, RawVersion>>('/version_files/update', body)
+    }
+
+    /** 实例 mods/ 下的文件路径（兼容 .disabled） */
+    function modFileCandidates(instance: InstanceSummary, fileName: string): { active: string; disabled: string } {
+      const normal = path.join(instance.gameDir, 'mods', fileName)
+      return { active: normal, disabled: `${normal}.disabled` }
+    }
+
+    /**
+     * 检查实例内已装模组的最新版本。
+     * 网络/单个项目失败只 warn + 返回能拿到的部分（不整体抛错），没有可更新返回 []。
+     */
+    async function updates(instanceId: string): Promise<ContentUpdate[]> {
+      try {
+        const instance = instances.get(instanceId)
+        if (!instance) {
+          log.warn('content', '检查更新失败：实例不存在', { instanceId })
+          return []
+        }
+        const list = await installed(instanceId)
+        const candidates: { item: InstalledContent; sha1: string }[] = []
+        for (const item of list) {
+          if ((item.kind ?? 'mod') !== 'mod') continue
+          // 整合包记录的文件名带目录前缀（mods/xxx.jar），不是简单文件名，跳过
+          if (!item.fileName || item.fileName.includes('/') || item.fileName.includes('\\')) continue
+          const file = modFileCandidates(instance, item.fileName)
+          const existing = existsSync(file.active) ? file.active : existsSync(file.disabled) ? file.disabled : undefined
+          if (!existing) continue
+          try {
+            candidates.push({ item, sha1: await sha1File(existing) })
+          } catch (err) {
+            log.warn('content', '计算模组 sha1 失败', { fileName: item.fileName, error: String(err) })
+          }
+        }
+        if (candidates.length === 0) return []
+
+        const latest = await queryLatestVersions(
+          instance,
+          candidates.map((candidate) => candidate.sha1),
+        )
+        const items: ContentUpdate[] = []
+        for (const candidate of candidates) {
+          const version = latest[candidate.sha1]
+          if (!version) continue
+          if (version.version_number === candidate.item.versionNumber) continue
+          const primary = version.files?.find((file) => file.primary) ?? version.files?.[0]
+          if (!primary) continue
+          items.push({
+            fileName: candidate.item.fileName,
+            projectId: version.project_id ?? candidate.item.projectId,
+            currentVersion: candidate.item.versionNumber,
+            latestVersion: version.version_number,
+            latestFileName: primary.filename,
+            gameVersions: version.game_versions ?? [],
+            loaders: version.loaders ?? [],
+          })
+        }
+
+        // 补项目标题（可选字段；失败不影响主流程）
+        if (items.length > 0) {
+          const ids = [...new Set(items.map((item) => item.projectId).filter((id): id is string => Boolean(id)))]
+          if (ids.length > 0) {
+            try {
+              const projects = await api<RawProject[]>(`/projects?ids=${encodeURIComponent(JSON.stringify(ids))}`)
+              const titles = new Map(projects.map((project) => [project.id, project.title]))
+              for (const item of items) {
+                if (item.projectId) item.title = titles.get(item.projectId) ?? item.title
+              }
+            } catch (err) {
+              log.warn('content', '获取更新项目标题失败', { error: String(err) })
+            }
+          }
+        }
+        log.info('content', '模组更新检查完成', {
+          instanceId,
+          checked: candidates.length,
+          updates: items.length,
+        })
+        return items
+      } catch (err) {
+        log.warn('content', '模组更新检查失败（返回空数组）', { instanceId, error: String(err) })
+        return []
+      }
+    }
+
+    /**
+     * 更新单个模组：查最新版 → 旧文件改名 .old → 下载新文件 → 删旧文件 → 更新 content.json。
+     * 任一步失败回滚（恢复旧文件，不留下两个同名文件）。
+     */
+    async function update(
+      instanceId: string,
+      fileName: string,
+    ): Promise<{ ok: boolean; fileName?: string; version?: string; error?: string }> {
+      try {
+        const instance = instances.get(instanceId)
+        if (!instance) return { ok: false, error: '实例不存在' }
+        if (!fileName || fileName.includes('/') || fileName.includes('\\')) {
+          return { ok: false, error: '只支持更新 mods/ 目录下的单个模组文件' }
+        }
+        const list = await installed(instanceId)
+        const item = list.find((entry) => entry.fileName === fileName && (entry.kind ?? 'mod') === 'mod')
+        if (!item) return { ok: false, error: '没有找到这个模组的安装记录' }
+
+        const files = modFileCandidates(instance, fileName)
+        const wasDisabled = !existsSync(files.active) && existsSync(files.disabled)
+        const oldPath = existsSync(files.active)
+          ? files.active
+          : existsSync(files.disabled)
+            ? files.disabled
+            : undefined
+        if (!oldPath) return { ok: false, error: '模组文件不存在（可能已被手动删除）' }
+
+        // 1) 算当前 sha1 查最新版
+        const currentSha1 = await sha1File(oldPath)
+        const latestMap = await queryLatestVersions(instance, [currentSha1]).catch((err) => {
+          log.warn('content', '更新检查网络失败', { fileName, error: String(err) })
+          return {} as Record<string, RawVersion>
+        })
+        const latest = latestMap[currentSha1]
+        if (!latest) return { ok: false, error: 'Modrinth 上没有可用的更新（可能项目未收录或网络失败）' }
+        if (latest.version_number === item.versionNumber) return { ok: false, error: '已是最新版本' }
+        const primary = latest.files?.find((file) => file.primary) ?? latest.files?.[0]
+        if (!primary) return { ok: false, error: '最新版本没有可下载文件' }
+        const newFileName = safeName(primary.filename, `${latest.id}.jar`)
+
+        // 2) 旧文件先改名 .old（后续失败可回滚）；同名覆盖时也不会有两个同名文件
+        const backup = `${files.active}.old`
+        await rm(backup, { force: true })
+        await rename(oldPath, backup)
+
+        // 3) 下载新文件（原本禁用的仍保持禁用）
+        const targetNormal = path.join(instance.gameDir, 'mods', newFileName)
+        const dest = wasDisabled ? `${targetNormal}.disabled` : targetNormal
+        try {
+          await new Downloader({ cacheDir: paths.downloads, concurrency: 1 }).fetchOne({
+            url: primary.url,
+            dest,
+            sha1: primary.hashes?.sha1,
+            size: primary.size,
+            label: newFileName,
+          })
+        } catch (err) {
+          await rm(dest, { force: true }).catch(() => undefined)
+          await rename(backup, oldPath).catch(() => undefined)
+          const message = err instanceof Error ? err.message : String(err)
+          log.warn('content', '模组更新下载失败，已回滚', { fileName, error: message })
+          return { ok: false, error: `下载新版本失败：${message}` }
+        }
+
+        // 4) 成功后删旧文件 + 更新 content.json（失败则回滚）
+        await rm(backup, { force: true }).catch(() => undefined)
+        const nextList = list.map((entry) =>
+          entry.fileName === fileName
+            ? {
+                ...entry,
+                projectId: latest.project_id ?? entry.projectId,
+                versionId: latest.id,
+                versionNumber: latest.version_number,
+                fileName: newFileName,
+                sha1: primary.hashes?.sha1 ?? '',
+                installedAt: Date.now(),
+              }
+            : entry,
+        )
+        try {
+          await saveInstalled(instanceId, nextList)
+        } catch (err) {
+          await rm(dest, { force: true }).catch(() => undefined)
+          await rm(`${targetNormal}`, { force: true }).catch(() => undefined)
+          await rename(backup, oldPath).catch(() => undefined)
+          const message = err instanceof Error ? err.message : String(err)
+          log.warn('content', '更新 content.json 失败，已回滚', { fileName, error: message })
+          return { ok: false, error: `保存安装记录失败：${message}` }
+        }
+
+        telemetry.record('content:update', { instanceId, fileName, newFileName, version: latest.version_number })
+        log.info('content', '模组已更新', {
+          fileName,
+          newFileName,
+          from: item.versionNumber,
+          to: latest.version_number,
+        })
+        return { ok: true, fileName: newFileName, version: latest.version_number }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        log.warn('content', '模组更新失败', { instanceId, fileName, error: message })
+        return { ok: false, error: message }
+      }
+    }
+
+    /**
+     * 图片画廊预览：只打 GET /project/<id>；网络失败返回空 gallery 不抛错。
+     * gallery.url 可能是协议相对（`//cdn.modrinth.com/...`），统一补成 https。
+     */
+    async function preview(projectId: string, kind: ContentKind): Promise<ContentPreview> {
+      const empty: ContentPreview = {
+        projectId,
+        title: '',
+        description: '',
+        gallery: [],
+        downloads: 0,
+        gameVersions: [],
+        loaders: [],
+      }
+      try {
+        const project = await api<RawProject>(`/project/${encodeURIComponent(projectId)}`)
+        const gallery = (project.gallery ?? [])
+          .map((entry) => absoluteImageUrl(entry?.url))
+          .filter((url): url is string => Boolean(url))
+        const previewData: ContentPreview = {
+          projectId: project.id ?? projectId,
+          title: project.title ?? '',
+          description: project.description ?? '',
+          iconUrl: absoluteImageUrl(project.icon_url),
+          gallery,
+          downloads: project.downloads ?? 0,
+          gameVersions: project.game_versions ?? [],
+          loaders: project.loaders ?? [],
+        }
+        log.info('content', '内容预览已获取', { projectId, kind, gallery: gallery.length })
+        return previewData
+      } catch (err) {
+        log.warn('content', '内容预览获取失败（返回空画廊）', { projectId, kind, error: String(err) })
+        return empty
+      }
     }
 
     ctx.provide('content', {
@@ -905,6 +1420,12 @@ export function createContentPlugin(): LauncherPlugin<void> {
       inspectPack,
       installPack,
       installVersion,
+      updates,
+      update,
+      preview,
+      setProgressSink: (next) => {
+        progressSink = next
+      },
     } satisfies ContentService)
 
     log.info('content', 'Modrinth 内容服务就绪', { userAgent: UA, settingsPlayer: settings.get('playerName') })

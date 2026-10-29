@@ -1099,7 +1099,13 @@ export function createToolsPlugin(): LauncherPlugin<void> {
       names: () => [...registry.keys()],
       call,
       register: (definition) => {
-        if (registry.has(definition.name)) {
+        const existing = registry.get(definition.name)
+        // P35：插件不能覆盖内置工具（否则内置能力会被沙箱里的残缺实现顶掉）
+        if (existing && !existing.source && definition.source) {
+          log.warn('tools', '插件试图覆盖内置工具，已忽略', { tool: definition.name, source: definition.source })
+          return
+        }
+        if (existing) {
           log.warn('tools', '工具名冲突，已覆盖', { tool: definition.name, source: definition.source })
         }
         registry.set(definition.name, definition)

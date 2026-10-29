@@ -77,7 +77,11 @@ export function createChatPlugin(): LauncherPlugin<void> {
     const appendHistory = (role: 'user' | 'assistant', text: string): void => {
       const trimmed = text.trim()
       if (!trimmed) return
-      saveHistory([...loadHistory(), { role, text: trimmed.slice(0, 2000), ts: Date.now() }])
+      // P35：聊天记录落盘前先脱敏，别把 API Key / 令牌明文存下来
+      const redacted = trimmed
+        .replace(/\bsk-[A-Za-z0-9_-]{8,}/g, 'sk-***已隐藏***')
+        .replace(/("(?:apiKey|curseforgeApiKey|msAccessToken|msRefreshToken|token|secret)"\s*:\s*")[^"]*(")/gi, '$1***已隐藏***$2')
+      saveHistory([...loadHistory(), { role, text: redacted.slice(0, 2000), ts: Date.now() }])
     }
     const clearHistory = (): void => {
       saveHistory([])

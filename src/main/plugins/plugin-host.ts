@@ -421,7 +421,8 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
         }
         state.pending.clear()
         // 退出码 0 且不是主动卸载：通常发生在启动器自身退出/CLI 结束时，不算插件崩溃
-        if (code === 0) {
+        // 0xFFFFFFFF / -1：进程被系统或任务管理器强杀，同样视为正常退出，不报崩溃
+        if (code === 0 || code === -1 || code === 4294967295) {
           log.info('plugin-host', '插件沙箱已退出', { id, code })
           state.worker = undefined
           return
@@ -646,6 +647,13 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
     // 注意：load() 内部会 scan() 重建 manifests，所以必须先快照 id 再加载。
     const loading: Promise<unknown>[] = []
     scan()
+    // P35：清掉已删除插件的残留授权（否则每次启动都会尝试加载不存在的目录并报错）
+    const staleGrants = Object.keys(grants).filter((id) => !manifests.has(id))
+    if (staleGrants.length > 0) {
+      for (const id of staleGrants) delete grants[id]
+      void persistGrants()
+      log.info('plugin-host', '已清理失效的插件授权', { ids: staleGrants })
+    }
     const grantedIds = [...manifests.keys()].filter((id) => Boolean(grants[id]))
     for (const id of grantedIds) {
       loading.push(load(id).catch((err) => log.warn('plugin-host', '自动加载插件失败', { id, error: String(err) })))

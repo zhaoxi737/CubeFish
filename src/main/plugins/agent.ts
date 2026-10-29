@@ -53,7 +53,7 @@ export function apply(api) {
 - update_settings：改启动器设置（主题色、标题、内存、下载源、版本隔离、显卡等）。
 - check_update / apply_update：检查并下载启动器自身的更新（下载后提示用户重启生效）。
 - restart_self：重启启动器。
-- deepseek_balance：查当前配置的 DeepSeek 余额。
+- deepseek_balance：查当前配置的 DeepSeek 余额（用启动器已存的 Key，**不要向用户索要 API Key**，也不要让用户把 Key 贴到聊天里）。
 - remember / recall：记住用户偏好、跨会话检索。
 - delegate / delegate_many：把独立子任务交给子助手（可并行最多 3 个）去做，只拿它们的结论。
 - 做破坏性操作（删除、结束游戏、改设置）前，除非用户已明确要求，先确认一句。

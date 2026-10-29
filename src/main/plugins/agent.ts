@@ -32,7 +32,9 @@ const SYSTEM_PROMPT = `你是 QDOQMC（Minecraft 启动器）里的 AI 助手。
 - 设置：update_settings；更新：check_update / apply_update；重启：restart_self
 - 系统：speak_text（喇叭念）/ deepseek_balance（查余额，不要向用户要 Key）
 - 记忆：remember / recall
-- 子任务：delegate / delegate_many（最多 3 个并行）
+- 子任务：delegate / delegate_many（子助手可再委派，最多 3 层；并行最多 5 个）
+- 系统命令：run_shell（任意 PowerShell，用户已授权）
+- 改自己：read_source_file / write_source_file（只能 src/）→ rebuild_launcher → restart_self
 - 扩展：write_plugin / reload_plugin / remove_plugin
 
 【典型流程】
@@ -304,19 +306,18 @@ export function createAgentPlugin(): LauncherPlugin<void> {
       }
     }
 
-    const MAX_SUB_ROUNDS = 4
-    const MAX_SUB_DEPTH = 1
+    const MAX_SUB_ROUNDS = 6
+    const MAX_SUB_DEPTH = 3
+    let subDepth = 0
 
-    /** 子助手：跑一轮独立的 agent 循环（不拿 delegate 自己，避免无限递归）。 */
+    /** 子助手：跑一轮独立的 agent 循环（可以继续往下委派，最多 3 层）。 */
     const runSubagent = async (task: string, depth: number): Promise<string> => {
       if (depth > MAX_SUB_DEPTH) return '（子任务层级已到上限，这个任务请直接做）'
       const messages: LlmMessage[] = [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: task },
       ]
-      const specs = tools
-        .specs()
-        .filter((spec) => spec.function.name !== 'delegate' && spec.function.name !== 'delegate_many')
+      const specs = tools.specs()
       for (let round = 0; round < MAX_SUB_ROUNDS; round += 1) {
         const response = await llm.chat(messages, specs)
         if (response.toolCalls.length === 0) return (response.content ?? '').trim() || '（子任务没有输出）'
@@ -343,11 +344,24 @@ export function createAgentPlugin(): LauncherPlugin<void> {
       return '（子任务超过轮数上限）'
     }
 
+    /** 带层级计数的委派入口 */
+    const delegateRun = async (task: string): Promise<string> => {
+      const depth = subDepth + 1
+      if (depth > MAX_SUB_DEPTH) return '（子任务层级已到上限，这个任务请直接做）'
+      subDepth = depth
+      try {
+        return await runSubagent(task, depth)
+      } finally {
+        subDepth = depth - 1
+      }
+    }
+
     const asText = (value: unknown): string => (typeof value === 'string' ? value : '')
 
     tools.register({
       name: 'delegate',
-      description: '把一个独立的子任务交给子助手去做，返回它的结论。适合需要自己多步查找/判断的事。',
+      description:
+        '把一个独立的子任务交给子助手去做（子助手也能再往下委派，最多 3 层），返回结论。适合需要自己多步查找/判断的事。',
       parameters: {
         type: 'object',
         properties: { task: { type: 'string', description: '子任务描述（要具体，包含目标与约束）' } },
@@ -355,30 +369,30 @@ export function createAgentPlugin(): LauncherPlugin<void> {
         additionalProperties: false,
       },
       async handler(args) {
-        const text = await runSubagent(asText(args.task), 1)
+        const text = await delegateRun(asText(args.task))
         return { ok: true, summary: text.slice(0, 4000) }
       },
     })
 
     tools.register({
       name: 'delegate_many',
-      description: '并行跑多个相互独立的子任务（最多 3 个），各自返回结论。',
+      description: '并行跑多个相互独立的子任务（最多 5 个），各自返回结论。',
       parameters: {
         type: 'object',
         properties: {
-          tasks: { type: 'array', items: { type: 'string' }, description: '子任务列表，最多 3 个' },
+          tasks: { type: 'array', items: { type: 'string' }, description: '子任务列表，最多 5 个' },
         },
         required: ['tasks'],
         additionalProperties: false,
       },
       async handler(args) {
         const tasks = Array.isArray(args.tasks)
-          ? (args.tasks as unknown[]).map(asText).filter(Boolean).slice(0, 3)
+          ? (args.tasks as unknown[]).map(asText).filter(Boolean).slice(0, 5)
           : []
-        if (tasks.length === 0) return { ok: false, summary: '需要 tasks 数组（1–3 条）' }
+        if (tasks.length === 0) return { ok: false, summary: '需要 tasks 数组（1–5 条）' }
         const results = await Promise.all(
           tasks.map((task) =>
-            runSubagent(task, 1).catch((err) => `子任务失败：${err instanceof Error ? err.message : String(err)}`),
+            delegateRun(task).catch((err) => `子任务失败：${err instanceof Error ? err.message : String(err)}`),
           ),
         )
         const summary = results.map((text, index) => `【任务 ${index + 1}】${text.slice(0, 1200)}`).join('\n')

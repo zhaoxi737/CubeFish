@@ -5,7 +5,7 @@
  */
 import { app } from 'electron'
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import type { ToolCallTrace } from '../../shared/types'
@@ -127,6 +127,47 @@ export function createToolsPlugin(): LauncherPlugin<void> {
       const svc = ctx.get('system') as SystemService | undefined
       if (!svc) throw new Error('系统服务尚未就绪')
       return svc
+    }
+
+    /** P39：找到启动器源码目录（改源码 / 重新构建用） */
+    const repoRoot = (): string => {
+      const candidates: string[] = []
+      if (process.env.QDOQMC_REPO) candidates.push(process.env.QDOQMC_REPO)
+      const push = (start: string): void => {
+        let dir = start
+        for (let level = 0; level < 5; level += 1) {
+          candidates.push(dir)
+          const parent = path.dirname(dir)
+          if (parent === dir) break
+          dir = parent
+        }
+      }
+      candidates.push(process.cwd())
+      try {
+        push(path.dirname(app.getPath('exe')))
+      } catch {
+        /* 忽略 */
+      }
+      if (process.resourcesPath) push(path.dirname(process.resourcesPath))
+      for (const dir of candidates) {
+        try {
+          const pkg = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8')) as { name?: string }
+          if (pkg.name === 'qdoqmc') return dir
+        } catch {
+          /* 继续找 */
+        }
+      }
+      throw new Error('找不到启动器源码目录：把它放回开发目录，或设置环境变量 QDOQMC_REPO 指向源码根目录')
+    }
+
+    /** P39：源码路径校验：只允许 src 下的文件 */
+    const sourcePath = (relInput: string): string => {
+      const root = repoRoot()
+      const rel = String(relInput).replace(/\\/g, '/')
+      if (!rel || rel.includes('..') || rel.startsWith('/')) throw new Error('源码路径必须相对 src/，不允许 .. 或绝对路径')
+      const full = path.join(root, 'src', rel)
+      if (!full.startsWith(path.join(root, 'src') + path.sep)) throw new Error('只允许改 src/ 目录里的文件')
+      return full
     }
 
     // ---- P33：文件 / 网络 / 重启（缩小与 harness 的差距）----
@@ -1145,6 +1186,125 @@ export function createToolsPlugin(): LauncherPlugin<void> {
           }
         } catch (err) {
           return { ok: false, summary: `查询失败：${err instanceof Error ? err.message : String(err)}` }
+        }
+      },
+    })
+
+    register({
+      name: 'run_shell',
+      description:
+        '在系统 PowerShell 里执行任意命令（用户明确授权）。输出会截断到 2 万字符。危险操作自行判断。',
+      parameters: {
+        type: 'object',
+        properties: {
+          command: { type: 'string', description: '要执行的 PowerShell 命令' },
+          cwd: { type: 'string', description: '工作目录（可选）' },
+        },
+        required: ['command'],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const command = str(args.command).trim()
+        if (!command) return { ok: false, summary: 'command 为空' }
+        const cwd = str(args.cwd).trim() || undefined
+        try {
+          const { stdout, stderr } = await execFileAsync(
+            'powershell.exe',
+            ['-NoProfile', '-NonInteractive', '-Command', command],
+            { cwd, timeout: 180_000, windowsHide: true, maxBuffer: 16 * 1024 * 1024 },
+          )
+          const text = `${stdout}\n${stderr}`.trim()
+          log.info('tools', '执行 shell 命令', { command: command.slice(0, 120), ms: 0 })
+          return { ok: true, summary: text.slice(0, 20000) || '（无输出）' }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          return { ok: false, summary: `命令执行失败：${message.slice(0, 2000)}` }
+        }
+      },
+    })
+
+    register({
+      name: 'read_source_file',
+      description: '读取启动器自己的源码文件（src/ 下，用于自我修改前先看代码）。',
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string', description: '相对 src/ 的路径，如 main/plugins/agent.ts' } },
+        required: ['path'],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const file = sourcePath(str(args.path))
+        if (!existsSync(file)) return { ok: false, summary: `源码文件不存在：src/${str(args.path)}` }
+        const info = statSync(file)
+        if (info.size > 512 * 1024) return { ok: false, summary: `文件太大（${info.size} 字节）` }
+        return { ok: true, summary: readFileSync(file, 'utf8').slice(0, 100000) }
+      },
+    })
+
+    register({
+      name: 'write_source_file',
+      description:
+        '写启动器自己的源码文件（src/ 下）。改完要调 rebuild_launcher 重新构建并重启才生效。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: '相对 src/ 的路径' },
+          content: { type: 'string', description: '完整文件内容' },
+        },
+        required: ['path', 'content'],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const file = sourcePath(str(args.path))
+        const content = String(args.content ?? '')
+        if (content.length > 512 * 1024) return { ok: false, summary: '内容超过 512KB' }
+        await writeTextAtomic(file, content)
+        log.info('tools', '已写源码文件', { file, bytes: content.length })
+        return { ok: true, summary: `已写入 src/${str(args.path)}（${content.length} 字节），需要 rebuild_launcher 才生效` }
+      },
+    })
+
+    register({
+      name: 'rebuild_launcher',
+      description:
+        '重新构建启动器（npm run build），并同步到打包目录；之后调 restart_self 重启生效。改完源码用这个。',
+      parameters: EMPTY_PARAMS,
+      async handler() {
+        const root = repoRoot()
+        try {
+          // Windows 上 npm 是 .cmd，必须经 cmd.exe 启动，execFile 直接 spawn 会 EINVAL
+          const npmCommand = ['run', 'build']
+          const { stdout, stderr } =
+            process.platform === 'win32'
+              ? await execFileAsync('cmd.exe', ['/d', '/s', '/c', 'npm', ...npmCommand], {
+                  cwd: root,
+                  timeout: 300_000,
+                  windowsHide: true,
+                  maxBuffer: 16 * 1024 * 1024,
+                })
+              : await execFileAsync('npm', npmCommand, {
+                  cwd: root,
+                  timeout: 300_000,
+                  windowsHide: true,
+                  maxBuffer: 16 * 1024 * 1024,
+                })
+          const outDir = path.join(root, 'out')
+          let synced = ''
+          const resourcesApp = process.resourcesPath ? path.join(process.resourcesPath, 'app') : ''
+          if (resourcesApp && existsSync(resourcesApp) && existsSync(outDir)) {
+            const target = path.join(resourcesApp, 'out')
+            rmSync(target, { recursive: true, force: true })
+            cpSync(outDir, target, { recursive: true })
+            synced = '并把构建产物同步到打包目录'
+          }
+          log.info('tools', '重新构建完成', { root, synced: Boolean(synced) })
+          return {
+            ok: true,
+            summary: `构建完成${synced}。调 restart_self 重启后生效。\n${(stdout || stderr).slice(0, 800)}`,
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          return { ok: false, summary: `构建失败：${message.slice(0, 2000)}` }
         }
       },
     })

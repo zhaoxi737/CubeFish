@@ -545,6 +545,7 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
 
     const remove = async (id: string): Promise<{ ok: boolean; error?: string }> => {
       try {
+        if (!id || !/^[a-z0-9][a-z0-9._-]*$/.test(id)) return { ok: false, error: `插件 id 不合法: ${id}` }
         if (loaded.has(id)) await unload(id)
         const dir = path.join(pluginsDir, id)
         if (existsSync(dir)) await rm(dir, { recursive: true, force: true })

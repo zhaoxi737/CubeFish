@@ -1,5 +1,6 @@
 import path from 'node:path'
-import type { ChatReply } from '../../shared/types'
+import { randomUUID } from 'node:crypto'
+import type { ChatProgressEvent, ChatReply, ChatSendOptions, ChatSessionInfo } from '../../shared/types'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { EntitlementService } from './entitlement'
 import type { IdentityService } from './identity'
@@ -31,14 +32,24 @@ export interface CommandSpec {
 }
 
 export interface ChatService {
-  send(text: string): Promise<ChatReply>
+  send(text: string, opts?: ChatSendOptions): Promise<ChatReply>
   register(spec: CommandSpec): void
   unregister(name: string): void
   commands(): { name: string; description: string }[]
   /** 流式增量回调（主进程 → 渲染进程） */
   setStreamSink(sink: ((text: string) => void) | null): void
+  /** P36：实时过程事件（工具开始/结束、轮次） */
+  setProgressSink(sink: ((event: ChatProgressEvent) => void) | null): void
+  /** P36：中断当前 AI 请求 */
+  abort(): void
   history(): { role: 'user' | 'assistant'; text: string }[]
   clearHistory(): void
+  /** P36：多会话 */
+  sessions(): ChatSessionInfo[]
+  newSession(): ChatSessionInfo
+  switchSession(id: string): boolean
+  deleteSession(id: string): boolean
+  activeSession(): string
 }
 
 export function createChatPlugin(): LauncherPlugin<void> {
@@ -61,30 +72,92 @@ export function createChatPlugin(): LauncherPlugin<void> {
 
     const registry = new Map<string, CommandSpec>()
     let streamSink: ((text: string) => void) | null = null
+    let progressSink: ((event: ChatProgressEvent) => void) | null = null
+    let controller: AbortController | null = null
 
     interface HistoryEntry {
       role: 'user' | 'assistant'
       text: string
       ts: number
     }
-    const HISTORY_FILE = path.join(paths.data, 'chat-history.json')
-    const MAX_HISTORY = 20
-
-    const loadHistory = (): HistoryEntry[] => storage.readJson<HistoryEntry[]>(HISTORY_FILE, [])
-    const saveHistory = (entries: HistoryEntry[]): void => {
-      storage.writeJson(HISTORY_FILE, entries.slice(-MAX_HISTORY))
+    interface SessionRecord {
+      id: string
+      title: string
+      updatedAt: number
+      entries: HistoryEntry[]
     }
+    interface SessionsFile {
+      activeId: string
+      sessions: SessionRecord[]
+    }
+
+    const SESSIONS_FILE = path.join(paths.data, 'chat-sessions.json')
+    const LEGACY_HISTORY = path.join(paths.data, 'chat-history.json')
+    const MAX_HISTORY = 60
+
+    const newRecord = (title = '新对话'): SessionRecord => ({
+      id: randomUUID().slice(0, 8),
+      title,
+      updatedAt: Date.now(),
+      entries: [],
+    })
+
+    const loadSessions = (): SessionsFile => {
+      const loaded = storage.readJson<SessionsFile | null>(SESSIONS_FILE, null)
+      if (loaded && Array.isArray(loaded.sessions) && loaded.sessions.length > 0) return loaded
+      // 迁移旧版单会话
+      const legacy = storage.readJson<HistoryEntry[]>(LEGACY_HISTORY, [])
+      const record = newRecord(legacy.length > 0 ? '之前的对话' : '新对话')
+      record.entries = legacy.slice(-MAX_HISTORY)
+      return { activeId: record.id, sessions: [record] }
+    }
+
+    let data: SessionsFile = loadSessions()
+    const persist = (): void => {
+      storage.writeJson(SESSIONS_FILE, data)
+    }
+    const activeRecord = (): SessionRecord => {
+      const found = data.sessions.find((item) => item.id === data.activeId)
+      if (found) return found
+      const created = newRecord()
+      data.sessions.push(created)
+      data.activeId = created.id
+      persist()
+      return created
+    }
+
+    const redact = (text: string): string =>
+      text
+        .replace(/\bsk-[A-Za-z0-9_-]{8,}/g, 'sk-***已隐藏***')
+        .replace(/("(?:apiKey|curseforgeApiKey|msAccessToken|msRefreshToken|token|secret)"\s*:\s*")[^"]*(")/gi, '$1***已隐藏***$2')
+
+    const loadHistory = (): HistoryEntry[] => activeRecord().entries
     const appendHistory = (role: 'user' | 'assistant', text: string): void => {
       const trimmed = text.trim()
       if (!trimmed) return
-      // P35：聊天记录落盘前先脱敏，别把 API Key / 令牌明文存下来
-      const redacted = trimmed
-        .replace(/\bsk-[A-Za-z0-9_-]{8,}/g, 'sk-***已隐藏***')
-        .replace(/("(?:apiKey|curseforgeApiKey|msAccessToken|msRefreshToken|token|secret)"\s*:\s*")[^"]*(")/gi, '$1***已隐藏***$2')
-      saveHistory([...loadHistory(), { role, text: redacted.slice(0, 2000), ts: Date.now() }])
+      const record = activeRecord()
+      record.entries.push({ role, text: redact(trimmed).slice(0, 2000), ts: Date.now() })
+      record.entries = record.entries.slice(-MAX_HISTORY)
+      record.updatedAt = Date.now()
+      if (role === 'user' && record.title === '新对话') record.title = redact(trimmed).slice(0, 18)
+      persist()
+    }
+    const popLastUser = (): boolean => {
+      const record = activeRecord()
+      for (let index = record.entries.length - 1; index >= 0; index -= 1) {
+        const entry = record.entries[index]
+        if (entry.role !== 'user') continue
+        record.entries.splice(index, 1)
+        record.updatedAt = Date.now()
+        persist()
+        return true
+      }
+      return false
     }
     const clearHistory = (): void => {
-      saveHistory([])
+      const record = activeRecord()
+      record.entries = []
+      persist()
     }
 
     const register = (spec: CommandSpec) => {
@@ -92,7 +165,7 @@ export function createChatPlugin(): LauncherPlugin<void> {
     }
 
     ctx.provide('chat', {
-      send: async (text: string): Promise<ChatReply> => {
+      send: async (text: string, opts?: ChatSendOptions): Promise<ChatReply> => {
         const raw = text.trim()
         if (!raw) return { ok: false, text: '说点什么吧，比如 /help', kind: 'error' }
         telemetry.record('chat:send', { length: raw.length, command: raw.startsWith('/') })
@@ -106,17 +179,25 @@ export function createChatPlugin(): LauncherPlugin<void> {
               text: '还没有配置模型 API Key（设置 → 模型 API Key）。\n配置后可以直接说人话让我干活，例如“装个 sodium”“看看为什么崩了”“最近有什么优化模组”。\n没配置时可以用 /help 看本地命令。',
             }
           }
-          // 会话记忆：把最近几轮带进上下文
+          // P36：补充/修改上一条用户消息
+          if (opts?.replaceLast) popLastUser()
           const history = loadHistory().map((entry) => ({ role: entry.role, content: entry.text }) as const)
-          const reply = await agent.run(raw, {
-            history: [...history],
-            onDelta: (chunk) => streamSink?.(chunk),
-          })
-          if (reply.ok) {
-            appendHistory('user', raw)
-            appendHistory('assistant', reply.text)
+          controller = new AbortController()
+          try {
+            const reply = await agent.run(raw, {
+              history: [...history],
+              onDelta: (chunk) => streamSink?.(chunk),
+              onProgress: (event) => progressSink?.(event),
+              signal: controller.signal,
+            })
+            if (reply.ok) {
+              appendHistory('user', raw)
+              appendHistory('assistant', reply.text)
+            }
+            return { ...reply, streamed: true }
+          } finally {
+            controller = null
           }
-          return { ...reply, streamed: true }
         }
 
         const [head, ...args] = raw.slice(1).split(/\s+/)
@@ -139,8 +220,46 @@ export function createChatPlugin(): LauncherPlugin<void> {
       setStreamSink: (sink) => {
         streamSink = sink
       },
+      setProgressSink: (sink) => {
+        progressSink = sink
+      },
+      abort: () => {
+        controller?.abort()
+      },
       history: () => loadHistory().map((entry) => ({ role: entry.role, text: entry.text })),
       clearHistory,
+      sessions: () =>
+        data.sessions
+          .map((record) => ({
+            id: record.id,
+            title: record.title,
+            updatedAt: record.updatedAt,
+            count: record.entries.length,
+          }))
+          .sort((a, b) => b.updatedAt - a.updatedAt),
+      newSession: () => {
+        const record = newRecord()
+        data.sessions.push(record)
+        if (data.sessions.length > 20) data.sessions = data.sessions.slice(-20)
+        data.activeId = record.id
+        persist()
+        return { id: record.id, title: record.title, updatedAt: record.updatedAt, count: 0 }
+      },
+      switchSession: (id: string) => {
+        if (!data.sessions.some((item) => item.id === id)) return false
+        data.activeId = id
+        persist()
+        return true
+      },
+      deleteSession: (id: string) => {
+        const remaining = data.sessions.filter((item) => item.id !== id)
+        if (remaining.length === data.sessions.length) return false
+        data.sessions = remaining.length > 0 ? remaining : [newRecord()]
+        if (!data.sessions.some((item) => item.id === data.activeId)) data.activeId = data.sessions[0].id
+        persist()
+        return true
+      },
+      activeSession: () => data.activeId,
     } satisfies ChatService)
 
     register({

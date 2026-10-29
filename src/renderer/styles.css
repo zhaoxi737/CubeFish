@@ -1332,6 +1332,69 @@ code {
   border-color: #2d3f52;
 }
 
+/* P36：多对话 / 打断 / 补充 / 实时过程 */
+.chat-session-select {
+  flex: 1;
+  min-width: 0;
+  max-width: 46%;
+  background: rgba(13, 19, 27, 0.9);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.bubble-edit {
+  margin-top: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.bubble-edit:hover {
+  color: var(--text);
+  border-color: #2d3f52;
+}
+
+.bubble-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.progress-head {
+  font-weight: 600;
+  color: var(--blue);
+  margin-bottom: 2px;
+}
+
+.progress-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.composer-hint {
+  padding: 4px 14px 0;
+  font-size: 11px;
+  color: var(--blue);
+}
+
+.composer-stop {
+  background: rgba(248, 113, 113, 0.16);
+  border: 1px solid rgba(248, 113, 113, 0.5);
+  color: #fecaca;
+  border-radius: 10px;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
 .bubble-streaming pre::after {
   content: '▋';
   margin-left: 2px;

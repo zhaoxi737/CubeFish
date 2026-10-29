@@ -175,20 +175,33 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
       return instances.get(id) ?? instances.active()
     })
     handle(CH.instancesImport, (zipPath: string, name?: string) => instances.importInstance(zipPath, { name }))
-    handle<ChatReply>(CH.chatSend, async (text: string) => {
+    handle<ChatReply>(CH.chatSend, async (text: string, opts?: { replaceLast?: boolean }) => {
       const win = config.getWindow()
       if (win && !win.isDestroyed()) {
         chat.setStreamSink((chunk) => {
           const target = config.getWindow()
           if (target && !target.isDestroyed()) target.webContents.send(CH.chatDelta, { text: chunk })
         })
+        chat.setProgressSink((event) => {
+          const target = config.getWindow()
+          if (target && !target.isDestroyed()) target.webContents.send(EVT.chatProgress, event)
+        })
       }
       try {
-        return await chat.send(text)
+        return await chat.send(text, opts)
       } finally {
         chat.setStreamSink(null)
+        chat.setProgressSink(null)
       }
     })
+    handle(CH.chatAbort, () => {
+      chat.abort()
+      return { ok: true }
+    })
+    handle(CH.chatSessions, () => ({ active: chat.activeSession(), sessions: chat.sessions() }))
+    handle(CH.chatNewSession, () => chat.newSession())
+    handle(CH.chatSwitchSession, (id: string) => ({ ok: chat.switchSession(id) }))
+    handle(CH.chatDeleteSession, (id: string) => ({ ok: chat.deleteSession(id) }))
     handle(CH.chatHistory, () => chat.history())
     handle(CH.chatClear, () => {
       chat.clearHistory()

@@ -109,6 +109,25 @@ export interface ChatMessage {
   ts: number
 }
 
+/** P36：一个对话会话（可多开） */
+export interface ChatSessionInfo {
+  id: string
+  title: string
+  updatedAt: number
+  count: number
+}
+
+/** P36：AI 工作过程事件（实时显示在对话里） */
+export type ChatProgressEvent =
+  | { type: 'round'; round: number }
+  | { type: 'tool'; tool: string; phase: 'start'; detail?: string }
+  | { type: 'tool'; tool: string; phase: 'end'; ok: boolean; summary?: string }
+
+/** P36：发送选项（replaceLast = 补充/修改上一条用户消息） */
+export interface ChatSendOptions {
+  replaceLast?: boolean
+}
+
 export interface ToolCallTrace {
   id: string
   tool: string

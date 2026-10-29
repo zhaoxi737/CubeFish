@@ -33,6 +33,11 @@ export const CH = {
   authRemove: 'auth:remove',
   chatHistory: 'chat:history',
   chatClear: 'chat:clear',
+  chatAbort: 'chat:abort',
+  chatSessions: 'chat:sessions',
+  chatNewSession: 'chat:new-session',
+  chatSwitchSession: 'chat:switch-session',
+  chatDeleteSession: 'chat:delete-session',
   entitlements: 'entitlement:list',
   eventsSummary: 'events:summary',
   versionsList: 'versions:list',
@@ -89,6 +94,7 @@ export const CH = {
 export const EVT = {
   progress: 'evt:progress',
   gameState: 'evt:game-state',
+  chatProgress: 'evt:chat-progress',
 } as const
 
 export type ChannelName = (typeof CH)[keyof typeof CH]

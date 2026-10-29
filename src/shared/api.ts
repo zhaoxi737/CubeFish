@@ -2,7 +2,10 @@ import type {
   AccountState,
   AccountSummary,
   AppInfo,
+  ChatProgressEvent,
   ChatReply,
+  ChatSendOptions,
+  ChatSessionInfo,
   DeviceCodeInfo,
   LoginStatus,
   ConflictReport,
@@ -168,11 +171,20 @@ export interface QdoApi {
     install(id: string): Promise<{ ok: boolean; pluginId?: string; error?: string }>
   }
   chat: {
-    send(text: string): Promise<ChatReply>
+    send(text: string, opts?: ChatSendOptions): Promise<ChatReply>
     history(): Promise<{ role: 'user' | 'assistant'; text: string }[]>
     clear(): Promise<{ ok: boolean }>
     /** 订阅流式增量；返回取消订阅函数 */
     onDelta(callback: (text: string) => void): () => void
+    /** P36：实时过程事件（工具开始/结束） */
+    onProgress(callback: (event: ChatProgressEvent) => void): () => void
+    /** P36：中断当前请求 */
+    abort(): Promise<{ ok: boolean }>
+    /** P36：多会话 */
+    sessions(): Promise<{ active: string; sessions: ChatSessionInfo[] }>
+    newSession(): Promise<ChatSessionInfo>
+    switchSession(id: string): Promise<{ ok: boolean }>
+    deleteSession(id: string): Promise<{ ok: boolean }>
   }
   dialog: {
     /** 系统文件选择器；kind 决定文件类型过滤 */

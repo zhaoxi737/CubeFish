@@ -100,9 +100,21 @@ const api: QdoApi = {
     install: (id) => ipcRenderer.invoke(CH.marketInstall, id),
   },
   chat: {
-    send: (text) => ipcRenderer.invoke(CH.chatSend, text),
+    send: (text, opts) => ipcRenderer.invoke(CH.chatSend, text, opts),
     history: () => ipcRenderer.invoke(CH.chatHistory),
     clear: () => ipcRenderer.invoke(CH.chatClear),
+    abort: () => ipcRenderer.invoke(CH.chatAbort),
+    sessions: () => ipcRenderer.invoke(CH.chatSessions),
+    newSession: () => ipcRenderer.invoke(CH.chatNewSession),
+    switchSession: (id) => ipcRenderer.invoke(CH.chatSwitchSession, id),
+    deleteSession: (id) => ipcRenderer.invoke(CH.chatDeleteSession, id),
+    onProgress: (callback) => {
+      const listener = (_event: unknown, payload: unknown) => callback(payload as never)
+      ipcRenderer.on(EVT.chatProgress, listener)
+      return () => {
+        ipcRenderer.removeListener(EVT.chatProgress, listener)
+      }
+    },
     onDelta: (callback) => {
       const listener = (_event: unknown, payload: { text?: string }) => callback(payload?.text ?? '')
       ipcRenderer.on(CH.chatDelta, listener)

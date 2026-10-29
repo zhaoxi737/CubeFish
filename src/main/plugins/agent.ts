@@ -2,7 +2,7 @@
  * Agent 循环（P4）：用户自然语言 → 模型 → 工具调用 → 结果 → 模型 → 回答。
  * 这是「AI 真的能操作启动器」的那一层，工具执行与审计在 tools 插件。
  */
-import type { ChatReply, ToolCallTrace } from '../../shared/types'
+import type { ChatProgressEvent, ChatReply, ToolCallTrace } from '../../shared/types'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { LlmMessage, LlmService } from './llm'
 import type { LogService } from './logger'
@@ -70,6 +70,10 @@ export interface AgentRunOptions {
   history?: LlmMessage[]
   /** 流式增量回调（每收到一段文本调用一次） */
   onDelta?: (text: string) => void
+  /** P36：实时过程事件（工具开始/结束、轮次），给界面显示“正在做什么” */
+  onProgress?: (event: ChatProgressEvent) => void
+  /** P36：中断信号（用户点“停止”） */
+  signal?: AbortSignal
 }
 
 export interface AgentService {
@@ -126,9 +130,15 @@ export function createAgentPlugin(): LauncherPlugin<void> {
 
       try {
         for (let round = 0; round < MAX_ROUNDS; round += 1) {
-          const response = options?.onDelta
-            ? await llm.chatStream(messages, tools.specs(), options.onDelta)
-            : await llm.chat(messages, tools.specs())
+          if (options?.signal?.aborted) {
+            return { ok: false, kind: 'error', text: '已停止。', trace }
+          }
+          options?.onProgress?.({ type: 'round', round: round + 1 })
+          const onDelta = options?.onDelta
+          const signal = options?.signal
+          const response = onDelta
+            ? await llm.chatStream(messages, tools.specs(), onDelta, signal)
+            : await llm.chat(messages, tools.specs(), signal)
 
           if (response.toolCalls.length === 0) {
             const text = (response.content ?? '').trim()
@@ -196,14 +206,30 @@ export function createAgentPlugin(): LauncherPlugin<void> {
           })
 
           for (const call of response.toolCalls) {
+            if (options?.signal?.aborted) {
+              return { ok: false, kind: 'error', text: '已停止。', trace }
+            }
             let args: Record<string, unknown> = {}
             try {
               args = JSON.parse(call.arguments || '{}') as Record<string, unknown>
             } catch {
               args = {}
             }
+            options?.onProgress?.({
+              type: 'tool',
+              tool: call.name,
+              phase: 'start',
+              detail: (call.arguments ?? '').replace(/\s+/g, ' ').slice(0, 120),
+            })
             const toolStarted = Date.now()
             const result = await tools.call(call.name, args)
+            options?.onProgress?.({
+              type: 'tool',
+              tool: call.name,
+              phase: 'end',
+              ok: result.ok,
+              summary: result.summary.replace(/\s+/g, ' ').slice(0, 120),
+            })
             trace.push({
               id: call.id,
               tool: call.name,
@@ -230,6 +256,9 @@ export function createAgentPlugin(): LauncherPlugin<void> {
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
+        if (err instanceof Error && (err.name === 'AbortError' || /aborted|abort/i.test(message))) {
+          return { ok: false, kind: 'error', text: '已停止。', trace }
+        }
         log.warn('agent', 'Agent 运行失败', { error: message, trace: trace.length })
         telemetry.record('agent:error', { error: message })
         return { ok: false, kind: 'error', text: message, trace }

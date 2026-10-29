@@ -48,7 +48,7 @@ export interface LlmService {
   available(): boolean
   baseUrl(): string
   model(): string
-  chat(messages: LlmMessage[], tools: LlmToolSpec[]): Promise<LlmResponse>
+  chat(messages: LlmMessage[], tools: LlmToolSpec[], signal?: AbortSignal): Promise<LlmResponse>
   /** 流式对话：每收到一段文本就回调 onDelta；工具调用也支持（聚合分片） */
   chatStream(
     messages: LlmMessage[],
@@ -83,7 +83,7 @@ export function createLlmPlugin(): LauncherPlugin<void> {
       (process.env.QDOQMC_LLM_BASE_URL || settings.get('llmBaseUrl') || 'https://api.deepseek.com/v1').replace(/\/+$/, '')
     const model = (): string => process.env.QDOQMC_LLM_MODEL || settings.get('llmModel') || 'deepseek-chat'
 
-    async function chat(messages: LlmMessage[], tools: LlmToolSpec[]): Promise<LlmResponse> {
+    async function chat(messages: LlmMessage[], tools: LlmToolSpec[], signal?: AbortSignal): Promise<LlmResponse> {
       const apiKey = key()
       if (!apiKey) throw new Error('还没有配置 API Key（设置 → 模型 API Key）')
       const body: Record<string, unknown> = {
@@ -105,7 +105,7 @@ export function createLlmPlugin(): LauncherPlugin<void> {
           authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(90_000),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(90_000)]) : AbortSignal.timeout(90_000),
       })
 
       const text = await res.text()

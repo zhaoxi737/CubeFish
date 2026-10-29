@@ -84,6 +84,8 @@ export interface QdoApi {
     installed(): Promise<string[]>
     /** P28：取消当前安装任务（中止下载并清理 .part） */
     cancel(): Promise<{ ok: boolean; cancelled: boolean }>
+    /** P30：卸载一个已安装的游戏/加载器版本（释放磁盘） */
+    remove(versionId: string): Promise<{ ok: boolean; bytes?: number; error?: string }>
   }
   java: {
     list(): Promise<JavaRuntimeInfo[]>

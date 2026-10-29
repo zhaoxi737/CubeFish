@@ -92,6 +92,7 @@ export function DownloadCenter({
   const [loaderKind, setLoaderKind] = useState<LoaderKind>((instance.loader as LoaderKind) ?? 'vanilla')
   const [loaderVersion, setLoaderVersion] = useState('')
   const [gameBusy, setGameBusy] = useState(false)
+  const [uninstallBusy, setUninstallBusy] = useState<string | null>(null)
 
   const versionOptions = useMemo(() => {
     const list = versions?.versions ?? []
@@ -565,6 +566,29 @@ export function DownloadCenter({
                       {version === gameVersion ? <span className="dc-tag is-ok">当前选中</span> : null}
                       <button type="button" className="ghost tiny" onClick={() => setGameVersion(version)}>
                         选中
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost tiny danger"
+                        disabled={uninstallBusy === version}
+                        onClick={async () => {
+                          if (!window.confirm(`卸载游戏版本「${version}」？这会删除该版本的文件来释放磁盘。`)) return
+                          setUninstallBusy(version)
+                          try {
+                            const result = await window.qdo.versions.remove(version)
+                            if (!result.ok) onNotify(`卸载失败：${result.error ?? '未知错误'}`)
+                            else {
+                              onNotify(`已卸载「${version}」${result.bytes ? `（释放 ${formatBytes(result.bytes)}）` : ''}`)
+                              onRefresh()
+                            }
+                          } catch (err) {
+                            onNotify(`卸载失败：${err instanceof Error ? err.message : String(err)}`)
+                          } finally {
+                            setUninstallBusy(null)
+                          }
+                        }}
+                      >
+                        {uninstallBusy === version ? '卸载中…' : '卸载'}
                       </button>
                     </div>
                   ))

@@ -39,6 +39,7 @@ const api: QdoApi = {
     install: (versionId) => ipcRenderer.invoke(CH.versionInstall, versionId),
     installed: () => ipcRenderer.invoke(CH.versionsInstalled),
     cancel: () => ipcRenderer.invoke(CH.versionCancel),
+    remove: (versionId) => ipcRenderer.invoke(CH.versionRemove, versionId),
   },
   java: {
     list: () => ipcRenderer.invoke(CH.javaList),

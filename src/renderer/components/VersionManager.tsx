@@ -61,19 +61,21 @@ export function VersionManager({ instances, activeId, onClose, onActivate, onRef
 
   const remove = useCallback(
     async (item: InstanceSummary) => {
-      if (item.id === 'default') {
-        onNotify('默认实例不能删除')
-        return
-      }
-      if (!window.confirm(`删除实例「${item.name}」？里面的 mods、存档、配置会一起删除。`)) return
+      const isDefault = item.id === 'default'
+      const hint = isDefault
+        ? `删除默认实例「${item.name}」？里面的 mods、存档、配置会一起删除；删除后会自动重建一个空白默认实例。\n（游戏本体文件不受影响，可在下载中心里单独卸载）`
+        : `删除实例「${item.name}」？里面的 mods、存档、配置会一起删除。\n（游戏本体文件不受影响，可在下载中心里单独卸载）`
+      if (!window.confirm(hint)) return
       setBusy(item.id)
       try {
         const result = await window.qdo.instances.remove(item.id)
         if (!result.ok) onNotify(`删除失败：${result.error ?? '未知错误'}`)
         else {
           await onRefresh()
-          onNotify(`已删除「${item.name}」`)
+          onNotify(isDefault ? '已删除默认实例（已重建空白默认实例）' : `已删除「${item.name}」`)
         }
+      } catch (err) {
+        onNotify(`删除失败：${err instanceof Error ? err.message : String(err)}`)
       } finally {
         setBusy(null)
       }
@@ -195,11 +197,9 @@ export function VersionManager({ instances, activeId, onClose, onActivate, onRef
                   <button type="button" className="ghost tiny" onClick={() => void exportOne(item)}>
                     导出
                   </button>
-                  {item.id !== 'default' ? (
-                    <button type="button" className="ghost tiny danger" onClick={() => void remove(item)} disabled={busy === item.id}>
-                      删除
-                    </button>
-                  ) : null}
+                  <button type="button" className="ghost tiny danger" onClick={() => void remove(item)} disabled={busy === item.id}>
+                    删除
+                  </button>
                 </span>
               </div>
             )

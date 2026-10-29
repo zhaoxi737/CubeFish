@@ -31,6 +31,8 @@ export interface InstancesService {
   ensureDefault(): InstanceSummary
   gameDir(id: string): string
   setVersion(id: string, versionId: string, mcVersion: string, gameVersion?: string, loader?: string): InstanceSummary
+  /** P30：清除实例绑定的版本（卸载版本时用，回到「未装版本」状态） */
+  clearVersion(id: string): void
   setMemory(id: string, memoryMb: number): void
   setPlayerName(id: string, playerName: string): void
   /** 绑定/解绑实例账号（accountId 为空 = 跟随全局账号） */
@@ -228,11 +230,11 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
     }
 
     const remove = (id: string): { ok: boolean; error?: string } => {
-      if (id === DEFAULT_ID) return { ok: false, error: '默认实例不能删除' }
       if (!get(id)) return { ok: false, error: `实例不存在: ${id}` }
       try {
         rmSync(dirOf(id), { recursive: true, force: true })
         if (settings.get('activeInstance') === id) settings.patch({ activeInstance: DEFAULT_ID })
+        // 默认实例删除后，list() 会自动重建一个空白默认实例
         telemetry.record('instance:remove', { id })
         log.info('instances', '已删除实例', { id })
         return { ok: true }
@@ -261,8 +263,18 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
       return toSummary(file)
     }
 
-    const setMemory = (id: string, memoryMb: number): void => {
+    const clearVersion = (id: string): void => {
       const file = read(id)
+      if (!file) return
+      file.versionId = ''
+      file.mcVersion = ''
+      file.gameVersion = ''
+      file.loader = 'vanilla'
+      write(file)
+      log.info('instances', '实例已解绑版本', { id })
+    }
+
+    const setMemory = (id: string, memoryMb: number): void => {      const file = read(id)
       if (!file) return
       file.memoryMb = Math.min(32768, Math.max(512, Math.round(memoryMb)))
       write(file)
@@ -426,6 +438,7 @@ export function createInstancesPlugin(): LauncherPlugin<void> {
       ensureDefault,
       gameDir,
       setVersion,
+      clearVersion,
       setMemory,
       setPlayerName,
       setAccount,

@@ -826,6 +826,41 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
       }
 
       console.log('SMOKE_STEP pack-done')
+
+      // ---- P30：删除实例（覆盖 confirm，点「Smoke Fabric 包」那行的删除） ----
+      let deleteInfo = JSON.stringify({ skipped: true })
+      try {
+        await win.webContents.executeJavaScript(`window.confirm = () => true; 'confirm-patched'`)
+        await win.webContents.executeJavaScript(
+          `(() => { const btn = [...document.querySelectorAll('.version-sidebar button')].find((b) => b.textContent?.trim() === '版本管理'); btn?.click(); return 'vm-open' })()`,
+        )
+        await wait(800)
+        const found = (await win.webContents.executeJavaScript(
+          `(() => {
+             const rows = [...document.querySelectorAll('.vm-row')]
+             const row = rows.find((el) => (el.textContent ?? '').includes('Smoke Fabric'))
+             if (!row) return 'no-row'
+             const btn = [...row.querySelectorAll('button')].find((b) => b.textContent?.trim() === '删除')
+             btn?.click()
+             return 'delete-clicked'
+           })()`,
+        )) as string
+        await wait(1200)
+        const countAfter = (await win.webContents.executeJavaScript(
+          `window.qdo.instances.list().then((list) => JSON.stringify({ count: list.length, names: list.map((x) => x.name) }))`,
+        )) as string
+        const toast = (await win.webContents.executeJavaScript(
+          `document.querySelector('.toast')?.textContent ?? ''`,
+        )) as string
+        deleteInfo = JSON.stringify({ found, countAfter: JSON.parse(countAfter), toast })
+        await win.webContents.executeJavaScript(
+          `(() => { const btn = [...document.querySelectorAll('.dialog-head button')].find((b) => b.textContent?.trim() === '关闭'); btn?.click(); return 'vm-closed' })()`,
+        )
+        await wait(500)
+      } catch (err) {
+        deleteInfo = JSON.stringify({ error: String(err) })
+      }
+
       // 左侧版本栏：点第一张卡片切回默认实例
       await win.webContents.executeJavaScript(
         `(() => { const card = document.querySelector('.ver-card'); card?.click(); return 'card-clicked' })()`,
@@ -878,6 +913,7 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
             screenshot: downloadShot,
           },
           sidebar: JSON.parse(switchInfo),
+          deleteInstance: JSON.parse(deleteInfo),
           curseforge: { info: JSON.parse(cfInfo), screenshot: cfShot },
           chatStatus: chat,
         })}`,

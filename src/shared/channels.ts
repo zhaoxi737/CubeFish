@@ -38,6 +38,7 @@ export const CH = {
   versionInstall: 'version:install',
   versionsInstalled: 'versions:installed',
   versionCancel: 'version:cancel',
+  versionRemove: 'version:remove',
   javaList: 'java:list',
   launchStart: 'launch:start',
   launchStop: 'launch:stop',

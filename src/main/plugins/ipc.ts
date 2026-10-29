@@ -223,6 +223,7 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     })
     handle<string[]>(CH.versionsInstalled, () => mojang.installed())
     handle<{ ok: boolean; cancelled: boolean }>(CH.versionCancel, () => mojang.cancel())
+    handle<{ ok: boolean; bytes?: number; error?: string }>(CH.versionRemove, (versionId: string) => mojang.remove(versionId))
     handle<JavaRuntimeInfo[]>(CH.javaList, () => java.detect())
     handle<LaunchResult>(CH.launchStart, (instanceId?: string) => launch.start(instanceId ?? 'default'))
     handle(CH.launchStop, () => launch.stop())

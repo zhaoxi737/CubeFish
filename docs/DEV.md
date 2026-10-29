@@ -623,6 +623,7 @@ node_modules/.bin/electron . --chat="帮我检查下这个实例有没有冲突"
 | P29 | 用户背景图接入 | `uploads/…png` → `art/bg-user.jpg`（1920×1079, 306KB），构建自动打包 |
 | P30 | CurseForge 内容源 + Key 测试 | 真机真 Key：搜索 20 条真实结果（GeckoLib / JEI / Cloth Config…）带 CurseForge 徽章；`testCurseForge` = 基础 OK / 详情 OK / 搜索 OK（884–1208ms）；`source:'all'` 合并两源；mock 下 `install cf-111` 落盘 `cf-fake-mod.jar` 且 content.json 记录 `source:'curseforge'` |
 | P30 | 设置页新增 CurseForge Key + 测试按钮 | 输入框（密码型）+ 三项分报结果；无 Key / 403 时给中文提示，不影响 Modrinth |
+| P30 | 实例删除 + 游戏版本卸载 | smoke 实测：版本管理点「删除」删掉「Smoke Fabric 包」实例（count 3→2，toast 已删除）；新增 `versions.remove` 卸载版本文件并解绑实例、释放磁盘 |
 
 > 汇总口径：每阶段都跑过 `npm run smoke` 与打包版 `--smoke`；涉及游戏启动的阶段有真实窗口标题与启动标记日志。
 > P28 另附 `scripts/p28-check.mjs`（下载器/镜像/分片实测，不启动 UI）和 [docs/P28-NOTES.md](P28-NOTES.md)（实现与实测数据）。

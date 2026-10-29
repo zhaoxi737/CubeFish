@@ -9,7 +9,7 @@
  * - PCL 式加权阶段进度（version 5% / libraries 30% / assets 60% / logging 5%），200ms 节流。
  */
 import { existsSync } from 'node:fs'
-import { readdir } from 'node:fs/promises'
+import { readdir, rm, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type {
@@ -251,6 +251,8 @@ export interface MojangService {
   list(type?: VersionType | 'all'): Promise<VersionList>
   versionJson(versionId: string, signal?: AbortSignal): Promise<VersionJson>
   installed(): Promise<string[]>
+  /** P30：卸载一个已安装的游戏/加载器版本（删除 versions/<id>，释放磁盘） */
+  remove(versionId: string): Promise<{ ok: boolean; bytes?: number; error?: string }>
   install(versionId: string, taskId: string): Promise<InstallResult>
   /** P28：取消当前安装任务（中止下载，清理 .part） */
   cancel(): Promise<{ ok: boolean; cancelled: boolean }>
@@ -387,6 +389,54 @@ export function createMojangPlugin(): LauncherPlugin<void> {
           .map((e) => e.name)
       } catch {
         return []
+      }
+    }
+
+    async function dirSize(dir: string): Promise<number> {
+      let total = 0
+      const walk = async (current: string): Promise<void> => {
+        const entries = await readdir(current, { withFileTypes: true })
+        for (const entry of entries) {
+          const child = path.join(current, entry.name)
+          if (entry.isDirectory()) await walk(child)
+          else {
+            try {
+              total += (await stat(child)).size
+            } catch {
+              /* 忽略被占用的文件 */
+            }
+          }
+        }
+      }
+      await walk(dir)
+      return total
+    }
+
+    async function remove(versionId: string): Promise<{ ok: boolean; bytes?: number; error?: string }> {
+      try {
+        if (!/^[A-Za-z0-9_.+-]+$/.test(versionId)) return { ok: false, error: `非法版本名: ${versionId}` }
+        const dir = path.join(paths.versions, versionId)
+        if (!existsSync(dir)) return { ok: false, error: `这个版本还没安装: ${versionId}` }
+        const bytes = await dirSize(dir)
+        await rm(dir, { recursive: true, force: true })
+        // 解绑所有指向这个版本的实例，避免它们挂在一个已删除的版本上
+        try {
+          const instancesSvc = ctx.get('instances') as { list(): { id: string; versionId?: string }[]; clearVersion?: (id: string) => void } | undefined
+          if (instancesSvc?.clearVersion) {
+            for (const inst of instancesSvc.list()) {
+              if (inst.versionId === versionId) instancesSvc.clearVersion(inst.id)
+            }
+          }
+        } catch {
+          /* 解绑失败不阻断卸载 */
+        }
+        telemetry.record('version:remove', { versionId, bytes })
+        log.info('mojang', '已卸载游戏版本', { versionId, bytes })
+        return { ok: true, bytes }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        log.error('mojang', '卸载游戏版本失败', { versionId, error: message })
+        return { ok: false, error: message }
       }
     }
 
@@ -793,6 +843,7 @@ export function createMojangPlugin(): LauncherPlugin<void> {
       list,
       versionJson,
       installed,
+      remove,
       install,
       cancel,
       setProgressSink: (next) => {

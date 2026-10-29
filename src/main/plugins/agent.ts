@@ -121,9 +121,10 @@ export function createAgentPlugin(): LauncherPlugin<void> {
 
           if (response.toolCalls.length === 0) {
             const text = (response.content ?? '').trim()
+            const usedTools = trace.length > 0
             // P34：模型只回了文字但用户明显要操作/在问能力/它在否认能力 → 纠正一次再试
             const denies = ABILITY_DENIALS.some((word) => text.includes(word))
-            if (!nudged && (wantsAction(userText) || capabilityQuestion(userText) || denies)) {
+            if (!nudged && !usedTools && (wantsAction(userText) || capabilityQuestion(userText) || denies)) {
               nudged = true
               log.info('agent', '模型未调用工具，追加一次纠正提示', {
                 rounds: round,
@@ -137,8 +138,8 @@ export function createAgentPlugin(): LauncherPlugin<void> {
               })
               continue
             }
-            // 已经纠正过一次仍然不调工具：多半是当前模型不支持 function calling
-            if (nudged && (wantsAction(userText) || denies)) {
+            // 纠正过一次、且一个工具都没调成：多半是当前模型不支持 function calling
+            if (!usedTools && (wantsAction(userText) || denies)) {
               return {
                 ok: false,
                 kind: 'error',

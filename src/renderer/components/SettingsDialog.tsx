@@ -467,19 +467,25 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
               spellCheck={false}
             />
             <span className="field-hint">
-              要让 AI 动手（写插件/读写文件/装模组）必须用支持工具调用的模型，推荐 deepseek-chat；deepseek-reasoner 可能不支持工具调用，只适合纯聊天。
+              要让 AI 动手（写插件/读写文件/装模组）必须用支持工具调用的模型。harness 同款的 deepseek-v4-pro / deepseek-flash 已验证支持工具调用，效果最好。
             </span>
           </label>
 
           <label className="field">
             <span className="field-label">快速切换模型</span>
             <select
-              value={['deepseek-chat', 'deepseek-reasoner'].includes(draft.llmModel) ? draft.llmModel : '__custom__'}
+              value={
+                ['deepseek-v4-pro', 'deepseek-flash', 'deepseek-chat', 'deepseek-reasoner'].includes(draft.llmModel)
+                  ? draft.llmModel
+                  : '__custom__'
+              }
               onChange={(event) => {
                 if (event.target.value !== '__custom__') update('llmModel', event.target.value)
               }}
             >
-              <option value="deepseek-chat">deepseek-chat（支持工具调用，推荐）</option>
+              <option value="deepseek-v4-pro">deepseek-v4-pro（harness 同款，推荐）</option>
+              <option value="deepseek-flash">deepseek-flash（harness 同款，更快）</option>
+              <option value="deepseek-chat">deepseek-chat（通用）</option>
               <option value="deepseek-reasoner">deepseek-reasoner（推理强，可能不支持工具调用）</option>
               <option value="__custom__">自定义（用上面的「模型名」）</option>
             </select>

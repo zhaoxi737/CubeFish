@@ -18,6 +18,7 @@ import type { AuthService } from './auth'
 import type { LoadersService } from './loaders'
 import type { LogService } from './logger'
 import type { MojangService } from './mojang'
+import type { PluginHostService } from './plugin-host'
 import type { TelemetryService } from './telemetry'
 
 export interface ToolResult {
@@ -67,6 +68,13 @@ export function createToolsPlugin(): LauncherPlugin<void> {
     const launch = use<LaunchService>(ctx, 'launch')
     const log = use<LogService>(ctx, 'log')
     const telemetry = use<TelemetryService>(ctx, 'telemetry')
+
+    // 懒取 pluginHost：它依赖 tools，不能在 tools 初始化时反向 use（会成环）
+    const host = (): PluginHostService => {
+      const svc = ctx.get('pluginHost') as PluginHostService | undefined
+      if (!svc) throw new Error('插件宿主尚未就绪')
+      return svc
+    }
 
     const registry = new Map<string, ToolDefinition>()
 
@@ -411,6 +419,70 @@ export function createToolsPlugin(): LauncherPlugin<void> {
         }
         const result = await diagnose.applyFix(instanceId, fixId)
         return { ok: result.ok, summary: result.message }
+      },
+    })
+
+    register({
+      name: 'list_plugins',
+      description: '列出本机已安装的插件及其状态（id、名称、是否加载、注册了哪些工具/命令）。',
+      parameters: EMPTY_PARAMS,
+      async handler() {
+        const plugins = host().list()
+        if (plugins.length === 0) return { ok: true, summary: '本机还没有安装任何插件' }
+        const summary = plugins
+          .map(
+            (p) =>
+              `${p.id}（${p.name}）· 加载=${p.loaded ? '是' : '否'} · 工具=${(p.tools ?? []).join(',') || '无'} · 命令=${(p.commands ?? []).join(',') || '无'}`,
+          )
+          .join('\n')
+        return { ok: true, summary, data: plugins }
+      },
+    })
+
+    register({
+      name: 'write_plugin',
+      description:
+        '写并安装一个新插件，给启动器增加新能力（自我扩展 / 自己写插件）。插件是一个 ESM 模块，导出 apply(api)。参数 code 是完整的 index.mjs 源码；id 要唯一。',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: '插件 id，小写字母/数字/._-，唯一' },
+          name: { type: 'string', description: '显示名' },
+          description: { type: 'string', description: '这个插件做什么' },
+          code: { type: 'string', description: '完整 index.mjs 源码，导出 export function apply(api)' },
+          permissions: { type: 'array', items: { type: 'string', enum: ['read', 'net', 'exec'] }, description: '权限，默认 []' },
+        },
+        required: ['id', 'name', 'code'],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const info = await host().installFromSource({
+          id: str(args.id),
+          name: str(args.name),
+          description: str(args.description),
+          permissions: (Array.isArray(args.permissions) ? args.permissions : []).map(String) as never,
+          code: str(args.code),
+        })
+        return {
+          ok: true,
+          summary: `插件 ${info.id} 已安装并加载。注册工具：${(info.tools ?? []).join(', ') || '无'}；命令：${(info.commands ?? []).join(', ') || '无'}`,
+          data: info,
+        }
+      },
+    })
+
+    register({
+      name: 'remove_plugin',
+      description: '卸载并删除一个插件（id 见 list_plugins）。',
+      parameters: {
+        type: 'object',
+        properties: { id: { type: 'string', description: '插件 id' } },
+        required: ['id'],
+        additionalProperties: false,
+      },
+      async handler(args) {
+        const result = await host().remove(str(args.id))
+        return result.ok ? { ok: true, summary: `插件 ${String(args.id)} 已删除` } : { ok: false, summary: result.error ?? '删除失败' }
       },
     })
 

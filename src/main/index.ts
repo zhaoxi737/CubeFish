@@ -43,6 +43,7 @@ import {
   runToolsCli,
   runUpdateApplyCli,
   runUpdateDownloadCli,
+  runP32CheckCli,
 } from './cli'
 
 const { app, BrowserWindow, shell } = electron
@@ -92,6 +93,7 @@ const forgeTarget = argValue('forge')
 const fixesMode = process.argv.includes('--fixes')
 const applyFixTarget = argValue('apply-fix')
 const callToolTarget = argValue('call-tool')
+const p32CheckMode = process.argv.includes('--check-p32')
 const bindAccountTarget = argValue('bind-account')
 const bindInstanceTarget = argValue('bind-instance')
 const unbindAccountMode = process.argv.includes('--unbind-account')
@@ -882,6 +884,44 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
         `JSON.stringify({ active: document.querySelector('.ver-card.is-active .ver-card-name')?.textContent ?? '', toast: document.querySelector('.toast')?.textContent ?? '', cards: document.querySelectorAll('.ver-card').length })`,
       )) as string
 
+      // ---- P32：AI 写插件 / 自升级（不依赖 LLM，直接走 tools 服务验证整条链路） ----
+      let p32 = JSON.stringify({ skipped: true })
+      try {
+        const toolsSvc = k.ctx.get('tools') as {
+          call(name: string, args: unknown): Promise<{ ok: boolean; summary: string; data?: unknown }>
+        }
+        const pluginCode = [
+          'export function apply(api) {',
+          '  api.registerTool({',
+          '    name: "smoke_ai_tool",',
+          '    description: "AI 写插件的冒烟工具",',
+          '    parameters: { type: "object", properties: {}, additionalProperties: false },',
+          '    async handler() { return { ok: true, summary: "AI 插件工作正常" } },',
+          '  })',
+          '}',
+        ].join('\n')
+        const installed = await toolsSvc.call('write_plugin', {
+          id: 'smoke-ai-plugin',
+          name: 'AI 写插件测试',
+          description: '冒烟：AI 生成的插件',
+          code: pluginCode,
+        })
+        const listed = await toolsSvc.call('list_plugins', {})
+        const invoked = await toolsSvc.call('smoke_ai_tool', {})
+        const removed = await toolsSvc.call('remove_plugin', { id: 'smoke-ai-plugin' })
+        p32 = JSON.stringify({
+          installOk: installed.ok,
+          installSummary: installed.summary,
+          pluginCount: Array.isArray(listed.data) ? listed.data.length : -1,
+          invokeOk: invoked.ok,
+          invokeSummary: invoked.summary,
+          removeOk: removed.ok,
+        })
+      } catch (err) {
+        p32 = JSON.stringify({ error: String(err) })
+      }
+      console.log(`P32_CHECK ${p32}`)
+
 
       const info = k.ctx.get('appMeta') as { version?: string } | undefined
       console.log(
@@ -926,6 +966,7 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
           },
           sidebar: JSON.parse(switchInfo),
           deleteInstance: JSON.parse(deleteInfo),
+          p32: JSON.parse(p32),
           curseforge: { info: JSON.parse(cfInfo), screenshot: cfShot },
           chatStatus: chat,
         })}`,
@@ -1071,6 +1112,11 @@ if (!gotLock) {
       }
       if (callToolTarget) {
         const code = await runCallToolCli(kernel, callToolTarget)
+        app.exit(code)
+        return
+      }
+      if (p32CheckMode) {
+        const code = await runP32CheckCli(kernel)
         app.exit(code)
         return
       }

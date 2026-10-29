@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 插件宿主（P5 → P15 沙箱化）。
  *
  * 插件目录：<data>/plugins/<id>/  （plugin.json + index.mjs）
@@ -10,12 +10,13 @@
  *  - 能力边界仍是「进程隔离 + 受限桥接」，不是 capability 级沙箱（插件进程内仍有 Node 能力）。
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import path from 'node:path'
 import { fork, type ChildProcess } from 'node:child_process'
 import type { PluginInfo, PluginManifest, PluginPermission } from '../../shared/types'
 import type { SandboxCommandDef, SandboxToolDef, SandboxWorkerMessage } from '../../shared/plugin-sandbox'
-import { writeJsonAtomic, stripBom } from '../lib/fsx'
+import { writeJsonAtomic, writeTextAtomic, stripBom } from '../lib/fsx'
 import { definePlugin, use, type LauncherPlugin } from '../plugin-kit'
 import type { ChatService, CommandSpec } from './chat'
 import type { LogService } from './logger'
@@ -71,6 +72,17 @@ export interface PluginHostService {
   unload(id: string): Promise<PluginInfo>
   reload(id: string): Promise<PluginInfo>
   setGranted(id: string, granted: boolean): Promise<PluginInfo>
+  /** P32：从源码安装/升级一个插件（AI 写插件 / 自升级用），加载失败自动回滚 */
+  installFromSource(input: {
+    id: string
+    name?: string
+    description?: string
+    version?: string
+    permissions?: PluginPermission[]
+    code: string
+  }): Promise<PluginInfo>
+  /** P32：卸载并删除插件目录 */
+  remove(id: string): Promise<{ ok: boolean; error?: string }>
   /** 等待启动时的自动加载全部结束（内核 boot 后调用） */
   init(): Promise<PluginInfo[]>
   /** 应用退出前调用：把 worker 退出视为预期，避免误报崩溃 */
@@ -483,6 +495,70 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
       return unload(id)
     }
 
+    /** P32：从源码安装/升级插件。校验 id / 代码体积 → 写 plugin.json + index.mjs → 加载，失败回滚。 */
+    const installFromSource = async (input: {
+      id: string
+      name?: string
+      description?: string
+      version?: string
+      permissions?: PluginPermission[]
+      code: string
+    }): Promise<PluginInfo> => {
+      const id = String(input.id ?? '').trim()
+      if (!/^[a-z0-9][a-z0-9._-]*$/.test(id)) throw new Error(`插件 id 不合法（小写字母/数字/._- 开头）: ${id}`)
+      const code = String(input.code ?? '').trim()
+      if (!code) throw new Error('插件代码不能为空')
+      if (code.length > 64 * 1024) throw new Error(`插件代码超过 64KB 上限（当前 ${code.length} 字节）`)
+      const permissions = (input.permissions ?? []).filter((p): p is PluginPermission => VALID_PERMISSIONS.includes(p as PluginPermission))
+
+      const dir = path.join(pluginsDir, id)
+      const manifest: PluginManifest = {
+        id,
+        name: (input.name ?? '').trim() || id,
+        version: (input.version ?? '').trim() || '1.0.0',
+        apiVersion: 1,
+        main: 'index.mjs',
+        description: input.description?.trim(),
+        author: 'AI',
+        permissions,
+      }
+
+      // 已加载 → 先卸载（= 自升级覆盖）
+      if (loaded.has(id)) await unload(id)
+      mkdirSync(dir, { recursive: true })
+      await writeJsonAtomic(path.join(dir, 'plugin.json'), manifest)
+      await writeTextAtomic(path.join(dir, 'index.mjs'), `${code}\n`)
+
+      try {
+        const info = await load(id)
+        telemetry.record('plugin:ai-install', { id, tools: info.tools.length, commands: info.commands.length })
+        log.info('plugin-host', 'AI 已安装/升级插件', { id, tools: info.tools, commands: info.commands })
+        return info
+      } catch (err) {
+        // 回滚：删掉刚写的目录，别留一个加载不起来的插件
+        await rm(dir, { recursive: true, force: true }).catch(() => undefined)
+        scan()
+        const message = err instanceof Error ? err.message : String(err)
+        throw new Error(`插件安装失败（已回滚）：${message}`)
+      }
+    }
+
+    const remove = async (id: string): Promise<{ ok: boolean; error?: string }> => {
+      try {
+        if (loaded.has(id)) await unload(id)
+        const dir = path.join(pluginsDir, id)
+        if (existsSync(dir)) await rm(dir, { recursive: true, force: true })
+        delete grants[id]
+        await persistGrants()
+        scan()
+        telemetry.record('plugin:remove', { id })
+        log.info('plugin-host', '插件已删除', { id })
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+
     ctx.provide('pluginHost', {
       dir: () => pluginsDir,
       list,
@@ -490,6 +566,8 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
       unload,
       reload,
       setGranted,
+      installFromSource,
+      remove,
       init: async () => {
         await ready
         scan()

@@ -627,6 +627,7 @@ node_modules/.bin/electron . --chat="帮我检查下这个实例有没有冲突"
 | P31 | 主界面重构：左侧栏=版本列表+版本卡+启动，中间留空，两侧可收起 | 顶栏去掉「模组/版本」；中间只剩更新横幅/退出诊断；左右侧栏都可收起；smoke 87s 通过 |
 | P31 | 设置：个性化 + 启动选项 + Java + 高性能显卡 + 版本隔离 | 设置页新增 7 组：个性化（标题/主题色/背景图）、启动选项（宽高/全屏/JVM）、Java（列出 4 个/选择/手动添加）、显卡开关（写 UserGpuPreferences）、版本隔离开关；settings smoke 断言 title/accent/gpu/javaRadios 全 true |
 | P31 | 下载中心增量显示 | `source:'all'` 先出 Modrinth、CurseForge 到了再补（不再等慢源） |
+| P32 | AI 写插件 / 自升级（harness 内核） | 新增 `write_plugin`/`list_plugins`/`remove_plugin` 三个 AI 工具 + `plugin-host.installFromSource/remove`（写 plugin.json+index.mjs → 沙箱加载 → 失败回滚）+ agent 系统提示教模型自我扩展；`--check-p32` 单进程实测：写→列出(2 个)→调 `smoke_ai_tool`(返回「AI 插件工作正常」)→删除，全绿且不烧模型 Key |
 
 > 汇总口径：每阶段都跑过 `npm run smoke` 与打包版 `--smoke`；涉及游戏启动的阶段有真实窗口标题与启动标记日志。
 > P28 另附 `scripts/p28-check.mjs`（下载器/镜像/分片实测，不启动 UI）和 [docs/P28-NOTES.md](P28-NOTES.md)（实现与实测数据）。

@@ -23,6 +23,38 @@ import type { UpdaterService } from './plugins/updater'
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+/** P32：单进程内验证「AI 写插件」整条链路（写 → 列出 → 调工具 → 删除），不烧模型 Key。 */
+export async function runP32CheckCli(kernel: Kernel): Promise<number> {
+  const tools = kernel.ctx.get('tools') as ToolsService
+  const pluginCode = [
+    'export function apply(api) {',
+    '  api.registerTool({',
+    '    name: "smoke_ai_tool",',
+    '    description: "AI 写插件的冒烟工具",',
+    '    parameters: { type: "object", properties: {}, additionalProperties: false },',
+    '    async handler() { return { ok: true, summary: "AI 插件工作正常" } },',
+    '  })',
+    '}',
+  ].join('\n')
+
+  const result: Record<string, unknown> = {}
+  const installed = await tools.call('write_plugin', {
+    id: 'smoke-ai-plugin',
+    name: 'AI 写插件测试',
+    description: '冒烟',
+    code: pluginCode,
+  })
+  result.install = { ok: installed.ok, summary: installed.summary }
+  const listed = await tools.call('list_plugins', {})
+  result.pluginCount = Array.isArray(listed.data) ? listed.data.length : -1
+  const invoked = await tools.call('smoke_ai_tool', {})
+  result.invoke = { ok: invoked.ok, summary: invoked.summary }
+  const removed = await tools.call('remove_plugin', { id: 'smoke-ai-plugin' })
+  result.remove = { ok: removed.ok, summary: removed.summary }
+  console.log(`P32_CHECK_RESULT ${JSON.stringify(result)}`)
+  return installed.ok && invoked.ok && removed.ok ? 0 : 1
+}
+
 export async function runInstallCli(kernel: Kernel, versionId: string): Promise<number> {
   const mojang = kernel.ctx.get('mojang') as MojangService
   let lastStage = ''

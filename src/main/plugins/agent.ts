@@ -10,7 +10,9 @@ import type { SettingsService } from './settings'
 import type { TelemetryService } from './telemetry'
 import type { ToolsService } from './tools'
 
-const MAX_ROUNDS = 10
+const MAX_ROUNDS = 24
+/** 到这个轮数还没收敛，就提醒模型直接用已有信息回答（只提醒一次） */
+const SYNTHESIS_ROUND = 12
 
 const SYSTEM_PROMPT = `你是 QDOQMC（Minecraft 启动器）里的助手，直接操作启动器帮用户做事。
 规则：
@@ -61,6 +63,7 @@ export function apply(api) {
 工作方式（重要）：
 1. 先判断用户要的是「操作」还是「问答」。要操作就先调工具，别只回文字。
 2. 多步任务先在心里列计划，再一步步做；每步做完用工具结果验证（比如写完文件读回来确认）。
+2.1 要果断：同一件事最多试 2 次，别反复调同一个工具或做无关探索；拿到能回答的信息就停手回答。工具失败就换方法或直接告诉用户，不要死磕。
 3. 用户纠正你时，先照做，不要辩解，也不要说「我做不到」——先看 list_tools 里有没有对应工具。
 4. 用户明确说「记住…」时用 remember 存下来；开始时如果相关，用 recall 查一下偏好。
 5. 回答简短、给结果和下一步，不要输出 JSON 或内部细节。`
@@ -127,6 +130,9 @@ export function createAgentPlugin(): LauncherPlugin<void> {
       const trace: ToolCallTrace[] = []
       const started = Date.now()
       let nudged = false
+      let synthNudged = false
+      let lastContent = ''
+      const callCounts = new Map<string, number>()
 
       try {
         for (let round = 0; round < MAX_ROUNDS; round += 1) {
@@ -139,6 +145,7 @@ export function createAgentPlugin(): LauncherPlugin<void> {
           const response = onDelta
             ? await llm.chatStream(messages, tools.specs(), onDelta, signal)
             : await llm.chat(messages, tools.specs(), signal)
+          if (response.content) lastContent = response.content
 
           if (response.toolCalls.length === 0) {
             const text = (response.content ?? '').trim()
@@ -223,6 +230,19 @@ export function createAgentPlugin(): LauncherPlugin<void> {
             })
             const toolStarted = Date.now()
             const result = await tools.call(call.name, args)
+            // P37：同名同参重复调用 ≥3 次 = 死循环，直接停，别耗到轮数上限
+            const signature = `${call.name}:${call.arguments ?? ''}`
+            const repeats = (callCounts.get(signature) ?? 0) + 1
+            callCounts.set(signature, repeats)
+            if (repeats >= 3) {
+              log.warn('agent', '检测到重复工具调用，提前收敛', { tool: call.name, repeats })
+              return {
+                ok: false,
+                kind: 'error',
+                text: `我卡在重复调用「${call.name}」上了（同样参数 3 次），先停下。上一个结果：${result.summary.slice(0, 200)}`,
+                trace,
+              }
+            }
             options?.onProgress?.({
               type: 'tool',
               tool: call.name,
@@ -245,13 +265,28 @@ export function createAgentPlugin(): LauncherPlugin<void> {
               content: result.summary,
             })
           }
+
+          // P37：调了太多工具还没收敛 → 提醒一次“直接用已有信息回答”
+          if (!synthNudged && round + 1 >= SYNTHESIS_ROUND) {
+            synthNudged = true
+            log.info('agent', '轮数较多，要求模型收敛回答', { round: round + 1, tools: trace.length })
+            messages.push({
+              role: 'user',
+              content:
+                '（系统提示：你已经调用了较多工具。请立刻基于已经拿到的结果回答用户，不要再调用任何工具；信息确实不够就说明还缺什么，并给用户下一步建议。）',
+            })
+          }
         }
 
         telemetry.record('agent:max-rounds', { tools: trace.length })
+        const lastSteps = trace
+          .slice(-3)
+          .map((item) => `· ${item.ok ? '✓' : '✕'} ${item.tool}：${item.summary.slice(0, 60)}`)
+          .join('\n')
         return {
           ok: false,
           kind: 'error',
-          text: '这一步操作太复杂，我调了太多工具还没收敛。你可以拆成更具体的要求，比如“先检查冲突”。',
+          text: `我执行了 ${trace.length} 步还没收敛，先停下以免死循环。\n最近做的：\n${lastSteps || '（没有成功执行任何工具）'}\n${lastContent ? `\n我最后想到的：${lastContent.slice(0, 200)}` : ''}\n\n你可以把要求拆小一点再说一次（比如「先只检查冲突」「先只读 options.txt」）。`,
           trace,
         }
       } catch (err) {

@@ -172,6 +172,9 @@ export function DownloadCenter({
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [source, setSource] = useState<'all' | 'modrinth' | 'curseforge'>('all')
+  const [offset, setOffset] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
+  const [moreBusy, setMoreBusy] = useState(false)
   const [installed, setInstalled] = useState<InstalledContent[]>([])
   const [busyId, setBusyId] = useState<string | null>(null)
   const [preview, setPreview] = useState<ContentPreview | null>(null)
@@ -196,6 +199,7 @@ export function DownloadCenter({
       if (!contentKind) return
       setSearching(true)
       setError(null)
+      setOffset(0)
       try {
         const baseOpts = { type: contentKind, mcVersion, loader: loaderFilter, limit: 20 }
         if (source === 'all') {
@@ -203,6 +207,7 @@ export function DownloadCenter({
           setHits([])
           const modrinth = await window.qdo.content.search(text, { ...baseOpts, source: 'modrinth' })
           setHits(modrinth)
+          setHasMore(modrinth.length >= 20)
           const curseforge = await window.qdo.content
             .search(text, { ...baseOpts, source: 'curseforge' })
             .catch(() => [] as SearchHit[])
@@ -218,6 +223,7 @@ export function DownloadCenter({
         } else {
           const result = await window.qdo.content.search(text, { ...baseOpts, source })
           setHits(result)
+          setHasMore(result.length >= 20)
           if (result.length === 0) {
             const noKey = source !== 'modrinth' && !settings?.curseforgeApiKey
             setError(noKey ? `${KIND_LABEL[contentKind]}没搜到：CurseForge 需要先在设置里填 API Key` : `没有搜到${KIND_LABEL[contentKind]}（先确认实例已绑定游戏版本）`)
@@ -231,6 +237,35 @@ export function DownloadCenter({
     },
     [contentKind, loaderFilter, mcVersion, settings?.curseforgeApiKey, source],
   )
+
+  const loadMore = useCallback(async () => {
+    if (!contentKind || moreBusy) return
+    setMoreBusy(true)
+    try {
+      const nextOffset = offset + 20
+      const result = await window.qdo.content.search(queryRef.current, {
+        type: contentKind,
+        mcVersion,
+        loader: loaderFilter,
+        limit: 20,
+        offset: nextOffset,
+        source,
+      })
+      setHits((prev) => {
+        const merged = [...prev]
+        for (const item of result) {
+          if (!merged.some((existing) => existing.projectId === item.projectId)) merged.push(item)
+        }
+        return merged
+      })
+      setOffset(nextOffset)
+      setHasMore(result.length >= 20)
+    } catch (err) {
+      onNotify(`加载更多失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setMoreBusy(false)
+    }
+  }, [contentKind, loaderFilter, mcVersion, moreBusy, offset, onNotify, source])
 
   useEffect(() => {
     if (!contentKind) return
@@ -703,6 +738,14 @@ export function DownloadCenter({
                     )
                   })}
                 </div>
+
+                {hasMore ? (
+                  <div className="dc-more">
+                    <button type="button" className="ghost" onClick={() => void loadMore()} disabled={moreBusy}>
+                      {moreBusy ? '加载中…' : '加载更多'}
+                    </button>
+                  </div>
+                ) : null}
 
                 {installedForKind.length > 0 ? (
                   <div className="dc-installed">

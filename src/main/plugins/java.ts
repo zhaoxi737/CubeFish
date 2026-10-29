@@ -41,6 +41,8 @@ export interface JavaService {
   addManual(exePath: string): Promise<JavaRuntimeInfo>
   /** P31：把首选 Java 设为指定路径（写入 settings.preferredJavaPath） */
   setPreferred(exePath: string): void
+  /** P31：手动下载指定主版本的 Mojang 官方 Java 运行时（8/16/17/21/25） */
+  installRuntime(major: number): Promise<JavaRuntimeInfo>
 }
 
 function parseMajor(version: string): number {
@@ -278,6 +280,27 @@ export function createJavaPlugin(): LauncherPlugin<void> {
       log.info('java', '已设置首选 Java', { path: exePath.trim() })
     }
 
+    /** 主版本 → Mojang 运行时组件名（Minecraft 版本 JSON 里 javaVersion.component 的实际取值） */
+    const COMPONENT_BY_MAJOR: Record<number, string> = {
+      8: 'jre-legacy',
+      16: 'java-runtime-alpha',
+      17: 'java-runtime-beta',
+      21: 'java-runtime-gamma',
+      25: 'java-runtime-delta',
+    }
+
+    async function installRuntime(major: number): Promise<JavaRuntimeInfo> {
+      const component = COMPONENT_BY_MAJOR[major]
+      if (!component) {
+        throw new Error(`暂不支持自动下载 Java ${major}，请手动添加；支持的版本：8 / 16 / 17 / 21 / 25`)
+      }
+      const info = await ensure(component, major, `java-install-${major}-${Date.now()}`)
+      settings.patch({ preferredJavaPath: info.path })
+      cache = null
+      log.info('java', '已下载并设为首选 Java', { major: info.major, path: info.path })
+      return info
+    }
+
     ctx.provide('java', {
       detect,
       select,
@@ -287,6 +310,7 @@ export function createJavaPlugin(): LauncherPlugin<void> {
       },
       addManual,
       setPreferred,
+      installRuntime,
     } satisfies JavaService)
   })
 }

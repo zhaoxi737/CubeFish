@@ -157,6 +157,10 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle<InstanceSummary>(CH.instancesActivate, (id: string) => instances.setActive(id))
     handle(CH.instancesExport, (id?: string, dest?: string) => instances.exportInstance(id, dest))
     handle<InstanceSummary>(CH.instancesRename, (id: string, name: string) => instances.rename(id, name))
+    handle<{ ok: boolean }>(CH.instancesSetMemory, (id: string, memoryMb: number) => {
+      instances.setMemory(id, memoryMb)
+      return { ok: true }
+    })
     handle(CH.instancesFolders, (id: string) => instances.folders(id))
     handle(CH.instancesOpenFolder, async (id: string, kind: 'root' | 'game' | 'mods' | 'logs') => {
       const folders = instances.folders(id)
@@ -241,6 +245,7 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
       java.setPreferred(exePath)
       return { ok: true }
     })
+    handle<JavaRuntimeInfo>(CH.javaInstallRuntime, (major: number) => java.installRuntime(major))
     handle<{ ok: boolean; applied: number; message?: string }>(CH.gpuSet, (enabled: boolean) => gpu.setEnabled(enabled))
     handle<{ enabled: boolean; entries: number }>(CH.gpuStatus, () => gpu.status())
     handle<LaunchResult>(CH.launchStart, (instanceId?: string) => launch.start(instanceId ?? 'default'))
@@ -255,6 +260,7 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
           mcVersion?: string
           loader?: string
           limit?: number
+          offset?: number
           source?: 'modrinth' | 'curseforge' | 'all'
         },
       ) =>
@@ -263,6 +269,7 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
           mcVersion: opts?.mcVersion,
           loader: opts?.loader,
           limit: opts?.limit,
+          offset: opts?.offset,
           source: opts?.source,
         }),
     )

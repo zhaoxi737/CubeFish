@@ -73,6 +73,8 @@ export interface QdoApi {
     /** 绑定/解绑实例账号（accountId 为空 = 跟随全局账号） */
     bindAccount(id: string, accountId?: string, accountName?: string): Promise<InstanceSummary>
     rename(id: string, name: string): Promise<InstanceSummary>
+    /** P31：单独设置实例内存（MB） */
+    setMemory(id: string, memoryMb: number): Promise<{ ok: boolean }>
     folders(id: string): Promise<{ root: string; game: string; mods: string; logs: string; versions: string }>
     /** 在资源管理器中打开实例的某个目录 */
     openFolder(id: string, kind: 'root' | 'game' | 'mods' | 'logs'): Promise<{ ok: boolean; path?: string; error?: string }>
@@ -93,6 +95,8 @@ export interface QdoApi {
     addManual(path: string): Promise<JavaRuntimeInfo>
     /** P31：设为首选 Java */
     setPreferred(path: string): Promise<{ ok: boolean }>
+    /** P31：下载指定主版本的 Mojang 官方 Java 运行时（8/16/17/21/25）并设为首选 */
+    installRuntime(major: number): Promise<JavaRuntimeInfo>
   }
   gpu: {
     /** P31：立即把高性能显卡启用状态应用到所有探测到的 java.exe/javaw.exe */
@@ -103,7 +107,7 @@ export interface QdoApi {
   content: {
     search(
       query: string,
-      opts?: { type?: string; mcVersion?: string; loader?: string; limit?: number; source?: 'modrinth' | 'curseforge' | 'all' },
+      opts?: { type?: string; mcVersion?: string; loader?: string; limit?: number; offset?: number; source?: 'modrinth' | 'curseforge' | 'all' },
     ): Promise<SearchHit[]>
     /** P30：测试 CurseForge API Key 是否可用（基础/详情/搜索三项分开报） */
     testCurseForge(): Promise<CurseForgeTestResult>

@@ -3684,6 +3684,29 @@ body {
   border-color: color-mix(in srgb, var(--p31-accent, #4d6bfe) 45%, transparent);
 }
 
+/* P31：下载更多 / 实例内存输入框 */
+.dc-more {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
+}
+
+.vm-mem-input {
+  width: 76px;
+  background: rgba(13, 19, 27, 0.9);
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.vm-mem-input:focus {
+  outline: none;
+  border-color: rgba(126, 217, 87, 0.6);
+}
+
 
 
 

@@ -95,6 +95,8 @@ export interface ContentService {
       mcVersion?: string
       loader?: string
       limit?: number
+      /** P31：分页偏移（0 起） */
+      offset?: number
       /** P30：内容源；默认 modrinth，'all' 会合并两个源 */
       source?: ContentSource | 'all'
     },
@@ -389,10 +391,12 @@ export function createContentPlugin(): LauncherPlugin<void> {
         mcVersion?: string
         loader?: string
         limit?: number
+        offset?: number
         source?: ContentSource | 'all'
       } = {},
     ): Promise<SearchHit[]> {
       const limit = Math.min(opts.limit ?? 12, 30)
+      const offset = Math.max(0, opts.offset ?? 0)
       const runModrinth = async (): Promise<SearchHit[]> => {
         const facets: string[][] = []
         if (opts.type) facets.push([`project_type:${opts.type}`])
@@ -401,6 +405,7 @@ export function createContentPlugin(): LauncherPlugin<void> {
         const params = new URLSearchParams({
           query,
           limit: String(limit),
+          offset: String(offset),
           index: 'relevance',
         })
         if (facets.length > 0) params.set('facets', JSON.stringify(facets))
@@ -1053,13 +1058,14 @@ export function createContentPlugin(): LauncherPlugin<void> {
 
     async function searchCurseforge(
       query: string,
-      opts: { type?: ContentKind; mcVersion?: string; loader?: string; limit?: number },
+      opts: { type?: ContentKind; mcVersion?: string; loader?: string; limit?: number; offset?: number },
     ): Promise<SearchHit[]> {
       const classId = CF_CLASS[opts.type ?? 'mod']
       if (!classId) return []
       const params = new URLSearchParams({
         gameId: '432',
         classId: String(classId),
+        index: String(Math.max(0, opts.offset ?? 0)),
         pageSize: String(Math.min(opts.limit ?? 20, 50)),
         sortField: '2',
         sortOrder: 'desc',

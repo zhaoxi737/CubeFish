@@ -158,7 +158,29 @@ export function VersionManager({ instances, activeId, onClose, onActivate, onRef
                   {item.gameVersion ?? item.versionId ?? '未装版本'} · {item.loader}
                   {item.installed ? '' : ' · 未安装'}
                 </span>
-                <span className="vm-meta">{item.memoryMb} MB</span>
+                <span className="vm-meta">
+                  <input
+                    key={`${item.id}-${item.memoryMb}`}
+                    type="number"
+                    className="vm-mem-input"
+                    min={512}
+                    max={32768}
+                    step={512}
+                    defaultValue={item.memoryMb}
+                    title="内存（MB），回车或失焦保存"
+                    onBlur={(event) => {
+                      const value = Number(event.target.value)
+                      if (!Number.isFinite(value) || value < 512 || value > 32768 || value === item.memoryMb) return
+                      void window.qdo.instances
+                        .setMemory(item.id, Math.round(value))
+                        .then(() => onRefresh())
+                        .then(() => onNotify(`已把「${item.name}」内存设为 ${Math.round(value)} MB`))
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') event.currentTarget.blur()
+                    }}
+                  />
+                </span>
                 <span className="vm-meta">{item.accountName ?? item.playerName ?? '离线'}</span>
                 <span className="vm-folders">
                   {KIND_LABEL.map((entry) => (

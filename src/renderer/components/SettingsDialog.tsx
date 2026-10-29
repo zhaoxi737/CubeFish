@@ -21,6 +21,8 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
   const [javas, setJavas] = useState<JavaRuntimeInfo[]>([])
   const [gpuStatus, setGpuStatus] = useState<{ enabled: boolean; entries: number } | null>(null)
   const [gpuBusy, setGpuBusy] = useState(false)
+  const [javaDlBusy, setJavaDlBusy] = useState(false)
+  const [javaDlMajor, setJavaDlMajor] = useState(21)
 
   const refreshAccounts = useCallback(async () => {
     if (typeof window.qdo === 'undefined') return
@@ -399,6 +401,35 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
             </button>
             <button type="button" className="ghost tiny" onClick={() => update('preferredJavaPath', '')}>
               自动选择
+            </button>
+          </div>
+          <div className="pack-row">
+            <select value={javaDlMajor} onChange={(event) => setJavaDlMajor(Number(event.target.value))} disabled={javaDlBusy}>
+              {[8, 16, 17, 21, 25].map((major) => (
+                <option key={major} value={major}>
+                  Java {major}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="ghost"
+              disabled={javaDlBusy}
+              onClick={async () => {
+                setJavaDlBusy(true)
+                try {
+                  const info = await window.qdo.java.installRuntime(javaDlMajor)
+                  setJavas((prev) => [...prev.filter((item) => item.path !== info.path), info])
+                  update('preferredJavaPath', info.path)
+                  onNotify?.(`已下载 Java ${info.major}（${info.version}）并设为首选`)
+                } catch (err) {
+                  onNotify?.(`下载 Java 失败：${err instanceof Error ? err.message : String(err)}`)
+                } finally {
+                  setJavaDlBusy(false)
+                }
+              }}
+            >
+              {javaDlBusy ? '下载中…（看主界面进度）' : '下载官方 Java'}
             </button>
           </div>
 

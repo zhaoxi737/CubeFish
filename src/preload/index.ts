@@ -30,6 +30,7 @@ const api: QdoApi = {
     export: (id, dest) => ipcRenderer.invoke(CH.instancesExport, id, dest),
     bindAccount: (id, accountId, accountName) => ipcRenderer.invoke(CH.instancesAccount, id, accountId, accountName),
     rename: (id, name) => ipcRenderer.invoke(CH.instancesRename, id, name),
+    setMemory: (id, memoryMb) => ipcRenderer.invoke(CH.instancesSetMemory, id, memoryMb),
     folders: (id) => ipcRenderer.invoke(CH.instancesFolders, id),
     openFolder: (id, kind) => ipcRenderer.invoke(CH.instancesOpenFolder, id, kind),
     import: (zipPath, name) => ipcRenderer.invoke(CH.instancesImport, zipPath, name),
@@ -45,6 +46,7 @@ const api: QdoApi = {
     list: () => ipcRenderer.invoke(CH.javaList),
     addManual: (path) => ipcRenderer.invoke(CH.javaAddManual, path),
     setPreferred: (path) => ipcRenderer.invoke(CH.javaSetPreferred, path),
+    installRuntime: (major) => ipcRenderer.invoke(CH.javaInstallRuntime, major),
   },
   gpu: {
     setEnabled: (enabled) => ipcRenderer.invoke(CH.gpuSet, enabled),

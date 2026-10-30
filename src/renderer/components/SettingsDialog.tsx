@@ -161,7 +161,7 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
             <input
               value={draft.titleText}
               onChange={(event) => update('titleText', event.target.value)}
-              placeholder="QDOQMC（留空用默认）"
+              placeholder="方块鱼（留空用默认）"
               spellCheck={false}
             />
             <span className="field-hint">左上角显示的名字，随便改。</span>

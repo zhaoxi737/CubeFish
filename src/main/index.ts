@@ -55,6 +55,15 @@ if (process.env.QDOQMC_USER_DATA) {
   } catch {
     /* 忽略：必须在 ready 之前 */
   }
+} else if (process.env.APPDATA) {
+  // 改名（方块鱼 / CubeFish）后数据目录仍固定为旧路径，避免设置/实例/模组“消失”
+  const legacyDataDir = path.join(process.env.APPDATA, 'QDOQMC')
+  try {
+    app.setPath('userData', legacyDataDir)
+    app.setPath('sessionData', legacyDataDir)
+  } catch {
+    /* 忽略 */
+  }
 }
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -125,7 +134,7 @@ function createWindow(): BrowserWindowType {
     minHeight: 640,
     show: false,
     backgroundColor: '#0a0d12',
-    title: 'QDOQMC',
+    title: '方块鱼',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(here, '../preload/index.cjs'),
@@ -686,7 +695,7 @@ async function runSmoke(win: BrowserWindowType, k: Kernel, startedAt: number): P
               manifestVersion: 1,
               name: 'Smoke Fabric 包',
               version: '1.0.0',
-              author: 'QDOQMC',
+              author: 'CubeFish',
               minecraft: { version: '1.21.11', modLoaders: [{ id: 'fabric-0.20.1', primary: true }] },
               files: [],
               overrides: 'overrides',

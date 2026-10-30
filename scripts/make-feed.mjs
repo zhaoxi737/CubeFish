@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
 
-const defaultZip = path.join(root, 'dist', `QDOQMC-${pkg.version}-win32-x64.zip`)
+const defaultZip = path.join(root, 'dist', `${pkg.productName || pkg.name}-${pkg.version}-win32-x64.zip`)
 const zipPath = process.argv[2] ? path.resolve(process.argv[2]) : defaultZip
 if (!existsSync(zipPath)) {
   console.error(`[feed] 找不到安装包：${zipPath}`)
@@ -36,7 +36,7 @@ const digest = await sha256(zipPath)
 
 const feed = {
   version: process.env.QDOQMC_FEED_VERSION ?? pkg.version,
-  url: `https://cdn.example.com/qdoqmc/QDOQMC-${pkg.version}-win32-x64.zip`,
+  url: `https://cdn.example.com/qdoqmc/${pkg.productName || pkg.name}-${pkg.version}-win32-x64.zip`,
   sha256: digest,
   size,
   notes: process.env.QDOQMC_NOTES ?? '便携版更新',

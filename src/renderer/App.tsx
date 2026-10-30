@@ -24,7 +24,7 @@ import { PluginButtons } from './components/PluginButtons'
 import { DownloadCenter, type DownloadTab } from './components/DownloadCenter'
 
 const FALLBACK_INFO: AppInfo = {
-  name: 'QDOQMC',
+  name: 'CubeFish',
   version: '0.1.0',
   electron: '-',
   chrome: '-',
@@ -319,7 +319,7 @@ export function App() {
   // P31：个性化（标题 / 主题色 / 背景图）应用到窗口与 CSS 变量
   useEffect(() => {
     if (!settings) return
-    document.title = settings.titleText?.trim() || 'QDOQMC'
+    document.title = settings.titleText?.trim() || '方块鱼'
     const root = document.documentElement
     root.style.setProperty('--p31-accent', /^#[0-9a-fA-F]{6}$/.test(settings.themeAccent) ? settings.themeAccent : '#4d6bfe')
     const custom = settings.customBackground?.trim()
@@ -450,10 +450,10 @@ export function App() {
       <header className="titlebar">
         <div className="brand">
           <MascotImage size={34} className="brand-fish" />
-          <span className="brand-mark">{settings?.titleText?.trim() || 'QDOQMC'}</span>
-          <span className="brand-sub">大肥鱼开服</span>
+          <span className="brand-mark">{settings?.titleText?.trim() || '方块鱼'}</span>
+          <span className="brand-sub">CubeFish Launcher</span>
           <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">P34 · 自扩展</span>
+          <span className="brand-tag">CubeFish · P40</span>
         </div>
         <div className="titlebar-actions">
           <PluginButtons onNotify={notify} />

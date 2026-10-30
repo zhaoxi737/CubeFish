@@ -7,7 +7,7 @@ const WELCOME: Message = {
   role: 'assistant',
   ts: Date.now(),
   text:
-    '我是 QDOQMC 的助手。配好模型 API Key 后可以直接说人话：\n·「装个 sodium」\n·「帮我看下为什么崩了」\n·「最近有什么优化模组」\n·「启动游戏」\n没配 Key 时也能用 /help 看本地命令。',
+    '我是方块鱼（CubeFish）的助手。配好模型 API Key 后可以直接说人话：\n·「装个 sodium」\n·「帮我看下为什么崩了」\n·「最近有什么优化模组」\n·「启动游戏」\n没配 Key 时也能用 /help 看本地命令。',
 }
 
 function describeProgress(event: ChatProgressEvent): string | null {

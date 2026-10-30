@@ -8,7 +8,7 @@ export function SystemPanel({ onClose, onNotify }: { onClose: () => void; onNoti
   const [info, setInfo] = useState<SystemInfo | null>(null)
   const [recordings, setRecordings] = useState<RecordingItem[]>([])
   const [recording, setRecording] = useState(false)
-  const [speakText, setSpeakText] = useState('你好，我是 QDOQMC 的语音助手。')
+  const [speakText, setSpeakText] = useState('你好，我是方块鱼的语音助手。')
   const [busy, setBusy] = useState(false)
   const [speakReplies, setSpeakReplies] = useState(() => {
     try {

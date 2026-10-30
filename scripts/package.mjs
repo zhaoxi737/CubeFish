@@ -1,9 +1,9 @@
 /**
  * 便携版打包（不依赖 electron-builder / 联网下载）：
  *
- *   dist/QDOQMC-win32-x64/
- *     QDOQMC.exe                 ← electron 重命名
- *     resources/app/             ← 我们的应用（out/ + package.json）
+ *   dist/<productName>-win32-x64/
+ *     <productName>.exe         ← electron 重命名（当前为 CubeFish.exe）
+ *     resources/app/            ← 我们的应用（out/ + package.json）
  *
  * 原理：主进程已经被 esbuild 打成一个 ESM 文件，运行时依赖全部打包进去了，
  * 所以只需要「Electron 运行时 + 应用目录」即可运行，不需要 node_modules。
@@ -17,7 +17,9 @@ import { execFileSync } from 'node:child_process'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const distDir = path.join(root, 'dist')
-const outDir = path.join(distDir, 'QDOQMC-win32-x64')
+const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
+const productName = pkg.productName || pkg.name
+const outDir = path.join(distDir, `${productName}-win32-x64`)
 const electronDist = path.join(root, 'node_modules', 'electron', 'dist')
 
 async function main() {
@@ -36,10 +38,9 @@ async function main() {
   await mkdir(appRoot, { recursive: true })
   await cp(path.join(root, 'out'), path.join(appRoot, 'out'), { recursive: true })
 
-  const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
   const appPkg = {
     name: pkg.name,
-    productName: pkg.productName,
+    productName,
     version: pkg.version,
     description: pkg.description,
     private: true,
@@ -50,7 +51,7 @@ async function main() {
 
   console.log('[package] 重命名可执行文件…')
   const exeFrom = path.join(outDir, 'electron.exe')
-  const exeTo = path.join(outDir, 'QDOQMC.exe')
+  const exeTo = path.join(outDir, `${productName}.exe`)
   await rm(exeTo, { force: true })
   await rename(exeFrom, exeTo)
 

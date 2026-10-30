@@ -118,6 +118,7 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
         llmBaseUrl: draft.llmBaseUrl,
         llmModel: draft.llmModel,
         confirmDangerousOps: draft.confirmDangerousOps,
+        allowDangerousAiTools: draft.allowDangerousAiTools,
         marketUrl: draft.marketUrl,
         msClientId: draft.msClientId,
         marketPublicKey: draft.marketPublicKey,
@@ -499,6 +500,28 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
             />
             <span>AI 执行危险操作前先问我（结束游戏 / 删插件 / 写文件 / 重启等）</span>
             <span className="field-hint">开着更安全：AI 会先说要做什么，你回复「确认」它才执行。</span>
+          </label>
+
+          <label className="field field-inline">
+            <input
+              type="checkbox"
+              checked={draft.allowDangerousAiTools}
+              onChange={(event) => {
+                if (
+                  event.target.checked &&
+                  !window.confirm(
+                    '开启后 AI 可以在这台电脑上：\n· 执行任意 PowerShell 命令\n· 修改启动器源码并重新构建\n· 回滚源码\n\n出错可能导致启动器起不来（可用「系统 → 源码回滚」恢复）。\n确定要开启吗？',
+                  )
+                ) {
+                  return
+                }
+                update('allowDangerousAiTools', event.target.checked)
+              }}
+            />
+            <span>允许 AI 执行系统命令 / 修改启动器源码（高风险，默认关闭）</span>
+            <span className="field-hint">
+              关着时 AI 只能操作启动器内的东西；开启后会多出 run_shell / write_source_file / rebuild_launcher / rollback_source 四个工具。
+            </span>
           </label>
 
           <div className="settings-group-title">隐私与统计</div>

@@ -223,6 +223,8 @@ export interface SettingsShape {
   titleText: string
   /** P34：AI 执行危险操作（结束游戏/删插件/写文件等）前需要用户确认 */
   confirmDangerousOps: boolean
+  /** P41：允许 AI 执行系统命令 / 修改启动器源码（默认关闭，需用户显式开启） */
+  allowDangerousAiTools: boolean
 }
 
 export type SettingsPatch = Partial<SettingsShape>

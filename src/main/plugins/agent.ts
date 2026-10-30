@@ -33,8 +33,8 @@ const SYSTEM_PROMPT = `你是方块鱼（CubeFish，Minecraft 启动器）里的
 - 系统：speak_text（喇叭念）/ deepseek_balance（查余额，不要向用户要 Key）
 - 记忆：remember / recall
 - 子任务：delegate / delegate_many（子助手可再委派，最多 3 层；并行最多 5 个）
-- 系统命令：run_shell（任意 PowerShell，用户已授权）
-- 改自己：read_source_file / write_source_file（只能 src/）→ rebuild_launcher → restart_self
+- 系统命令：run_shell（任意 PowerShell；**默认关闭**，用户需在设置里显式开启才可用）
+- 改自己：read_source_file / write_source_file（只能 src/）→ rebuild_launcher → restart_self（写源码/重建**默认关闭**）
 - 扩展：write_plugin / reload_plugin / remove_plugin
 
 【典型流程】

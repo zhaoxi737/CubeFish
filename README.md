@@ -1,124 +1,111 @@
-# QDOQMC
+# 方块鱼 / CubeFish
 
-AI 驱动的《我的世界》启动器。一个启动按钮 + 一个 AI 聊天框：说一句话，它把模组 / 光影 / 资源包 / 整合包下好、装进正确的实例，然后一键开玩。
+> AI 驱动的 Minecraft 启动器 —— 不是「套壳启动器 + 聊天框」，而是**一个能真正操作启动器的 AI agent**：它能查状态、装模组、修冲突、写插件，甚至改自己的源码。
 
-> 当前状态：**P0–P29 全部完成并实测**（Fabric / Forge / NeoForge、整合包、插件市场、微软登录、AI 助手、实例迁移、PCL 式下载中心、界面按 PCL 重组）。
-> 商业策略：先免费做口碑，但架构上把「收费的缝」全部预留好（见 [docs/PLAN.md](docs/PLAN.md)）。
-> 维护者请先看 [docs/MAINTAIN.md](docs/MAINTAIN.md)（维护节奏、上游依赖、发版流程、排障速查）。
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
+[![CI](https://github.com/zhaoxi737/CubeFish/actions/workflows/ci.yml/badge.svg)](https://github.com/zhaoxi737/CubeFish/actions)
 
-## 它现在能做什么
+![主界面](docs/screenshots/main.png)
 
-| 能力 | 说明 |
+## 它和别的启动器有什么不一样
+
+| 常见启动器 | 方块鱼 |
 |---|---|
-| **一键装游戏** | Mojang 原版任意版本 + 自动匹配/下载 Java 运行时，sha1 校验、断点可续（下载缓存命中） |
-| **PCL 式下载中心（P29）** | 独立页面 + 左侧分类（游戏 / 模组 / 资源包 / 光影 / 整合包 / 下载任务），搜索、来源过滤、点开看图片预览；主界面不再堆下载控件 |
-| **双内容源（P30）** | Modrinth + CurseForge 一起搜（来源可选 全部/Modrinth/CurseForge，结果带来源徽章）；设置里填自己的 CurseForge API Key，带「测试 Key」按钮按基础/详情/搜索三项分别报连通性，Key 无效或没搜索权限时给明确中文提示，不影响 Modrinth |
-| **删除 / 卸载（P30）** | 版本管理里任意实例（含默认实例）都能删（删默认实例会重建空白默认实例）；下载中心「游戏」页能卸载已装游戏版本释放磁盘（删除版本文件并解绑实例） |
-| **极简布局 + 可收起侧栏（P31）** | 左侧栏=版本列表+当前版本+启动按钮，中间留空只显示背景/更新横幅/退出诊断，右侧 AI 助手可收起；左右两侧都能一键收起/展开 |
-| **AI 自己写插件 / 自升级（P32）** | 内置 agent 能把自然语言变成新插件：`write_plugin` 生成插件源码→沙箱加载→注册新工具，`list_plugins`/`remove_plugin` 管理，加载失败自动回滚；即「把 harness 的自我扩展能力放进启动器」 |
-| **个性化 / 启动 / Java / 显卡 / 隔离（P31）** | 设置页新增：标题文字、主题色、自选背景图；窗口宽高/全屏/JVM 参数；Java 列表（选择/手动添加/自动匹配）；高性能显卡一键开关（写 Windows 显卡偏好）；版本隔离开关（独立/共用 mods） |
-| **版本 ↔ 加载器兼容（P28/P29）** | 选一个游戏版本就知道它能配哪些加载器：Fabric / Forge / NeoForge 推荐版本 + 可选版本数，一次装好并自动绑定当前实例；某个上游挂了只显示「查询超时」，不拖住整个面板 |
-| **逐文件下载进度（P29）** | 下载任务页按 PCL 的方式列出每个文件的状态（✓ 完成 / ▶ 下载中 / ○ 等待 / ✕ 失败）+ 大小 + 总速度 + 剩余时间，可取消；原版安装与整合包（`.mrpack` / CurseForge）都覆盖 |
-| **整合包进度（P29）** | 整合包几十个文件的下载终于有进度条和文件清单，不再只有一句 toast |
-| **资源/光影预览 + 模组更新检查（P29）** | 点任意项目看 Modrinth 画廊图；已装模组一键检查更新（sha1 批量比对）、单个更新（先下后删、失败回滚） |
-| **下载加速（P28）** | 国内镜像 BMCLAPI 与官方源自动测速选快的；大文件分片并发下载，服务端不支持 Range 自动回退单流 |
-| **三大加载器** | Fabric、Forge（1.20.1 实测）、NeoForge（1.21.11 实测），装完直接启动 |
-| **模组 / 资源包 / 光影** | 面板里搜 Modrinth 直接装；每个结果标出它支持的 MC 版本/加载器，不匹配的置灰；按实例隔离，冲突静态分析 + 缺失前置提示 |
-| **整合包** | `.mrpack`（Modrinth）与 CurseForge `.zip`；自动装对应加载器，支持本机文件预览/安装 |
-| **多实例** | 每实例独立 mods/存档/配置，独立内存分配，可绑定不同微软账号；支持导出/导入 zip |
-| **微软正版登录** | OAuth 设备码 → Xbox Live → Minecraft Services；令牌用 Windows DPAPI 加密存储，支持多账号 |
-| **AI 助手** | 自然语言 → 工具调用：装模组、查冲突、看崩溃、开游戏；流式输出 + 会话记忆（本机） |
-| **崩溃归因 + 一键修复** | 内置规则库识别依赖缺失/Mixin/OOM/驱动问题，直接给可点击的修复动作 |
-| **插件系统** | 复用 Harness 的 Cordis 内核；插件跑在**独立子进程 + Node permission model** 沙箱里，可注册 AI 工具/聊天命令 |
-| **插件市场** | 静态 feed + Ed25519 签名校验 + sha256 校验的一键安装 |
-| **自动更新** | 静态 latest.json 清单 + sha256 校验，退出后替换并自动重启（已在真机 0.1.0 → 0.2.0 演练） |
-| **界面** | 按 PCL 布局重组：左侧版本列表 + 中间版本卡片/启动按钮/四个快捷入口 + 右侧 AI 助手；背景用你自己给的那张图（`art/bg-user.jpg`），大肥鱼吉祥物与草地纹理由本机 ComfyUI 生成（见 [art/README.md](art/README.md)） |
-| **可观测** | 结构化 JSONL 日志、事件埋点、游戏日志在应用内直接查看（ERROR/WARN 高亮，2 秒刷新） |
+| 报错了让你自己看日志 | AI 读日志、定位原因、**直接修** |
+| 模组版本冲突只能手动换 | `fix_mod_conflict` 一步换到兼容版本 |
+| 没有的功能只能等作者更新 | AI **自己写插件**补能力，当场安装生效 |
+| 插件只能注册命令 | 插件可以注册 AI 工具、聊天命令、**顶栏按钮** |
+| 聊天机器人只会聊天 | 40+ 工具，真的能操作启动器 |
 
-## 运行
+## 功能
 
-### 打包版（普通用户）
+**AI 助手（核心）**
+- 自然语言操作：装模组、看崩溃、调设置、启动游戏
+- 实时显示「正在调用什么工具」，可随时**停止**
+- 多对话（可新建/切换/删除）、**补充上一条**消息
+- 跨会话记忆（`remember` / `recall`）
+- 子助手并行（最多 3 层、5 路并行）
+- 一键盘「源码回滚」：AI 改坏了能一键恢复
 
-双击 `dist/QDOQMC-win32-x64/QDOQMC.exe`，不需要 Node/npm。
-分发包：`dist/QDOQMC-0.1.0-win32-x64.zip`（约 138MB，含 Electron 运行时）。
+**启动器本体**
+- 实例隔离（每个实例独立 mods / 存档 / 配置，可关）
+- 下载中心：Modrinth + CurseForge 双源、分页、逐文件进度
+- 整合包（`.mrpack` / CurseForge）一键安装
+- 冲突检查、崩溃归因、一键修复
+- Java 管理（探测 / 选择 / 手动添加 / 下载官方运行时）
+- 高性能显卡一键开关（写 Windows 显卡偏好，不用进 NVIDIA 面板）
+- 个性化：主题色、背景图、标题文字
+- 语音：麦克风录音 + 喇叭朗读（可让 AI 说话）
+- 插件沙箱：进程隔离、失败自动回滚
 
-### 开发模式
+## 截图
+
+| 下载中心 | 插件 / AI 能力 |
+|---|---|
+| ![下载中心](docs/screenshots/download.png) | ![插件](docs/screenshots/plugins.png) |
+
+## 快速开始
+
+1. 到 [Releases](https://github.com/zhaoxi737/CubeFish/releases) 下载 `CubeFish-<版本>-win32-x64.zip`
+2. 解压到任意目录，双击 `CubeFish.exe`
+3. 首次启动会创建实例；在「下载」里装游戏版本和加载器
+4. 想用 AI：设置 → AI 助手 → 填 DeepSeek API Key（或任意 OpenAI 兼容地址）
+
+> 系统要求：Windows 10/11 x64。游戏本身需要 Java，启动器会自动下载或让你选。
+
+### 配置 AI
+
+- 默认走 DeepSeek：`https://api.deepseek.com/v1`
+- 推荐模型：`deepseek-chat`（支持工具调用）或 `deepseek-v4-pro`（更强）
+- Key 只保存在你本机（`%APPDATA%\QDOQMC\settings.json`）
+- **危险能力默认关闭**：AI 执行任意命令 / 改源码 / 重建，需要在设置里显式开启
+
+## 从源码构建
 
 ```bash
-npm install
-npm run build
-npm start           # 打开启动器
-npm run smoke       # 自动冒烟：截图 + 走一遍 UI/IPC/整合包安装，结果打印到 stdout
-npm run typecheck
-npm run package     # 生成便携版 + latest.json
+npm install          # 安装依赖
+npm run build        # 编译（esbuild）
+npm start            # 开发模式启动
+npm run package      # 打便携包到 dist/
+npm run typecheck    # 类型检查
 ```
 
-要求：Node 22+，Windows 10/11。
+## 插件开发
 
-### 不填 API Key 也能用
+插件是 `<数据目录>/plugins/<id>/` 下的 `plugin.json` + `index.mjs`，导出 `apply(api)`：
 
-- 装游戏 / 装模组 / 冲突检查 / 崩溃归因 / 本地日志：全部离线可用；
-- AI 自然语言需要用户在「设置 → 模型 API Key」填自己的 Key（DeepSeek 或任意 OpenAI 兼容端点）；
-- 微软登录需要用户自备 Azure 公共客户端 `client_id`（不内置，避免冒用发行方资质）。
-
-## 架构
-
-```
-Electron 主进程
-  └─ Cordis 插件内核（kernel.ts，26 个插件按依赖顺序装配）
-       ├─ 基础：app / paths / logger / settings / storage / identity / auth / entitlement / cloud / telemetry / updater
-       ├─ 游戏：mojang / java / instances / loaders / launch
-       ├─ 内容：content（Modrinth + .mrpack + CurseForge）/ conflict / diagnose / market
-       ├─ AI：llm / tools / agent / chat
-       └─ 扩展：plugin-host（子进程沙箱）/ ipc
+```js
+export function apply(api) {
+  api.registerTool({
+    name: 'my_tool',
+    description: '这个工具做什么',
+    parameters: { type: 'object', properties: {}, additionalProperties: false },
+    async handler() {
+      return { ok: true, summary: '结果' }
+    },
+  })
+  // 还能 registerCommand / registerButton / api.fetch / api.storage / api.callTool
+}
 ```
 
-- 主进程与界面之间只有 `window.qdo` 一层 contextBridge；
-- 插件契约：`definePlugin(name, setup)`，通过 `ctx.provide / use<T>` 取服务；
-- 插件沙箱：`child_process.fork` + `ELECTRON_RUN_AS_NODE=1` + Node `--permission`
-  （只能读插件自己的目录，禁止写盘 / `child_process`），崩溃不拖死主进程。
+详见 [docs/PLUGINS.md](docs/PLUGINS.md)。插件在独立进程沙箱里运行，崩溃不会拖垮启动器。
 
-## 目录结构
+## 常见问题
 
-```
-src/
-  main/              主进程（Cordis 插件内核）
-    kernel.ts        插件装配与生命周期
-    plugin-kit.ts    插件契约
-    plugin-worker.ts 插件沙箱 worker
-    plugins/         26 个内置插件
-  preload/           contextBridge 暴露 window.qdo
-  renderer/          React 界面
-  shared/            共用类型 / IPC 通道 / 版本比较
-scripts/             esbuild 构建、打包、更新清单、mock LLM / mock 授权 / mock CurseForge
-samples/plugins/     示例插件
-docs/                计划、开发手册、插件指南
-```
+**AI 说「没有这个能力」？**
+先看设置里模型是否支持工具调用（推荐 `deepseek-chat`）。启动器会要求它先调 `list_tools` 再回答。
 
-## 文档
+**AI 要我自己配 Key，贵吗？**
+一次普通对话几分钱以内。不用 AI 时启动器完全离线可用。
 
-- [总计划（需求 / 架构 / 商业化预留 / 里程碑 / 风险）](docs/PLAN.md)
-- [开发手册（运行、CLI、插件、数据目录、P0–P25 验收表与总矩阵）](docs/DEV.md)
-- [插件开发指南（写一个插件并让 AI 能调用 + 市场 feed 格式）](docs/PLUGINS.md)
+**误删了 / 改坏了？**
+顶栏「系统」→「源码回滚」可恢复启动器源码；游戏文件删除前会确认。
 
-## 数据目录
+## 许可
 
-`%APPDATA%\QDOQMC\`：`instances/`（每实例 `.minecraft`）、`libraries/`、`assets/`、`versions/`、
-`runtimes/`、`downloads/`（内容寻址缓存）、`plugins/`、`accounts.json`（DPAPI 加密）、`logs/`。
+- 代码：[GPL-3.0](LICENSE)。你可以自由使用、修改、分发，但衍生作品必须同样开源。
+- 名称与 Logo：见 [TRADEMARK.md](TRADEMARK.md)。**Fork 请改名**，不要用「方块鱼 / CubeFish」发布。
 
-## 已知限制
+## 免责声明
 
-- **更新**：只支持便携版解压替换；NSIS 安装包与代码签名未做（SmartScreen 会提示未知发布者）。
-- **加载器**：更老的 Forge（1.12.2 等）未验证；Quilt 明确不支持。
-- **CurseForge**：需要用户自备 API Key（包内自带 mods 的离线包免 Key）。
-- **插件网络**：Node permission model 不管网络，插件联网仍靠 manifest `net` 声明 + 来源审核。
-- **AI**：真实模型需用户自填 Key；多会话/跨实例记忆未做。
-- **账号**：令牌加密绑定当前 Windows 用户（DPAPI），换用户/换机需重新登录。
-
-## 核心原则
-
-1. 极简是默认路径最短，不是功能少。
-2. 一切皆插件（复用 Harness 的 Cordis 内核），AI 能给自己加功能。
-3. AI 走结构化工具，不拼下载链接、不编造事实。
-4. 日志是地基：每次启动、每次崩溃都可归因。
-5. 用户 API Key / 账号令牌只存本机；统计数据匿名、可关闭。
+本项目是第三方启动器，**与 Mojang、Microsoft、CurseForge 无任何关联**，不包含、不分发任何 Minecraft 官方资源（游戏文件均在使用时从官方地址下载）。

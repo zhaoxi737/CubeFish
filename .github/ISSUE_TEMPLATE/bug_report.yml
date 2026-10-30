@@ -1,0 +1,50 @@
+name: Bug 报告
+description: 启动器或 AI 助手出问题了
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！请先确认你用的是最新 Release。
+        **不要在 Issue 里贴 API Key 或个人信息。**
+  - type: input
+    id: version
+    attributes:
+      label: 版本号
+      description: 启动器标题栏或设置里能看到
+      placeholder: 例如 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 出问题的部分
+      options:
+        - 启动游戏 / 崩溃
+        - 模组 / 下载中心
+        - AI 助手
+        - 插件
+        - 界面 / 设置
+        - 其它
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开 ...
+        2. 点击 ...
+        3. 出现 ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志（可选但很有用）
+      description: 粘贴 %APPDATA%\QDOQMC\logs 下最新 jsonl 的相关几行（记得删掉路径里的用户名和 Key）
+      render: text
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果 vs 实际结果

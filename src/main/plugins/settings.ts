@@ -42,6 +42,7 @@ export const DEFAULT_SETTINGS: SettingsShape = {
   customBackground: '',
   titleText: '',
   confirmDangerousOps: true,
+  allowDangerousAiTools: false,
 }
 
 const MASKED_KEYS: (keyof SettingsShape)[] = ['apiKey']
@@ -162,5 +163,6 @@ function sanitize(input: Partial<SettingsShape>): Partial<SettingsShape> {
   if (typeof input.customBackground === 'string') out.customBackground = input.customBackground.trim()
   if (typeof input.titleText === 'string') out.titleText = input.titleText.trim()
   if (typeof input.confirmDangerousOps === 'boolean') out.confirmDangerousOps = input.confirmDangerousOps
+  if (typeof input.allowDangerousAiTools === 'boolean') out.allowDangerousAiTools = input.allowDangerousAiTools
   return out
 }

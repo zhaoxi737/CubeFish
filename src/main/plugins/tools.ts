@@ -189,6 +189,16 @@ export function createToolsPlugin(): LauncherPlugin<void> {
     /** P38：避免 AI 反复应用同一个冲突修复（会把已修好的版本又装回来） */
     const appliedConflictFixes = new Set<string>()
 
+    /** P41：默认关闭的危险能力（任意命令 / 改源码 / 重建 / 回滚），需用户在设置里显式开启 */
+    const DANGEROUS_TOOL_NAMES = new Set(['run_shell', 'write_source_file', 'rebuild_launcher', 'rollback_source'])
+    const requireDangerAllowed = (toolName: string): { ok: false; summary: string } | null => {
+      if (settings.get('allowDangerousAiTools')) return null
+      return {
+        ok: false,
+        summary: `「${toolName}」默认关闭（风险较高）。请到「设置 → AI 助手 → 允许 AI 执行系统命令 / 修改启动器源码」手动开启后再试。`,
+      }
+    }
+
     const register = (definition: ToolDefinition) => {
       registry.set(definition.name, definition)
     }
@@ -1361,6 +1371,8 @@ export function createToolsPlugin(): LauncherPlugin<void> {
     async function call(name: string, rawArgs: unknown): Promise<ToolResult> {
       const definition = registry.get(name)
       if (!definition) return { ok: false, summary: `没有这个工具：${name}` }
+      const blocked = requireDangerAllowed(name)
+      if (blocked) return blocked
       const args = (rawArgs && typeof rawArgs === 'object' ? rawArgs : {}) as Record<string, unknown>
       const started = Date.now()
       try {
@@ -1382,14 +1394,16 @@ export function createToolsPlugin(): LauncherPlugin<void> {
 
     ctx.provide('tools', {
       specs: () =>
-        [...registry.values()].map((definition) => ({
-          type: 'function' as const,
-          function: {
-            name: definition.name,
-            description: definition.description,
-            parameters: definition.parameters,
-          },
-        })),
+        [...registry.values()]
+          .filter((definition) => settings.get('allowDangerousAiTools') || !DANGEROUS_TOOL_NAMES.has(definition.name))
+          .map((definition) => ({
+            type: 'function' as const,
+            function: {
+              name: definition.name,
+              description: definition.description,
+              parameters: definition.parameters,
+            },
+          })),
       names: () => [...registry.keys()],
       call,
       register: (definition) => {

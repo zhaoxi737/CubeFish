@@ -72,6 +72,8 @@ process.env.QDOQMC_PLUGIN_WORKER = path.join(here, '..', 'plugin-worker.mjs')
 const isSmoke = process.argv.includes('--smoke')
 const isCrashSmoke = process.argv.includes('--smoke-crash')
 const isSettingsSmoke = process.argv.includes('--smoke-settings')
+// P42：录屏演示模式（给自动运营脚本录制操作视频用）
+const isDemo = process.argv.includes('--demo')
 
 function argValue(name: string): string | undefined {
   const prefix = `--${name}=`
@@ -163,6 +165,84 @@ function createWindow(): BrowserWindowType {
   return win
 }
 
+
+/**
+ * P42：录屏演示模式。按固定节奏走一遍界面，并打印 `DEMO_STEP:<key>:<ms>` 供录制脚本对齐字幕/配音。
+ * 不做任何会修改数据或花钱的操作：只点开面板、搜索、展示。
+ */
+async function runDemoMode(win: BrowserWindowType): Promise<void> {
+  win.webContents.once('did-finish-load', async () => {
+    const started = Date.now()
+    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+    const step = (key: string) => console.log(`DEMO_STEP:${key}:${Date.now() - started}`)
+    const js = (code: string) => win.webContents.executeJavaScript(code)
+
+    const clickText = async (selector: string, text: string) =>
+      js(`(() => { const el = [...document.querySelectorAll(${JSON.stringify(selector)})].find((b) => (b.textContent ?? '').trim() === ${JSON.stringify(text)}); if (!el) return 'not-found'; el.click(); return 'clicked' })()`)
+
+    try {
+      await wait(1200)
+      step('main')
+      await wait(2600)
+
+      // 下载中心 → 模组 → 搜 sodium
+      await clickText('.titlebar-actions button', '下载')
+      await wait(1600)
+      await clickText('.dc-nav-item', '模组')
+      await wait(1200)
+      await js(`(() => {
+        const input = document.querySelector('.dc-search input')
+        if (!input) return 'no-input'
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+        setter.call(input, 'sodium')
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        return 'typed'
+      })()`)
+      step('download')
+      await wait(5200)
+
+      // 插件面板
+      await clickText('.titlebar-actions button', '插件')
+      await wait(2200)
+      step('plugins')
+      await wait(2000)
+      await js(`(() => { const btn = [...document.querySelectorAll('.dialog-head button, .dialog button')].find((b) => (b.textContent ?? '').trim() === '关闭'); btn?.click(); return 'closed' })()`)
+      await wait(900)
+
+      // AI 面板（只输入不发送，避免调用模型）
+      await js(`(() => {
+        const input = document.querySelector('.composer input')
+        if (!input) return 'no-input'
+        input.focus()
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+        setter.call(input, '帮我看看这个实例缺不缺前置模组')
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        return 'typed'
+      })()`)
+      step('ai')
+      await wait(3000)
+
+      // 系统对接
+      await clickText('.titlebar-actions button', '系统')
+      await wait(2400)
+      step('system')
+      await wait(2200)
+      await js(`(() => { const btn = [...document.querySelectorAll('.dialog-head button, .dialog button')].find((b) => (b.textContent ?? '').trim() === '关闭'); btn?.click(); return 'closed' })()`)
+      await wait(800)
+
+      // 回到主界面
+      await js(`(() => { const input = document.querySelector('.composer input'); if (input) { const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; setter.call(input, ''); input.dispatchEvent(new Event('input', { bubbles: true })); input.blur() } return 'cleared' })()`)
+      step('end')
+      await wait(1600)
+      console.log(`DEMO_TOTAL:${Date.now() - started}`)
+      console.log('DEMO_DONE')
+    } catch (err) {
+      console.log(`DEMO_ERROR:${String(err)}`)
+    } finally {
+      setTimeout(() => app.exit(0), 400)
+    }
+  })
+}
 
 async function runSettingsSmoke(win: BrowserWindowType, startedAt: number): Promise<void> {
   win.webContents.once('did-finish-load', async () => {
@@ -1232,6 +1312,7 @@ if (!gotLock) {
       if (isSmoke) await runSmoke(mainWindow, kernel, startedAt)
       if (isCrashSmoke) await runCrashSmoke(mainWindow, kernel, startedAt)
       if (isSettingsSmoke) await runSettingsSmoke(mainWindow, startedAt)
+      if (isDemo) await runDemoMode(mainWindow)
 
       app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow()

@@ -54,7 +54,8 @@ export interface SandboxPluginApi {
   version: string
   plugin: { id: string; version: string }
   permissions: string[]
-  log: {
+  /** api.log('...') 与 api.log.info/warn/error('...') 两种写法都支持（AI 写插件时经常用前者） */
+  log: ((message: string) => void) & {
     info(message: string): void
     warn(message: string): void
     error(message: string): void

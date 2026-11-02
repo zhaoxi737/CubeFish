@@ -13,6 +13,8 @@ import type { ToolsService } from './tools'
 const MAX_ROUNDS = 24
 /** 到这个轮数还没收敛，就提醒模型直接用已有信息回答（只提醒一次） */
 const SYNTHESIS_ROUND = 12
+/** 单次对话的硬上限：超过就收手，避免界面永远停在「正在工作」 */
+const MAX_RUN_MS = 8 * 60_000
 
 const SYSTEM_PROMPT = `你是方块鱼（CubeFish，Minecraft 启动器）里的 AI 助手。你不是聊天机器人，是一个「能操作启动器的 agent」。
 
@@ -144,6 +146,16 @@ export function createAgentPlugin(): LauncherPlugin<void> {
         for (let round = 0; round < MAX_ROUNDS; round += 1) {
           if (options?.signal?.aborted) {
             return { ok: false, kind: 'error', text: '已停止。', trace }
+          }
+          // 兜底：单次对话跑太久就收手，避免界面一直停在「正在工作」看起来像卡死
+          if (Date.now() - started > MAX_RUN_MS) {
+            log.warn('agent', '单次对话超时，提前收手', { ms: Date.now() - started, tools: trace.length })
+            return {
+              ok: false,
+              kind: 'error',
+              text: `这次任务跑了 ${Math.round((Date.now() - started) / 60000)} 分钟还没做完，我先停下了（已做 ${trace.length} 步）。\n把要求拆小一点再说一次会更快，比如「先只查冲突」「先只读日志」。`,
+              trace,
+            }
           }
           options?.onProgress?.({ type: 'round', round: round + 1 })
           const onDelta = options?.onDelta

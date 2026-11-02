@@ -20,12 +20,38 @@ export function ChatPanel() {
   const [messages, setMessages] = useState<Message[]>([WELCOME])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
   const [live, setLive] = useState<string[]>([])
   const [sessions, setSessions] = useState<ChatSessionInfo[]>([])
   const [activeId, setActiveId] = useState('')
   const [replaceMode, setReplaceMode] = useState(false)
   const listRef = useRef<HTMLDivElement | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
   const streamRef = useRef('')
+  /** 用户点了「停止」：这次回复的结果不再回填到界面，避免打断后突然又冒出答案 */
+  const abortedRef = useRef(false)
+
+  const focusInput = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      try {
+        inputRef.current?.focus()
+      } catch {
+        /* 忽略 */
+      }
+    })
+  }, [])
+
+  // 发送中：每秒刷新一次已用时长，让「正在干活」和「真的卡住了」能区分开
+  useEffect(() => {
+    if (!sending) {
+      setElapsed(0)
+      return
+    }
+    const started = Date.now()
+    setElapsed(0)
+    const timer = window.setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 1000)
+    return () => window.clearInterval(timer)
+  }, [sending])
 
   useEffect(() => {
     const el = listRef.current
@@ -137,9 +163,11 @@ export function ChatPanel() {
       ])
       return
     }
+    abortedRef.current = false
     setSending(true)
     try {
       const reply = await window.qdo.chat.send(text, { replaceLast: replaceMode })
+      if (abortedRef.current) return
       setMessages((prev) => [
         ...prev.filter((msg) => !msg.streaming),
         { role: reply.ok ? 'assistant' : 'system', text: reply.text, ts: Date.now(), trace: reply.trace },
@@ -148,24 +176,40 @@ export function ChatPanel() {
       void loadSessions()
       if (reply.ok) speakReply(reply.text)
     } catch (err) {
+      if (abortedRef.current) return
       setMessages((prev) => [
         ...prev.filter((msg) => !msg.streaming),
         { role: 'system', text: `请求失败：${err instanceof Error ? err.message : String(err)}`, ts: Date.now() },
       ])
     } finally {
       setSending(false)
+      focusInput()
     }
-  }, [input, loadSessions, replaceMode, sending])
+  }, [focusInput, input, loadSessions, replaceMode, sending, speakReply])
 
-  const stop = useCallback(async () => {
+  /** 打断当前回复：界面立刻回到可输入状态，不等主进程那一边收尾 */
+  const halt = useCallback(async () => {
+    abortedRef.current = true
+    setSending(false)
+    setLive([])
+    focusInput()
     try {
       await window.qdo.chat.abort()
     } catch {
       /* 忽略 */
     }
-  }, [])
+  }, [focusInput])
+
+  const stop = useCallback(async () => {
+    await halt()
+    setMessages((prev) => [
+      ...prev.filter((msg) => !msg.streaming),
+      { role: 'system', text: '已停止（如果模型还在返回，主进程会在几秒内收尾）。', ts: Date.now() },
+    ])
+  }, [halt])
 
   const clear = useCallback(async () => {
+    if (sending) await halt()
     try {
       await window.qdo.chat.clear()
     } catch {
@@ -174,9 +218,11 @@ export function ChatPanel() {
     streamRef.current = ''
     setLive([])
     setMessages([WELCOME])
-  }, [])
+  }, [halt, sending])
 
   const newChat = useCallback(async () => {
+    // 换对话前先打断上一轮的回复，否则答案会掉进新对话里
+    if (sending) await halt()
     try {
       await window.qdo.chat.newSession()
       setMessages([WELCOME])
@@ -185,11 +231,13 @@ export function ChatPanel() {
     } catch (err) {
       setMessages((prev) => [...prev, { role: 'system', text: `新建对话失败：${String(err)}`, ts: Date.now() }])
     }
-  }, [loadSessions])
+    focusInput()
+  }, [focusInput, halt, loadSessions, sending])
 
   const switchChat = useCallback(
     async (id: string) => {
       if (!id || id === activeId) return
+      if (sending) await halt()
       try {
         await window.qdo.chat.switchSession(id)
         setMessages([WELCOME])
@@ -200,12 +248,14 @@ export function ChatPanel() {
       } catch {
         /* 忽略 */
       }
+      focusInput()
     },
-    [activeId, loadHistory, loadSessions],
+    [activeId, focusInput, halt, loadHistory, loadSessions, sending],
   )
 
   const deleteChat = useCallback(async () => {
     if (!activeId) return
+    if (sending) await halt()
     try {
       await window.qdo.chat.deleteSession(activeId)
       setMessages([WELCOME])
@@ -215,7 +265,8 @@ export function ChatPanel() {
     } catch {
       /* 忽略 */
     }
-  }, [activeId, loadHistory, loadSessions])
+    focusInput()
+  }, [activeId, focusInput, halt, loadHistory, loadSessions, sending])
 
   const supplement = useCallback(() => {
     const lastUser = [...messages].reverse().find((msg) => msg.role === 'user')
@@ -281,7 +332,7 @@ export function ChatPanel() {
         ))}
         {sending && live.length > 0 ? (
           <div className="bubble bubble-assistant bubble-progress">
-            <div className="progress-head">正在工作…</div>
+            <div className="progress-head">正在工作… {elapsed} 秒</div>
             {live.map((line, index) => (
               <div key={index} className="progress-line">
                 {line}
@@ -302,6 +353,12 @@ export function ChatPanel() {
           正在补充上一条消息，发送后会替换它 · <button type="button" className="ghost tiny" onClick={() => setReplaceMode(false)}>取消</button>
         </div>
       ) : null}
+      {sending ? (
+        <div className={`composer-hint ${elapsed >= 90 ? 'composer-hint-warn' : ''}`}>
+          AI 正在处理（{elapsed} 秒），这一轮结束前不会再发新消息 · 可以点右侧「停止」打断
+          {elapsed >= 90 ? ' · 超过 90 秒还没有结果，可能卡住了，建议停止后重试' : ''}
+        </div>
+      ) : null}
       <form
         className="composer"
         onSubmit={(event) => {
@@ -310,9 +367,16 @@ export function ChatPanel() {
         }}
       >
         <input
+          ref={inputRef}
           value={input}
           onChange={(event) => setInput(event.target.value)}
-          placeholder={replaceMode ? '补充内容后发送，会替换上一条' : '说人话或输入命令，例如：装个 sodium'}
+          placeholder={
+            sending
+              ? 'AI 还在处理…（点「停止」后可发送新消息）'
+              : replaceMode
+                ? '补充内容后发送，会替换上一条'
+                : '说人话或输入命令，例如：装个 sodium'
+          }
           spellCheck={false}
         />
         {sending ? (

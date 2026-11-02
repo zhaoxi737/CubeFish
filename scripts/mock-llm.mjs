@@ -64,6 +64,14 @@ const server = http.createServer((req, res) => {
     )
 
     if (payload.stream) {
+      // 测试「卡住」：只建流、永不发数据、永不结束（验证看门狗 / 停止按钮）
+      if (/卡住|hang/i.test(String(lastUser?.content ?? ''))) {
+        res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
+        console.log('[mock-llm] 挂起流（测试看门狗 / 停止按钮）')
+        // 注意：不要监听 req 'close'——请求体读完就会触发，会把流立刻结束掉
+        res.socket?.on('close', () => console.log('[mock-llm] 挂起流被客户端断开'))
+        return
+      }
       res.writeHead(200, {
         'content-type': 'text/event-stream',
         'cache-control': 'no-cache',

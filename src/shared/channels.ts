@@ -86,6 +86,7 @@ export const CH = {
   pluginsReload: 'plugins:reload',
   pluginsButtons: 'plugins:buttons',
   pluginsPress: 'plugins:press',
+  pluginsRemove: 'plugins:remove',
   systemInfo: 'system:info',
   systemSpeak: 'system:speak',
   systemRecordSave: 'system:record-save',

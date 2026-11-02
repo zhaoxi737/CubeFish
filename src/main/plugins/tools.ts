@@ -1371,8 +1371,11 @@ export function createToolsPlugin(): LauncherPlugin<void> {
     async function call(name: string, rawArgs: unknown): Promise<ToolResult> {
       const definition = registry.get(name)
       if (!definition) return { ok: false, summary: `没有这个工具：${name}` }
-      const blocked = requireDangerAllowed(name)
-      if (blocked) return blocked
+      // 只有危险工具需要在设置里显式开启；普通只读工具（get_status / search_mods / read_file …）永远可用
+      if (DANGEROUS_TOOL_NAMES.has(name)) {
+        const blocked = requireDangerAllowed(name)
+        if (blocked) return blocked
+      }
       const args = (rawArgs && typeof rawArgs === 'object' ? rawArgs : {}) as Record<string, unknown>
       const started = Date.now()
       try {

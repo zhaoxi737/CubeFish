@@ -88,6 +88,24 @@ export function PluginsDialog({ onClose, onNotify }: Props) {
     [load, onNotify],
   )
 
+  const removePlugin = useCallback(
+    async (plugin: PluginInfo) => {
+      if (!window.confirm(`删除插件「${plugin.name}」？\n会卸载它并把 plugins\\${plugin.id}\\ 整个目录删掉，不可恢复。`)) return
+      setBusy(plugin.id)
+      try {
+        const result = await window.qdo.plugins.remove(plugin.id)
+        if (!result.ok) onNotify(`删除失败：${result.error ?? '未知错误'}`)
+        else onNotify(`已删除插件 ${plugin.name}`)
+        await load()
+      } catch (err) {
+        onNotify(`删除失败：${err instanceof Error ? err.message : String(err)}`)
+      } finally {
+        setBusy(null)
+      }
+    },
+    [load, onNotify],
+  )
+
   const installFromMarket = useCallback(
     async (id: string, name: string) => {
       setMarketBusy(id)
@@ -137,6 +155,7 @@ export function PluginsDialog({ onClose, onNotify }: Props) {
             <div className="plugins-hint">
               把插件文件夹放进 <code>%APPDATA%\QDOQMC\plugins\</code> 后点刷新。插件默认不启用；启用前请确认来源可信
               （插件跑在独立 utilityProcess 沙箱里，崩溃不会拖死启动器，但进程内仍具备 Node 能力）。
+              不想要的插件（包括 AI 自己写的）点「删除」即可卸载并删掉目录。
             </div>
             {error ? <div className="warn-box">{error}</div> : null}
             {plugins.length === 0 && !loading ? <div className="plugins-empty">还没有插件。</div> : null}
@@ -189,6 +208,15 @@ export function PluginsDialog({ onClose, onNotify }: Props) {
                     )}
                     <button type="button" className="ghost tiny" onClick={() => void reload(plugin)} disabled={busy === plugin.id}>
                       重载
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost tiny danger"
+                      onClick={() => void removePlugin(plugin)}
+                      disabled={busy === plugin.id}
+                      title="卸载并删除插件目录"
+                    >
+                      删除
                     </button>
                   </div>
                 </div>

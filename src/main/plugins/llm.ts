@@ -73,6 +73,70 @@ interface RawResponse {
   error?: { message?: string }
 }
 
+/** 流式响应：多久没收到任何数据就判定卡死 */
+const STREAM_IDLE_TIMEOUT_MS = 45_000
+/** 流式响应：单次请求的硬上限 */
+const STREAM_TOTAL_TIMEOUT_MS = 300_000
+/** 非流式请求的硬上限 */
+const CHAT_TIMEOUT_MS = 90_000
+
+type WatchdogReason = 'user' | string | null
+
+interface Watchdog {
+  signal: AbortSignal
+  /** 每收到一段数据就调用：重置空闲计时 */
+  bump(): void
+  /** 'user' = 用户主动停止；其它字符串 = 超时原因 */
+  reason(): WatchdogReason
+  /** 把底层 AbortError 翻译成人话；非超时错误原样返回 */
+  translate(error: unknown): Error
+  dispose(): void
+}
+
+/**
+ * 超时看门狗：把外部 abort 信号 + 空闲超时 + 总超时合成一个信号。
+ *
+ * 之前这里只用 `signal ?? AbortSignal.timeout(...)`，而 agent 每次都传自己的 signal，
+ * 于是「流式请求没有任何超时」——模型端半挂不挂时 reader.read() 会一直等，
+ * 聊天面板就永远停在「发送中」，看起来像整个应用卡死。现在两条超时都兜住。
+ */
+function createWatchdog(external: AbortSignal | undefined, idleMs: number, totalMs: number): Watchdog {
+  const controller = new AbortController()
+  let why: WatchdogReason = null
+  const kill = (reason: string): void => {
+    if (controller.signal.aborted) return
+    why = reason
+    controller.abort()
+  }
+  const armIdle = (): NodeJS.Timeout =>
+    setTimeout(() => kill(`模型 ${Math.round(idleMs / 1000)} 秒没有返回任何数据`), idleMs)
+  let idle: NodeJS.Timeout = armIdle()
+  const total = setTimeout(() => kill(`模型请求超过 ${Math.round(totalMs / 1000)} 秒还没结束`), totalMs)
+  const onExternalAbort = (): void => kill('user')
+  external?.addEventListener('abort', onExternalAbort, { once: true })
+
+  return {
+    signal: controller.signal,
+    bump: () => {
+      clearTimeout(idle)
+      idle = armIdle()
+    },
+    reason: () => why,
+    translate: (error: unknown): Error => {
+      const reason = why
+      if (reason && reason !== 'user') {
+        return new Error(`${reason}，已中断。可以重试；连着失败就检查网络或换模型端点（设置 → 模型）。`)
+      }
+      return error instanceof Error ? error : new Error(String(error))
+    },
+    dispose: () => {
+      clearTimeout(idle)
+      clearTimeout(total)
+      external?.removeEventListener('abort', onExternalAbort)
+    },
+  }
+}
+
 export function createLlmPlugin(): LauncherPlugin<void> {
   return definePlugin('llm', () => (ctx) => {
     const settings = use<SettingsService>(ctx, 'settings')
@@ -98,17 +162,25 @@ export function createLlmPlugin(): LauncherPlugin<void> {
       }
 
       const started = Date.now()
-      const res = await fetch(`${baseUrl()}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(body),
-        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(90_000)]) : AbortSignal.timeout(90_000),
-      })
-
-      const text = await res.text()
+      const watchdog = createWatchdog(signal, CHAT_TIMEOUT_MS, CHAT_TIMEOUT_MS)
+      let res!: Response
+      let text!: string
+      try {
+        res = await fetch(`${baseUrl()}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify(body),
+          signal: watchdog.signal,
+        })
+        text = await res.text()
+      } catch (err) {
+        throw watchdog.translate(err)
+      } finally {
+        watchdog.dispose()
+      }
       if (!res.ok) {
         let detail = text.slice(0, 300)
         try {
@@ -173,18 +245,26 @@ export function createLlmPlugin(): LauncherPlugin<void> {
       }
 
       const started = Date.now()
-      const res = await fetch(`${baseUrl()}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(body),
-        signal: signal ?? AbortSignal.timeout(120_000),
-      })
+      const watchdog = createWatchdog(signal, STREAM_IDLE_TIMEOUT_MS, STREAM_TOTAL_TIMEOUT_MS)
+      let res!: Response
+      try {
+        res = await fetch(`${baseUrl()}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify(body),
+          signal: watchdog.signal,
+        })
+      } catch (err) {
+        watchdog.dispose()
+        throw watchdog.translate(err)
+      }
 
       if (!res.ok) {
         const text = await res.text()
+        watchdog.dispose()
         let detail = text.slice(0, 300)
         try {
           const parsed = JSON.parse(text) as RawResponse
@@ -192,6 +272,7 @@ export function createLlmPlugin(): LauncherPlugin<void> {
         } catch {
           /* 原样返回 */
         }
+        log.warn('llm', '模型请求失败', { status: res.status, detail, streamed: true })
         throw new Error(`模型请求失败（HTTP ${res.status}）：${detail}`)
       }
 
@@ -199,6 +280,7 @@ export function createLlmPlugin(): LauncherPlugin<void> {
       // 服务端不支持流式时退回一次性响应
       if (!contentType.includes('text/event-stream') || !res.body) {
         const text = await res.text()
+        watchdog.dispose()
         const data = JSON.parse(text) as RawResponse
         const message = data.choices?.[0]?.message
         if (message?.content) onDelta(message.content)
@@ -259,18 +341,24 @@ export function createLlmPlugin(): LauncherPlugin<void> {
         }
       }
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        let newline = buffer.indexOf('\n')
-        while (newline >= 0) {
-          ingest(buffer.slice(0, newline))
-          buffer = buffer.slice(newline + 1)
-          newline = buffer.indexOf('\n')
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          watchdog.bump()
+          buffer += decoder.decode(value, { stream: true })
+          let newline = buffer.indexOf('\n')
+          while (newline >= 0) {
+            ingest(buffer.slice(0, newline))
+            buffer = buffer.slice(newline + 1)
+            newline = buffer.indexOf('\n')
+          }
         }
+        if (buffer.trim()) ingest(buffer)
+      } catch (err) {
+        watchdog.dispose()
+        throw watchdog.translate(err)
       }
-      if (buffer.trim()) ingest(buffer)
 
       const toolCalls: LlmToolCall[] = [...calls.entries()]
         .sort(([a], [b]) => a - b)
@@ -281,6 +369,7 @@ export function createLlmPlugin(): LauncherPlugin<void> {
         }))
         .filter((call) => Boolean(call.name))
 
+      watchdog.dispose()
       log.info('llm', '流式响应完成', {
         ms: Date.now() - started,
         toolCalls: toolCalls.map((call) => call.name),

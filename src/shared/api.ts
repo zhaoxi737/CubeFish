@@ -167,6 +167,8 @@ export interface QdoApi {
     buttons(): Promise<PluginUiButton[]>
     /** P34：按下插件按钮 */
     press(pluginId: string, buttonId: string): Promise<{ ok: boolean; summary: string }>
+    /** 卸载插件并删除它的目录（不可恢复） */
+    remove(id: string): Promise<{ ok: boolean; error?: string }>
   }
   market: {
     list(force?: boolean): Promise<MarketListResult>

@@ -346,6 +346,7 @@ export function createIpcPlugin(config: IpcConfig): LauncherPlugin<void> {
     handle<{ ok: boolean; summary: string }>(CH.pluginsPress, (pluginId: string, buttonId: string) =>
       pluginHost.press(pluginId, buttonId),
     )
+    handle<{ ok: boolean; error?: string }>(CH.pluginsRemove, (id: string) => pluginHost.remove(id))
     handle<MarketListResult>(CH.marketList, (force?: boolean) => market.list(Boolean(force)))
     handle(CH.marketInstall, (id: string) => market.install(id))
     handle<FabricInstallResult>(CH.loaderFabric, async (gameVersion: string) => {

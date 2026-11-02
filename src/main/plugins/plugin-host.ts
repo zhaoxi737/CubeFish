@@ -11,7 +11,7 @@
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
-import { pathToFileURL } from 'node:url'
+import { pathToFileURL, fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { fork, type ChildProcess } from 'node:child_process'
 import type { PluginInfo, PluginManifest, PluginPermission, PluginUiButton } from '../../shared/types'
@@ -140,7 +140,20 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
     mkdirSync(pluginsDir, { recursive: true })
     mkdirSync(dataDir, { recursive: true })
 
-    const workerPath = process.env.QDOQMC_PLUGIN_WORKER || path.join(process.cwd(), 'out', 'plugin-worker.mjs')
+    // 沙箱入口：优先「和主进程 bundle 同级的 out/」（dev 与打包都成立），
+    // 再退回 cwd（打包版 cwd 不一定是安装目录，插件会全部加载失败）。
+    const workerPath = (() => {
+      const fromEnv = process.env.QDOQMC_PLUGIN_WORKER
+      if (fromEnv) return fromEnv
+      const candidates: string[] = []
+      try {
+        candidates.push(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'plugin-worker.mjs'))
+      } catch {
+        /* 忽略 */
+      }
+      candidates.push(path.join(process.cwd(), 'out', 'plugin-worker.mjs'))
+      return candidates.find((file) => existsSync(file)) ?? candidates[candidates.length - 1]!
+    })()
 
     let grants: GrantFile = readSync<GrantFile>(grantFile, {})
     const loaded = new Map<string, LoadedPlugin>()

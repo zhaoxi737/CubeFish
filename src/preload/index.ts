@@ -94,6 +94,7 @@ const api: QdoApi = {
     reload: (id) => ipcRenderer.invoke(CH.pluginsReload, id),
     buttons: () => ipcRenderer.invoke(CH.pluginsButtons),
     press: (pluginId, buttonId) => ipcRenderer.invoke(CH.pluginsPress, pluginId, buttonId),
+    remove: (id) => ipcRenderer.invoke(CH.pluginsRemove, id),
   },
   market: {
     list: (force) => ipcRenderer.invoke(CH.marketList, force),

@@ -71,16 +71,32 @@ function toError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/** 把任意值转成一行日志文本 */
+function toLogText(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (value instanceof Error) return `${value.name}: ${value.message}`
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function sendLog(level: 'info' | 'warn' | 'error', value: unknown): void {
+  send({ type: 'log', level, message: toLogText(value) })
+}
+
 function createApi(init: Extract<SandboxHostMessage, { type: 'init' }>): SandboxPluginApi {
+  const log = ((message: string) => sendLog('info', message)) as SandboxPluginApi['log']
+  log.info = (message) => sendLog('info', message)
+  log.warn = (message) => sendLog('warn', message)
+  log.error = (message) => sendLog('error', message)
+
   return {
     version: String(init.apiVersion),
     plugin: init.plugin,
     permissions: init.permissions,
-    log: {
-      info: (message) => send({ type: 'log', level: 'info', message }),
-      warn: (message) => send({ type: 'log', level: 'warn', message }),
-      error: (message) => send({ type: 'log', level: 'error', message }),
-    },
+    log,
     callTool: async (name, args) =>
       (await request('tools.call', { name, args: args ?? {} }, 120_000)) as { ok: boolean; summary: string; data?: unknown },
     fetch: async (url, options) =>
@@ -164,6 +180,25 @@ async function handle(message: SandboxHostMessage): Promise<void> {
         }
       }
       ;(globalThis as unknown as { fetch?: unknown }).fetch = globalFetch
+
+      // 插件里的 console.log/warn/error 也写进启动器日志（打包版看不到 worker 的 stdout）
+      const rawConsole = {
+        log: console.log.bind(console),
+        info: console.info.bind(console),
+        warn: console.warn.bind(console),
+        error: console.error.bind(console),
+      }
+      const patch = (method: 'log' | 'info' | 'warn' | 'error'): void => {
+        console[method] = (...args: unknown[]): void => {
+          const level = method === 'error' ? 'error' : method === 'warn' ? 'warn' : 'info'
+          sendLog(level, args.map(toLogText).join(' '))
+          rawConsole[method](...args)
+        }
+      }
+      patch('log')
+      patch('info')
+      patch('warn')
+      patch('error')
 
       const module = (await import(`${message.entry}?t=${Date.now()}`)) as {
         apply?: (api: SandboxPluginApi) => unknown

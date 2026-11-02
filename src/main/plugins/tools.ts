@@ -259,11 +259,11 @@ export function createToolsPlugin(): LauncherPlugin<void> {
     register({
       name: 'install_mod',
       description:
-        '安装一个模组到当前实例（自动匹配游戏版本与加载器，递归安装 required 前置）。参数是 Modrinth 的 slug。',
+        '安装一个模组到当前实例（自动匹配游戏版本与加载器，递归安装 required 前置）。参数可以给 Modrinth 的 slug，也可以直接给模组名（例如 forge-config-api-port / Forge Config API Port），会先直查再用搜索模糊解析。',
       parameters: {
         type: 'object',
         properties: {
-          slug: { type: 'string', description: 'Modrinth 项目 slug，例如 sodium' },
+          slug: { type: 'string', description: 'Modrinth 项目 slug 或模组名，例如 sodium' },
         },
         required: ['slug'],
         additionalProperties: false,

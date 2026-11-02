@@ -1080,6 +1080,7 @@ code {
   font-size: 11px;
   color: var(--muted);
   line-height: 1.5;
+  min-width: 0;
 }
 
 .trace-tool {
@@ -1097,7 +1098,11 @@ code {
 }
 
 .trace-summary {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-all;
   text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -3734,6 +3739,15 @@ body {
 .chat-side .chat {
   flex: 1;
   min-width: 0;
+}
+
+/* 收起按钮浮在左上角，给标题让出位置（之前压在「AI」上） */
+.chat-side .chat-head {
+  padding-left: 44px;
+}
+
+.chat-side .chat-session-select {
+  max-width: 40%;
 }
 
 .chat-side-collapse {

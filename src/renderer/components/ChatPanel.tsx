@@ -30,6 +30,8 @@ export function ChatPanel() {
   const streamRef = useRef('')
   /** 用户点了「停止」：这次回复的结果不再回填到界面，避免打断后突然又冒出答案 */
   const abortedRef = useRef(false)
+  /** 同步版 sending：IPC 的增量事件可能晚于 send 的返回值到达，用它把迟到的增量丢掉 */
+  const sendingRef = useRef(false)
 
   const focusInput = useCallback(() => {
     window.requestAnimationFrame(() => {
@@ -88,6 +90,9 @@ export function ChatPanel() {
   useEffect(() => {
     if (typeof window.qdo === 'undefined') return
     const off = window.qdo.chat.onDelta((chunk) => {
+      // 本轮已经结束（回复已回填 / 用户点了停止）→ 迟到的增量直接丢掉，
+      // 否则会在消息列表末尾留一个永远转圈的「流式中」气泡
+      if (!sendingRef.current) return
       streamRef.current += chunk
       const text = streamRef.current
       setMessages((prev) => {
@@ -164,6 +169,7 @@ export function ChatPanel() {
       return
     }
     abortedRef.current = false
+    sendingRef.current = true
     setSending(true)
     try {
       const reply = await window.qdo.chat.send(text, { replaceLast: replaceMode })
@@ -182,6 +188,7 @@ export function ChatPanel() {
         { role: 'system', text: `请求失败：${err instanceof Error ? err.message : String(err)}`, ts: Date.now() },
       ])
     } finally {
+      sendingRef.current = false
       setSending(false)
       focusInput()
     }
@@ -190,6 +197,7 @@ export function ChatPanel() {
   /** 打断当前回复：界面立刻回到可输入状态，不等主进程那一边收尾 */
   const halt = useCallback(async () => {
     abortedRef.current = true
+    sendingRef.current = false
     setSending(false)
     setLive([])
     focusInput()
@@ -323,7 +331,9 @@ export function ChatPanel() {
                 {msg.trace.map((item) => (
                   <div key={item.id} className={`trace-item ${item.ok ? 'trace-ok' : 'trace-bad'}`}>
                     <span className="trace-tool">{item.ok ? '✓' : '✕'} {item.tool}</span>
-                    <span className="trace-summary">{item.summary}</span>
+                    <span className="trace-summary">
+                      {item.summary.length > 120 ? `${item.summary.slice(0, 120)}…` : item.summary}
+                    </span>
                   </div>
                 ))}
               </div>

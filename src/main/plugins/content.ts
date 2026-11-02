@@ -462,6 +462,73 @@ export function createContentPlugin(): LauncherPlugin<void> {
       return runModrinth()
     }
 
+    /**
+     * 把 slug / 项目 id / 名字 解析成真实的 Modrinth 项目。
+     * AI 经常把「看起来像 slug 的名字」直接传进来（例如 forgeconfigapiport），
+     * 直查会 404；这时用搜索兜底并按 slug/标题/下载量挑最像的那个。
+     */
+    async function resolveProject(input: string): Promise<{ id: string; slug?: string; title: string; projectType: ContentKind }> {
+      const raw = input.trim()
+      if (!raw) throw new Error('项目名不能为空')
+      try {
+        const project = await api<RawProject>(`/project/${encodeURIComponent(raw)}`)
+        return {
+          id: project.id,
+          slug: project.slug,
+          title: project.title ?? raw,
+          projectType: (project.project_type ?? 'mod') as ContentKind,
+        }
+      } catch (err) {
+        log.warn('content', '项目直查失败，改用搜索兜底', { input: raw, error: String(err) })
+      }
+      // 搜索：把分隔符换成空格，命中最像的
+      const params = new URLSearchParams({ query: raw.replace(/[-_.]/g, ' '), limit: '20', index: 'relevance' })
+      const data = await api<{ hits: RawSearchHit[] }>(`/search?${params.toString()}`)
+      const hits = data.hits ?? []
+      if (hits.length === 0) throw new Error(`没找到「${raw}」：Modrinth 直查和搜索都没有结果，换个名字试试`)
+      const norm = (value: string): string => (value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+      const want = norm(raw)
+      const scoreOf = (hit: RawSearchHit): number => {
+        const slug = norm(hit.slug ?? '')
+        const title = norm(hit.title ?? '')
+        const downloads = hit.downloads ?? 0
+        if (slug === want) return 1e15 + downloads
+        if (title === want) return 5e14 + downloads
+        if (slug.startsWith(want)) return 1e14 + downloads
+        if (want.length >= 4 && want.startsWith(slug)) return 8e13 + downloads
+        if (title.startsWith(want)) return 5e13 + downloads
+        // 只是「有点像」（kilt-forgeconfigapiport-fix 这种）→ 不算把握，只用来列候选
+        if (title.includes(want) || slug.includes(want)) return 1e12 + downloads
+        return downloads
+      }
+      const ranked = hits
+        .map((hit) => ({ hit, score: scoreOf(hit) }))
+        .sort((a, b) => b.score - a.score)
+      const best = ranked[0]!
+      const candidates = ranked
+        .slice(0, 3)
+        .map((item) => `${item.hit.slug}（${item.hit.title}）`)
+        .join('；')
+      // 只有「一模一样 / 前缀匹配」才算有把握，否则宁可报错也不装错东西
+      if (best.score < 5e13) {
+        throw new Error(
+          `找不到正好叫「${raw}」的项目。最接近的是：${candidates}。先用 search_mods 查到准确 slug 再安装（直接猜名字容易装错模组）。`,
+        )
+      }
+      log.info('content', '项目名已模糊解析', {
+        input: raw,
+        picked: best.hit.slug,
+        title: best.hit.title,
+        projectId: best.hit.project_id,
+      })
+      return {
+        id: best.hit.project_id,
+        slug: best.hit.slug,
+        title: best.hit.title,
+        projectType: (best.hit.project_type ?? 'mod') as ContentKind,
+      }
+    }
+
     async function versions(
       projectId: string,
       opts: { mcVersion?: string; loader?: string } = {},
@@ -700,11 +767,11 @@ export function createContentPlugin(): LauncherPlugin<void> {
       }
       const task = createTask('安装内容', '安装内容')
       try {
-        const project = await api<{ id: string; title: string; project_type: string }>(
-          `/project/${encodeURIComponent(projectId)}`,
-        )
-        const kind = (project.project_type ?? 'mod') as ContentKind
-        task.title = `安装${kindLabel(kind)} ${project.title ?? projectId}`
+        // 直查 404（slug 猜错 / 只给了名字）时自动搜一次再装
+        const resolved = await resolveProject(projectId)
+        const realId = resolved.id
+        const kind = resolved.projectType
+        task.title = `安装${kindLabel(kind)} ${resolved.title}`
         task.message = task.title
         emitTask(task, 'content', true)
         const instance = instances.get(instanceId)
@@ -713,22 +780,22 @@ export function createContentPlugin(): LauncherPlugin<void> {
           opts.loader ??
           (instance?.loader === 'fabric' || instance?.versionId?.startsWith('fabric-loader') ? 'fabric' : undefined)
         const before = await installed(instanceId)
-        const version = await pickVersion(projectId, { mcVersion: mcv, loader })
+        const version = await pickVersion(realId, { mcVersion: mcv, loader })
         if (!version) {
           const error = `没有匹配的版本（游戏版本 ${mcv ?? '不限'} / 加载器 ${loader ?? '不限'}）`
           emitTask(task, 'failed', true, error)
-          return { ok: false, projectId, title: project.title, files: [], dependenciesInstalled: 0, error }
+          return { ok: false, projectId: realId, title: resolved.title, files: [], dependenciesInstalled: 0, error }
         }
         // P37：先把旧版本文件清掉，避免同一模组两份 jar
-        await removeProjectFiles(instanceId, projectId)
+        await removeProjectFiles(instanceId, realId)
         const files = await installVersion(instanceId, version, kind, 0, task)
         const after = await installed(instanceId)
         const dependenciesInstalled = Math.max(0, after.length - before.length - 1)
         emitTask(task, 'done', true)
         return {
           ok: true,
-          projectId,
-          title: project.title,
+          projectId: realId,
+          title: resolved.title,
           versionNumber: version.versionNumber,
           files,
           dependenciesInstalled,

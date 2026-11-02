@@ -385,10 +385,16 @@ export async function runCallToolCli(kernel: Kernel, spec: string): Promise<numb
   const [name, ...rest] = spec.split('::')
   let args: Record<string, unknown> = {}
   if (rest.length > 0) {
+    const raw = rest.join('::')
     try {
-      args = JSON.parse(rest.join('::')) as Record<string, unknown>
+      args = JSON.parse(raw) as Record<string, unknown>
     } catch {
+      // Windows 命令行常把 JSON 里的双引号吃掉，兜底支持 key=value[,key=value]
       args = {}
+      for (const pair of raw.split(',')) {
+        const [key, ...value] = pair.split('=')
+        if (key.trim()) args[key.trim()] = value.join('=').trim()
+      }
     }
   }
   const result = await tools.call(name, args)

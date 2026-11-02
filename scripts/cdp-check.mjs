@@ -107,6 +107,12 @@ const main = async () => {
   await page.ready
   const out = {}
 
+  // 等渲染层挂载完成（内核 boot + React 首屏）
+  for (let i = 0; i < 100; i += 1) {
+    if (await page.evaluate(`Boolean(document.querySelector('.composer input'))`)) break
+    await sleep(200)
+  }
+
   // 响应性模式：模型端完全不回数据时，界面是不是还活着（这是「卡住」投诉的核心）
   if (process.argv[3] === 'hang') {
     const pings = []
@@ -140,6 +146,44 @@ const main = async () => {
       last: [...document.querySelectorAll('.chat-list .bubble')].pop()?.textContent.replace(/\\s+/g, ' ').slice(0, 100) ?? null,
       focused: document.activeElement === document.querySelector('.composer input'),
     }))()`)
+    console.log(JSON.stringify(out, null, 2))
+    page.close()
+    return
+  }
+
+  // 布局模式：工具调用轨迹会不会横向溢出、收起按钮会不会压住标题
+  if (process.argv[3] === 'layout') {
+    await page.evaluate(setInput('你好'))
+    await page.evaluate(`document.querySelector('.composer').requestSubmit()`)
+    await page.evaluate(waitIdle(2))
+    out.layout = await page.evaluate(`(() => {
+      const rect = (sel) => document.querySelector(sel)?.getBoundingClientRect() ?? null
+      const title = rect('.chat-title')
+      const collapse = rect('.chat-side-collapse')
+      const overlap =
+        title && collapse
+          ? !(collapse.right <= title.left || collapse.left >= title.right || collapse.bottom <= title.top || collapse.top >= title.bottom)
+          : null
+      const items = [...document.querySelectorAll('.trace-item')]
+      const summary = [...document.querySelectorAll('.trace-summary')]
+      return {
+        overlap,
+        titleLeft: title ? Math.round(title.left) : null,
+        collapseRight: collapse ? Math.round(collapse.right) : null,
+        traceCount: items.length,
+        traceOverflowX: items.map((el) => el.scrollWidth - el.clientWidth),
+        summaryOverflowX: summary.map((el) => el.scrollWidth - el.clientWidth),
+        chatOverflowX: (() => {
+          const chat = document.querySelector('.chat')
+          return chat ? chat.scrollWidth - chat.clientWidth : null
+        })(),
+        headOverflowX: (() => {
+          const head = document.querySelector('.chat-head')
+          return head ? head.scrollWidth - head.clientWidth : null
+        })(),
+        sample: summary[0]?.textContent?.length ?? 0,
+      }
+    })()`)
     console.log(JSON.stringify(out, null, 2))
     page.close()
     return

@@ -14,6 +14,7 @@ import { rm } from 'node:fs/promises'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { fork, type ChildProcess } from 'node:child_process'
+import { net as electronNet } from 'electron'
 import type { PluginInfo, PluginManifest, PluginPermission, PluginUiButton } from '../../shared/types'
 import type { SandboxButtonDef, SandboxCommandDef, SandboxToolDef, SandboxWorkerMessage } from '../../shared/plugin-sandbox'
 import { writeJsonAtomic, writeTextAtomic, stripBom } from '../lib/fsx'
@@ -274,12 +275,19 @@ export function createPluginHostPlugin(): LauncherPlugin<void> {
               hostResponse(state, message.callId, false, undefined, '插件联网只允许 https 链接')
               return
             }
-            const res = await fetch(url, {
+            const init = {
               method: params.options?.method ?? 'GET',
               headers: { 'user-agent': `QDOQMC-plugin/${id}`, ...(params.options?.headers ?? {}) },
               body: params.options?.body,
               signal: AbortSignal.timeout(20_000),
-            })
+            }
+            // 先用 Chromium 网络栈（会走系统代理），失败再退回 Node fetch
+            let res: Response
+            try {
+              res = await electronNet.fetch(url, init as RequestInit)
+            } catch {
+              res = await fetch(url, init)
+            }
             const text = await res.text()
             hostResponse(state, message.callId, true, { ok: res.ok, status: res.status, text: text.slice(0, 200_000) })
             return

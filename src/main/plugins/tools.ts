@@ -3,7 +3,7 @@
  *
  * 每个工具 = 权限点 + 审计点。P4 全部是用户级操作；后续插件市场的第三方工具走权限分级。
  */
-import { app } from 'electron'
+import { app, net as electronNet } from 'electron'
 import { execFile } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import path from 'node:path'
@@ -97,6 +97,306 @@ function str(value: unknown, fallback = ''): string {
 function num(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
+
+/* ============================================================
+   联网工具公共件（P43）：搜索 + 抓网页
+   - 搜索以前只接了 DuckDuckGo，被墙的网络（国内常见）每次都是 "fetch failed"；
+     现在按 Bing → DuckDuckGo 依次回退，并把失败原因翻译成人话。
+   - 抓网页先走 Chromium 的 net.fetch（会走系统代理/系统证书），失败再退回 Node fetch。
+   ============================================================ */
+
+const WEB_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+
+function decodeEntities(text: string): string {
+  const named: Record<string, string> = {
+    amp: '&',
+    lt: '<',
+    gt: '>',
+    quot: '"',
+    apos: "'",
+    nbsp: ' ',
+    '#39': "'",
+    middot: '·',
+    hellip: '…',
+  }
+  return text
+    .replace(/&#(\d+);/g, (_all, code: string) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_all, code: string) => String.fromCharCode(Number.parseInt(code, 16)))
+    .replace(/&([a-z#0-9]+);/gi, (all, name: string) => named[name.toLowerCase()] ?? all)
+}
+
+/** 把一段 HTML 变成可读纯文本（去脚本样式、按块换行、合并空白） */
+function htmlToText(html: string): string {
+  const withoutHead = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<svg[\s\S]*?<\/svg>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, '')
+  const withBreaks = withoutHead
+    // 行内强调标签直接去掉，别在标题里留空格（搜狗的 <em> 高亮）
+    .replace(/<\/?(?:em|b|strong|i|span|mark|font|u|small)[^>]*>/gi, '')
+    .replace(/<(br|hr)\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|section|article|li|tr|h[1-6]|pre|blockquote|table|ul|ol)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+  return decodeEntities(withBreaks)
+    .replace(/[ \t\u00a0]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join('\n')
+    .trim()
+}
+
+/** fetch 只会抛 "fetch failed"，真正原因在 cause 里——翻译成用户能看懂的话 */
+function describeNetError(error: unknown): string {
+  const err = error as { message?: string; cause?: { code?: string; message?: string } }
+  const code = err?.cause?.code ?? ''
+  const causeMessage = err?.cause?.message ?? ''
+  const raw = `${err?.message ?? String(error)}${causeMessage && causeMessage !== err?.message ? `（${causeMessage}）` : ''}`
+  if (code === 'UND_ERR_CONNECT_TIMEOUT' || /timed out|timeout/i.test(`${causeMessage} ${raw}`)) {
+    return `${raw}：连接超时，这个网址在当前网络基本打不开（多数是被墙或限速）`
+  }
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return `${raw}：域名解析失败，检查网络或 DNS`
+  if (code === 'ECONNRESET' || code === 'ECONNREFUSED' || code === 'ECONNABORTED') return `${raw}：连接被断开/拒绝`
+  if (/CERT|SSL|TLS/i.test(code) || /certificate/i.test(causeMessage)) return `${raw}：HTTPS 证书校验失败`
+  return raw
+}
+
+interface FetchTextResult {
+  ok: boolean
+  status: number
+  contentType: string
+  text: string
+  via: string
+  error?: string
+}
+
+/** 抓网页：先用 Chromium 网络栈（走系统代理），不行再用 Node fetch */
+async function fetchUrl(
+  url: string,
+  options: { timeoutMs?: number; headers?: Record<string, string> } = {},
+): Promise<FetchTextResult> {
+  const timeout = options.timeoutMs ?? 15_000
+  const headers = {
+    'user-agent': WEB_UA,
+    'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
+    ...(options.headers ?? {}),
+  }
+  const failures: string[] = []
+  const attempt = async (
+    label: string,
+    run: (signal: AbortSignal) => Promise<{ ok: boolean; status: number; contentType: string; text: string }>,
+  ): Promise<FetchTextResult | null> => {
+    try {
+      return { ...(await run(AbortSignal.timeout(timeout))), via: label }
+    } catch (err) {
+      failures.push(`${label}：${describeNetError(err)}`)
+      return null
+    }
+  }
+  const read = async (res: Response): Promise<FetchTextResult> => ({
+    ok: res.ok,
+    status: res.status,
+    contentType: res.headers.get('content-type') ?? '',
+    text: await res.text(),
+    via: '',
+  })
+
+  const viaChromium = await attempt('系统网络栈', async (signal) => {
+    const res = await electronNet.fetch(url, { headers, signal } as RequestInit)
+    return read(res)
+  })
+  if (viaChromium) return viaChromium
+
+  const viaNode = await attempt('Node', async (signal) => {
+    const res = await fetch(url, { headers, signal })
+    return read(res)
+  })
+  if (viaNode) return viaNode
+
+  return { ok: false, status: 0, contentType: '', text: '', via: 'none', error: failures.join('；') }
+}
+
+interface WebHit {
+  title: string
+  url: string
+  snippet?: string
+}
+
+/** Bing 的结果链接是 bing.com/ck/a?...&u=a1<base64url>，要还原成真实地址 */
+function decodeBingLink(href: string): string {
+  const match = /[?&]u=a1([A-Za-z0-9_-]+)/.exec(href)
+  if (!match) return href
+  try {
+    const base64 = match[1]!.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4)
+    const decoded = Buffer.from(padded, 'base64').toString('utf8')
+    return /^https?:\/\//i.test(decoded) ? decoded : href
+  } catch {
+    return href
+  }
+}
+
+function parseBing(html: string): WebHit[] {
+  const hits: WebHit[] = []
+  const pattern = /<li class="b_algo"[\s\S]*?<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(html)) !== null && hits.length < 8) {
+    const url = decodeBingLink(decodeEntities(match[1] ?? ''))
+    const title = htmlToText(match[2] ?? '').replace(/\n+/g, ' ')
+    if (title && /^https?:\/\//i.test(url)) hits.push({ title, url })
+  }
+  return hits
+}
+
+function parseDuckDuckGo(html: string): WebHit[] {
+  const hits: WebHit[] = []
+  const patterns = [
+    /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi,
+    /<a[^>]*href="([^"]+)"[^>]*class=['"]result-link['"][^>]*>([\s\S]*?)<\/a>/gi,
+  ]
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null
+    while ((match = pattern.exec(html)) !== null && hits.length < 8) {
+      let url = decodeEntities(match[1] ?? '')
+      const encoded = /[?&]uddg=([^&]+)/.exec(url)
+      if (encoded) {
+        try {
+          url = decodeURIComponent(encoded[1]!)
+        } catch {
+          /* 保留原链接 */
+        }
+      }
+      const title = htmlToText(match[2] ?? '').replace(/\n+/g, ' ')
+      if (title && /^https?:\/\//i.test(url)) hits.push({ title, url })
+    }
+    if (hits.length > 0) break
+  }
+  return hits
+}
+
+/** Bing 的 RSS 输出：直接给真实链接，比解析 HTML 稳得多 */
+function parseBingRss(xml: string): WebHit[] {
+  const hits: WebHit[] = []
+  const items = xml.match(/<item>[\s\S]*?<\/item>/gi) ?? []
+  for (const item of items) {
+    if (hits.length >= 8) break
+    const title = decodeEntities((/<title>([\s\S]*?)<\/title>/i.exec(item)?.[1] ?? '').replace(/<!\[CDATA\[|\]\]>/g, '')).trim()
+    const url = decodeEntities((/<link>([\s\S]*?)<\/link>/i.exec(item)?.[1] ?? '').replace(/<!\[CDATA\[|\]\]>/g, '')).trim()
+    const snippet = htmlToText((/<description>([\s\S]*?)<\/description>/i.exec(item)?.[1] ?? '').replace(/<!\[CDATA\[|\]\]>/g, ''))
+      .replace(/\n+/g, ' ')
+      .slice(0, 120)
+    if (title && /^https?:\/\//i.test(url)) hits.push({ title, url, snippet })
+  }
+  return hits
+}
+
+/** 搜狗：中文查询在国内网络最稳；链接是 /link?url=… 包装，web_fetch 会自动拆 */
+function parseSogou(html: string): WebHit[] {
+  const hits: WebHit[] = []
+  const pattern = /<h3[^>]*class="[^"]*vr-title[^"]*"[^>]*>([\s\S]*?)<\/h3>/gi
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(html)) !== null && hits.length < 8) {
+    const block = match[1] ?? ''
+    const anchor = /<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i.exec(block)
+    if (!anchor) continue
+    const title = htmlToText(anchor[2] ?? '').replace(/\n+/g, ' ')
+    let href = decodeEntities(anchor[1] ?? '')
+    if (href.startsWith('/')) href = `https://www.sogou.com${href}`
+    if (title && /^https?:\/\//i.test(href)) hits.push({ title, url: href })
+  }
+  return hits
+}
+
+function hasCJK(text: string): boolean {
+  return /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af]/.test(text)
+}
+
+interface SearchProvider {
+  name: string
+  url(query: string): string
+  parse(body: string): WebHit[]
+}
+
+const BING_RSS: SearchProvider = {
+  name: 'Bing',
+  url: (query) => `https://www.bing.com/search?q=${encodeURIComponent(query)}&format=rss`,
+  parse: parseBingRss,
+}
+
+const BING_HTML: SearchProvider = {
+  name: 'Bing（网页）',
+  url: (query) => `https://www.bing.com/search?q=${encodeURIComponent(query)}`,
+  parse: parseBing,
+}
+
+const SOGOU: SearchProvider = {
+  name: '搜狗',
+  url: (query) => `https://www.sogou.com/web?query=${encodeURIComponent(query)}`,
+  parse: parseSogou,
+}
+
+const DUCKDUCKGO: SearchProvider = {
+  name: 'DuckDuckGo',
+  url: (query) => `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+  parse: parseDuckDuckGo,
+}
+
+/**
+ * 按查询语种挑顺序：
+ *  - 中文查询 → 搜狗优先（Bing 在部分网络对中文查询会返回不相关结果）
+ *  - 其它 → Bing 优先（RSS 直出真实链接），搜狗和 DuckDuckGo 兜底
+ */
+function searchProviders(query: string): SearchProvider[] {
+  return hasCJK(query) ? [SOGOU, BING_RSS, BING_HTML, DUCKDUCKGO] : [BING_RSS, BING_HTML, SOGOU, DUCKDUCKGO]
+}
+
+async function webSearch(query: string): Promise<ToolResult> {
+  const failures: string[] = []
+  for (const provider of searchProviders(query)) {
+    const res = await fetchUrl(provider.url(query), { timeoutMs: 10_000, headers: { 'user-agent': WEB_UA } })
+    if (!res.ok) {
+      failures.push(`${provider.name}：${res.error ?? `HTTP ${res.status}`}`)
+      continue
+    }
+    const hits = provider.parse(res.text)
+    if (hits.length === 0) {
+      failures.push(`${provider.name}：没有解析到结果（可能被风控/改版）`)
+      continue
+    }
+    return {
+      ok: true,
+      summary: [
+        `搜索「${query}」（来源 ${provider.name}）：`,
+        ...hits.map((hit) => `· ${hit.title} — ${hit.url}${hit.snippet ? `\n   ${hit.snippet}` : ''}`),
+        '要看正文用 web_fetch 抓上面的链接。',
+      ].join('\n'),
+    }
+  }
+  return {
+    ok: false,
+    summary: [
+      '搜索失败：能试的引擎都没成功。',
+      ...failures.map((line) => `· ${line}`),
+      '外网被限制时可以直接用 web_fetch 抓已知网址；查模组用 search_mods（走 Modrinth，不受影响）。',
+    ].join('\n'),
+  }
+}
+
+/** 有些引擎（搜狗 / 短链）返回一个只有 JS 跳转的小页面，把真实地址抠出来再抓一次 */
+function extractRedirectTarget(html: string): string | null {
+  if (html.length > 4000) return null
+  const js = /window\.location(?:\.href)?\s*=\s*["']([^"']+)["']/i.exec(html) ?? /location\.replace\(\s*["']([^"']+)["']/i.exec(html)
+  if (js?.[1]) return decodeEntities(js[1])
+  const meta = /http-equiv=["']?refresh["']?[^>]*content=["'][^"']*url=([^"'\s>]+)/i.exec(html)
+  if (meta?.[1]) return decodeEntities(meta[1])
+  return null
+}
+
 
 export function createToolsPlugin(): LauncherPlugin<void> {
   return definePlugin('tools', () => (ctx) => {
@@ -852,7 +1152,8 @@ export function createToolsPlugin(): LauncherPlugin<void> {
 
     register({
       name: 'web_fetch',
-      description: '抓取一个网页/接口的文字内容（只允许 https，用于查资料，例如模组说明、报错原因）。',
+      description:
+        '抓取一个网页/接口的文字内容（只允许 https，用于查资料，例如模组说明、报错原因）。HTML 会转成纯文本再返回。',
       parameters: {
         type: 'object',
         properties: { url: { type: 'string', description: 'https 链接' } },
@@ -862,10 +1163,25 @@ export function createToolsPlugin(): LauncherPlugin<void> {
       async handler(args) {
         const url = str(args.url).trim()
         if (!/^https:\/\//i.test(url)) return { ok: false, summary: '只允许 https 链接' }
-        const res = await fetch(url, { headers: { 'user-agent': 'QDOQMC/0.1.0' }, signal: AbortSignal.timeout(15_000) })
-        if (!res.ok) return { ok: false, summary: `HTTP ${res.status}` }
-        const text = await res.text()
-        return { ok: true, summary: text.slice(0, 20000) || '（空内容）' }
+        // 最多跳 3 次：搜索结果里的包装链接（搜狗 /link、短链）会自动拆开
+        let current = url
+        let res: FetchTextResult | undefined
+        for (let hop = 0; hop < 3; hop += 1) {
+          res = await fetchUrl(current, { timeoutMs: 20_000 })
+          if (!res.ok) break
+          const next = extractRedirectTarget(res.text)
+          if (!next || next === current || !/^https?:\/\//i.test(next)) break
+          current = next
+        }
+        if (!res || !res.ok) {
+          const detail = res?.error ?? (res?.status ? `HTTP ${res.status}` : '未知错误')
+          return { ok: false, summary: `抓取失败（${current}）：${detail}` }
+        }
+        const raw = res.text
+        const looksMarkup = /html|xml/i.test(res.contentType) || /^\s*<(?:!doctype|html|head|body)/i.test(raw.slice(0, 200))
+        const text = looksMarkup ? htmlToText(raw) : raw
+        const clipped = text.length > 12_000 ? `${text.slice(0, 12_000)}\n\n…（已截断，全文 ${text.length} 字）` : text
+        return { ok: true, summary: clipped || `（${current} 抓取成功但没有文字内容，HTTP ${res.status}）` }
       },
     })
 
@@ -1042,7 +1358,8 @@ export function createToolsPlugin(): LauncherPlugin<void> {
 
     register({
       name: 'web_search',
-      description: '联网搜索网页（DuckDuckGo），返回标题和链接。需要最新信息/查资料时用；要正文再配合 web_fetch。',
+      description:
+        '联网搜索网页（Bing 优先，DuckDuckGo 兜底），返回标题和链接。需要最新信息/查资料时用；要正文再配合 web_fetch。',
       parameters: {
         type: 'object',
         properties: { query: { type: 'string', description: '搜索词' } },
@@ -1053,25 +1370,9 @@ export function createToolsPlugin(): LauncherPlugin<void> {
         const query = str(args.query).trim()
         if (!query) return { ok: false, summary: 'query 为空' }
         try {
-          const res = await fetch(`https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
-            headers: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) QDOQMC' },
-            signal: AbortSignal.timeout(15_000),
-          })
-          if (!res.ok) return { ok: false, summary: `搜索失败：HTTP ${res.status}` }
-          const html = await res.text()
-          const items: string[] = []
-          const pattern = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi
-          let match: RegExpExecArray | null
-          while ((match = pattern.exec(html)) !== null && items.length < 8) {
-            const title = match[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
-            let href = match[1]
-            const encoded = /[?&]uddg=([^&]+)/.exec(href)
-            if (encoded) href = decodeURIComponent(encoded[1])
-            items.push(`${title} — ${href}`)
-          }
-          return { ok: true, summary: items.length ? items.join('\n') : '搜索没有结果（可能被风控，试试换关键词或用 web_fetch 直接抓已知网址）' }
+          return await webSearch(query)
         } catch (err) {
-          return { ok: false, summary: `搜索失败：${err instanceof Error ? err.message : String(err)}` }
+          return { ok: false, summary: `搜索失败：${describeNetError(err)}` }
         }
       },
     })

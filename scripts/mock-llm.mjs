@@ -21,6 +21,10 @@ function decide(userText, lastToolContent) {
     return { content: `已完成：${lastToolContent.replace(/\s+/g, ' ').slice(0, 180)}`, tool_calls: [] }
   }
   const text = userText
+  if (/搜|查一下|search/i.test(text)) {
+    const query = /sodium/i.test(text) ? 'sodium minecraft mod' : '我的世界 模组 推荐'
+    return { content: '', tool_calls: [toolCall('web_search', { query })] }
+  }
   if (/冲突|检查|兼容/.test(text)) return { content: '', tool_calls: [toolCall('analyze_conflicts', {})] }
   if (/崩|报错|日志|打不开/.test(text)) return { content: '', tool_calls: [toolCall('diagnose_crash', {})] }
   if (/装|安装|模组/.test(text)) {

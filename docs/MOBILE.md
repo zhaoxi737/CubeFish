@@ -88,3 +88,48 @@ Minecraft Java 不能直接跑在 Android 上，需要四件套：
 - iOS（需 Mac + 独立仓库）
 - 自研 JRE / LWJGL / 渲染层（不可能在合理工期完成）
 - 内置游戏本体或绕过正版验证
+
+## 9. 局域网镜像（M11，解决「手机下载 0.03 MB/s」）
+
+### 9.1 实测根因（不要把锅扣在「镜像选错」上）
+
+在用户所在网络（印尼）实测，同一 Wi-Fi：
+
+| 目标 | 单连接 | 8 连接并发 |
+| --- | --- | --- |
+| `resources.download.minecraft.net`（Mojang 官方资源 CDN） | 1.07 MB/s | 1.38 MB/s |
+| 手机 App 内实际（官方源） | 0.03 MB/s | — |
+
+结论：
+
+1. 官方源已经是对的（印尼连 BMCLAPI 更慢），1.20.1 约 873 MB 在电脑上也要 ~11 分钟；
+2. 手机比电脑慢 30 倍，瓶颈在手机这一侧（Wi-Fi 链路 + 3598 个资源小文件逐个握手），
+   加线程、换镜像都救不了；
+3. 唯一可靠的解法：**让电脑去下，手机只从局域网拿**。
+
+### 9.2 工具（`scripts/phone-mirror/`）
+
+| 文件 | 作用 |
+| --- | --- |
+| `mirror.py` | 按 Minecraft 版本预下载官方文件，产出 BMCLAPI 兼容目录（`assets/`、`maven/`、`v1/`、`mc/`），可续传、sha1 校验 |
+| `serve.py` | 局域网文件服务：HTTP/1.1 长连接、并发队列 128、**镜像里没有的文件自动从 Mojang 反代并缓存**（所以任意版本都能用，第一次慢、之后从本地给） |
+| `D:\CubeFish-Mobile\启动局域网下载服务.cmd` | 双击即启动（8765 端口，服务 `D:\CubeFish-Mobile\download`） |
+| `D:\CubeFish-Mobile\预下载游戏文件镜像.cmd` | 双击输入版本号即可预下载其他版本 |
+
+### 9.3 App 侧改动（`DownloadMirror`）
+
+- `downloadSource` 新增取值 `custom`：三处基地址 = `<base>/maven`（库）、`<base>`（版本 JSON / 资源索引 / 客户端 jar）、`<base>/assets`（资源对象）
+- 客户端 jar 原先不在镜像范围内（host 是 `piston-data.mojang.com`），M11 一并改写
+- 版本列表（`AsyncVersionList`）也走当前下载源，失败回退官方
+- `AndroidManifest` 打开 `usesCleartextTraffic`（否则 Android 9+ 直接拦掉 `http://` 局域网地址）
+- 下载线程 8 → 16；单文件下完不再 `disconnect()`，连接回池复用（省掉几千次 TLS 握手）
+- 自定义镜像地址预填当前电脑地址，用户只需改一个下拉框，不用在手机上打 IP
+
+### 9.4 复用到别的项目/别的版本
+
+```powershell
+python scripts/phone-mirror/mirror.py 1.21.1 --root D:\CubeFish-Mobile\download\mirror --workers 16
+python scripts/phone-mirror/serve.py --port 8765 --root D:\CubeFish-Mobile\download
+```
+
+手机端填 `http://<电脑IP>:8765/mirror` 即可。

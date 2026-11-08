@@ -7,6 +7,12 @@
 
 ![主界面](docs/screenshots/main.png)
 
+## 手机版（开发中）
+
+方块鱼手机版（Android）已能构建并在手机上跑 Minecraft Java：**[CubeFish-Mobile](https://github.com/zhaoxi737/CubeFish-Mobile)**
+（基于 Amethyst/Pojav 引擎 fork，LGPL-3.0，保留上游署名；引擎不自研，AI 助手逐步接入）。
+进度、支持范围、构建方式见 [docs/MOBILE.md](docs/MOBILE.md)。
+
 ## 它和别的启动器有什么不一样
 
 | 常见启动器        | 方块鱼                         |

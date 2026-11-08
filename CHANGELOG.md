@@ -15,6 +15,10 @@
 - 打包版插件沙箱入口改为按 bundle 位置解析，不再依赖启动时的工作目录。
 
 ### 新增
+- **手机版（Android）开工**：新仓库 [CubeFish-Mobile](https://github.com/zhaoxi737/CubeFish-Mobile)，
+  以 Amethyst/Pojav 引擎（LGPL-3.0）为底座 fork，完成 M0 构建链 + M1 品牌化：
+  应用名/图标/包名改为方块鱼（`dev.cubefish.mobile`）、ABI 裁到 arm64-v8a + armeabi-v7a、可产出可安装 debug APK。
+  方案、支持底线、合规与里程碑见 [docs/MOBILE.md](docs/MOBILE.md)。
 - 插件面板每个插件都有**删除**按钮：卸载 + 删掉插件目录（AI 自己写的插件也能这样删）。
 - 插件沙箱 API：`api.log('...')` 可直接调用（原来是对象，AI 写插件时经常调错）；插件里的 `console.log` 也会进启动器日志。
 - `install_mod` 支持**模组名/猜的 slug**：直查 404 后自动搜索解析（`Forge Config API Port` ✓）；实在不像的名字**不会乱装**，只列出候选并提示先用 `search_mods` 查准确 slug。

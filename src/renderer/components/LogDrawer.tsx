@@ -5,6 +5,8 @@ interface Props {
   onClose: () => void
   /** 游戏日志看哪个实例（默认当前实例） */
   instanceId?: string
+  /** dialog = 浮层（旧）；page = 整页（S4） */
+  variant?: 'dialog' | 'page'
 }
 
 const LEVEL_LABEL: Record<string, string> = {
@@ -20,7 +22,7 @@ interface GameLogState {
   error?: string
 }
 
-export function LogDrawer({ onClose, instanceId = 'default' }: Props) {
+export function LogDrawer({ onClose, instanceId = 'default', variant = 'dialog' }: Props) {
   const [tab, setTab] = useState<'launcher' | 'game'>('launcher')
   const [records, setRecords] = useState<LogRecord[]>([])
   const [gameLog, setGameLog] = useState<GameLogState>({ lines: [] })
@@ -74,8 +76,8 @@ export function LogDrawer({ onClose, instanceId = 'default' }: Props) {
   }, [tab, loadGame])
 
   return (
-    <div className="overlay overlay-right" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="drawer">
+    <div className={`overlay overlay-right${variant === 'page' ? ' is-page' : ''}`} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <div className={`drawer${variant === 'page' ? ' is-page' : ''}`}>
         <div className="dialog-head">
           <h2>{tab === 'launcher' ? '结构化日志' : '游戏日志'}</h2>
           <div className="drawer-actions">

@@ -10,7 +10,7 @@ import { writeFileSync } from 'node:fs'
 
 const PORT = Number(process.argv[2] || 9333)
 const OUT = process.argv[3] || 'out/ui-shot.png'
-const ACTION = process.argv[4] || ''
+const ACTION = process.argv[4] || process.env.UI_ACTION || ''
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -62,7 +62,11 @@ async function main() {
   await sleep(2500)
   if (ACTION) {
     const result = await client.call('Runtime.evaluate', { expression: ACTION, awaitPromise: true, returnByValue: true })
-    console.log('action ->', JSON.stringify(result.result?.value ?? null))
+    if (result.exceptionDetails) {
+      console.log('action threw ->', result.exceptionDetails.exception?.description ?? result.exceptionDetails.text)
+    } else {
+      console.log('action ->', JSON.stringify(result.result?.value ?? null))
+    }
     await sleep(1200)
   }
   const shot = await client.call('Page.captureScreenshot', { format: 'png' })

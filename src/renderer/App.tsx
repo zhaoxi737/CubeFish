@@ -460,7 +460,13 @@ export function App() {
         version={info.version}
         updateText={updateLabel(update)}
         updateTone={updateTone}
-        onPage={setPage}
+        onPage={(next) => {
+          setShowSettings(false)
+          setShowPlugins(false)
+          setShowSystem(false)
+          setShowLogs(false)
+          setPage(next)
+        }}
         onDownload={() => {
           setDownloadTab('game')
           setPage('download')
@@ -476,7 +482,7 @@ export function App() {
       </TopBar>
 
       <main className="cf-main">
-        {page === 'home' ? (
+        {page === 'home' && !showSettings && !showPlugins && !showSystem && !showLogs ? (
         <HomePage
           instance={instance}
           running={running}
@@ -603,7 +609,29 @@ export function App() {
           />
         ) : null}
 
-        {rightCollapsed ? (
+        {showSettings && settings ? (
+          <SettingsDialog
+            variant="page"
+            settings={settings}
+            onClose={() => setShowSettings(false)}
+            onSave={onSaveSettings}
+            onNotify={notify}
+          />
+        ) : null}
+
+        {showPlugins ? (
+          <PluginsDialog variant="page" onClose={() => setShowPlugins(false)} onNotify={notify} />
+        ) : null}
+
+        {showSystem ? (
+          <SystemPanel variant="page" onClose={() => setShowSystem(false)} onNotify={notify} />
+        ) : null}
+
+        {showLogs ? (
+          <LogDrawer variant="page" onClose={() => setShowLogs(false)} instanceId={instance?.id} />
+        ) : null}
+
+        {rightCollapsed && !showSettings && !showPlugins && !showSystem && !showLogs ? (
           <button type="button" className="cf-ai-pill" onClick={() => setRightCollapsed(false)} title="打开 AI 助手">
             <IconSpark size={16} />
             AI 助手
@@ -708,12 +736,6 @@ export function App() {
           </div>
         </div>
       ) : null}
-      {showPlugins ? <PluginsDialog onClose={() => setShowPlugins(false)} onNotify={notify} /> : null}
-      {showSystem ? <SystemPanel onClose={() => setShowSystem(false)} onNotify={notify} /> : null}
-      {showSettings && settings ? (
-        <SettingsDialog settings={settings} onClose={() => setShowSettings(false)} onSave={onSaveSettings} onNotify={notify} />
-      ) : null}
-      {showLogs ? <LogDrawer onClose={() => setShowLogs(false)} instanceId={instance?.id} /> : null}
     </div>
   )
 }

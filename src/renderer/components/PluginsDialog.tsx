@@ -4,6 +4,8 @@ import type { MarketListResult, PluginInfo } from '../../shared/types'
 interface Props {
   onClose: () => void
   onNotify: (text: string) => void
+  /** dialog = 浮层（旧）；page = 整页（S4） */
+  variant?: 'dialog' | 'page'
 }
 
 const PERMISSION_LABEL: Record<string, string> = {
@@ -12,7 +14,7 @@ const PERMISSION_LABEL: Record<string, string> = {
   exec: '执行代码',
 }
 
-export function PluginsDialog({ onClose, onNotify }: Props) {
+export function PluginsDialog({ onClose, onNotify, variant = 'dialog' }: Props) {
   const [tab, setTab] = useState<'local' | 'market'>('local')
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
   const [loading, setLoading] = useState(false)
@@ -127,8 +129,8 @@ export function PluginsDialog({ onClose, onNotify }: Props) {
   )
 
   return (
-    <div className="overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="dialog dialog-wide" role="dialog" aria-modal="true">
+    <div className={`overlay${variant === 'page' ? ' is-page' : ''}`} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <div className={`dialog dialog-wide${variant === 'page' ? ' is-page' : ''}`} role="dialog" aria-modal="true">
         <div className="dialog-head">
           <h2>插件</h2>
           <div className="drawer-actions">

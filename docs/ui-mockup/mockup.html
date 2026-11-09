@@ -295,6 +295,79 @@
   .statusbar .led { width: 6px; height: 6px; border-radius: 3px; background: var(--warn); }
   .statusbar .sp { margin-left: auto; }
 
+  /* ===== 主页（极简） ===== */
+  #page-home { position: relative; height: 100%; }
+  .home {
+    height: 100%; max-width: 920px;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 0 64px 36px;
+  }
+  .home-label { font-size: 12px; letter-spacing: 0.14em; color: var(--text-faint); }
+  .home-name { font-size: 46px; font-weight: 700; letter-spacing: -0.02em; margin: 14px 0 10px; }
+  .home-meta { font-size: 13px; color: var(--text-dim); display: flex; gap: 10px; align-items: center; }
+  .home-meta .bar { width: 3px; height: 3px; border-radius: 2px; background: var(--text-faint); }
+  .home-actions { display: flex; gap: 14px; margin-top: 44px; align-items: stretch; }
+  .home-btn {
+    height: 62px; padding: 0 30px;
+    display: flex; align-items: center; gap: 12px;
+    font-size: 15.5px; font-weight: 600; color: var(--text-dim);
+    background: var(--surface); border: 1px solid var(--hairline);
+  }
+  .home-btn .hb-ico { font-size: 15px; color: var(--text-faint); }
+  .primary-btn {
+    height: 72px; padding: 0 40px;
+    background: linear-gradient(160deg, #8ee76a, #4fb52f);
+    color: var(--accent-ink); border: none; font-size: 19px; font-weight: 800;
+    box-shadow: 0 16px 40px rgba(90, 200, 60, 0.20), inset 0 1px 0 rgba(255,255,255,0.5);
+  }
+  .home-hint { margin-top: 20px; font-size: 11.5px; color: var(--text-faint); }
+
+  /* AI 侧边入口（悬浮胶囊，点开滑出抽屉） */
+  .ai-tab {
+    position: absolute; right: 26px; top: 50%; transform: translateY(-50%);
+    display: flex; align-items: center; gap: 9px;
+    padding: 15px 20px;
+    background: var(--surface);
+    border: 1px solid var(--hairline-strong);
+    border-radius: 16px;
+    color: var(--text-dim);
+    font-size: 13.5px; font-weight: 600;
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.45);
+  }
+  .ai-tab .ai-tab-spark { font-size: 15px; color: #a7ee8b; }
+  .ai-tab .ai-tab-text { letter-spacing: 0.04em; }
+
+  /* AI 抽屉（点右侧入口滑出） */
+  .ai-drawer {
+    position: absolute; right: 0; top: 0; bottom: 0; width: 420px; z-index: 5;
+    display: none; flex-direction: column; gap: 14px; padding: 20px;
+    background: var(--surface);
+    border-left: 1px solid var(--hairline);
+    box-shadow: -30px 0 70px rgba(0, 0, 0, 0.55);
+  }
+  body.ai-open .ai-drawer { display: flex; }
+  body.ai-open .ai-tab { display: none; }
+  .ai-drawer-head { display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 700; }
+  .ai-drawer-close {
+    width: 30px; height: 30px; border-radius: 10px;
+    display: grid; place-items: center;
+    color: var(--text-faint); border: 1px solid var(--hairline); font-size: 12px;
+  }
+  .ai-drawer-list { flex: 1; display: flex; flex-direction: column; gap: 12px; padding-top: 8px; overflow: hidden; }
+  .ai-msg { max-width: 86%; padding: 12px 14px; border-radius: 16px; font-size: 13px; line-height: 1.6; }
+  .ai-msg-bot { background: var(--surface-2); border: 1px solid var(--hairline); color: #d3dae2; }
+  .ai-msg-me { align-self: flex-end; background: var(--accent-soft); border: 1px solid rgba(126, 217, 87, 0.28); color: #c8f0b4; }
+  .ai-drawer-input {
+    display: flex; align-items: center; height: 46px; border-radius: 15px; padding: 0 6px 0 16px;
+    background: var(--surface-2); border: 1px solid var(--hairline);
+    font-size: 12.5px; color: var(--text-faint);
+  }
+  .ai-drawer-input .ai-send2 {
+    margin-left: auto; height: 34px; padding: 0 16px; border-radius: 11px;
+    background: var(--accent); color: var(--accent-ink);
+    font-weight: 700; font-size: 12.5px; display: grid; place-items: center;
+  }
+
   /* ===== 下载页 ===== */
   .dl-head { grid-column: span 12; display: flex; align-items: flex-end; gap: 16px; padding: 8px 0 6px; }
   .dl-h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
@@ -367,7 +440,6 @@
       <div class="nav-item on squircle" data-go="home">主页</div>
       <div class="nav-item squircle" data-go="versions">版本</div>
       <div class="nav-item squircle" data-go="download">下载</div>
-      <div class="nav-item squircle" data-go="ai">AI 助手</div>
     </nav>
 
     <div class="topbar-right">
@@ -381,116 +453,40 @@
 
   <!-- ===== 主页 ===== -->
   <section class="page on" id="page-home">
-    <div class="page-body">
-      <div class="card hero squircle">
-        <div class="hero-left">
-          <div class="hero-label">当前实例</div>
-          <div class="hero-name">的吧</div>
-          <div class="hero-meta">
-            <span>1.21.1</span><span class="bar"></span><span>Fabric 0.16.9</span><span class="bar"></span><span>4096 MB</span><span class="bar"></span><span>25 个模组</span>
-          </div>
-          <div class="chips">
-            <span class="chip squircle">☑ 已登录 LX_Player</span>
-            <span class="chip squircle">Java 21 已匹配</span>
-            <span class="chip squircle">上次游玩 2 小时前</span>
-          </div>
-          <div class="hero-foot">
-            <div class="ghost-btn squircle">打开游戏目录</div>
-            <div class="ghost-btn squircle">查看日志</div>
-            <div class="ghost-btn squircle">结束游戏</div>
-          </div>
-        </div>
-        <div class="launch-panel">
-          <div class="launch squircle">
-            <div class="launch-play squircle">
-              <svg width="16" height="18" viewBox="0 0 16 18" fill="currentColor"><path d="M2 1.6 14.2 9 2 16.4z"/></svg>
-            </div>
-            <div>
-              <div class="launch-main">启动游戏</div>
-              <div class="launch-sub">LX_Player · 1.21.1 Fabric</div>
-            </div>
-          </div>
-          <div class="launch-hint">回车键也能启动</div>
+    <div class="home">
+      <div class="home-label">当前实例</div>
+      <div class="home-name">的吧</div>
+      <div class="home-meta">
+        <span>1.21.1</span><span class="bar"></span><span>Fabric 0.16.9</span><span class="bar"></span><span>4096 MB</span>
+      </div>
+      <div class="home-actions">
+        <div class="home-btn squircle"><span class="hb-ico">▤</span>打开游戏目录</div>
+        <div class="home-btn squircle"><span class="hb-ico">≡</span>查看日志</div>
+        <div class="home-btn primary-btn squircle">
+          <svg width="18" height="20" viewBox="0 0 16 18" fill="currentColor"><path d="M2 1.6 14.2 9 2 16.4z"/></svg>
+          启动游戏
         </div>
       </div>
-
-      <div class="card ai-card squircle">
-        <div class="ai-head">
-          <div class="ai-badge squircle">✦</div>
-          <div>
-            <div class="ai-title">AI 助手</div>
-            <div class="ai-sub">装模组、排查崩溃、找光影</div>
-          </div>
-        </div>
-        <div class="ai-rows">
-          <div class="ai-row squircle"><span>帮我装个优化模组</span><span class="k">一键</span></div>
-          <div class="ai-row squircle"><span>游戏崩了，看看日志</span><span class="k">诊断</span></div>
-        </div>
-        <div class="ai-input squircle">说人话就行，例如「装个 sodium」<div class="ai-send squircle">发送</div></div>
-      </div>
-
-      <div class="card quick squircle">
-        <div class="quick-top"><div class="tile g squircle">↓</div><div class="chev">›</div></div>
-        <div><div class="quick-title">下载模组</div><div class="quick-sub">Modrinth · 按版本过滤</div></div>
-      </div>
-      <div class="card quick squircle">
-        <div class="quick-top"><div class="tile b squircle">✦</div><div class="chev">›</div></div>
-        <div><div class="quick-title">光影 / 资源包</div><div class="quick-sub">Iris · OptiFine 兼容</div></div>
-      </div>
-      <div class="card quick squircle">
-        <div class="quick-top"><div class="tile w squircle">▣</div><div class="chev">›</div></div>
-        <div><div class="quick-title">整合包</div><div class="quick-sub">.mrpack 一键导入</div></div>
-      </div>
-      <div class="card quick squircle">
-        <div class="quick-top"><div class="tile p squircle">◇</div><div class="chev">›</div></div>
-        <div><div class="quick-title">版本管理</div><div class="quick-sub">新建 · 导入 · 隔离</div></div>
-      </div>
-
-      <div class="card list-card squircle">
-        <div class="card-head"><div class="card-title">版本</div><div class="card-link">全部 ›</div></div>
-        <div class="list-row on squircle">
-          <div class="badge f squircle">F</div>
-          <div class="list-main"><div class="list-name">的吧</div><div class="list-meta">1.21.1 · Fabric · 25 个模组</div></div>
-          <div class="list-right"><span class="tag g squircle">当前</span><span>⋯</span></div>
-        </div>
-        <div class="list-row squircle">
-          <div class="badge v squircle">V</div>
-          <div class="list-main"><div class="list-name">默认实例</div><div class="list-meta">未安装版本 · vanilla</div></div>
-          <div class="list-right"><span class="tag squircle">空</span><span>⋯</span></div>
-        </div>
-      </div>
-
-      <div class="card task-card squircle">
-        <div class="card-head"><div class="card-title">下载任务</div><div class="card-link">全部 ›</div></div>
-        <div class="task-row">
-          <div class="task-top"><span class="n">fabric-api-0.116.17</span><span class="p">1.2 / 2.1 MB</span></div>
-          <div class="track"><div class="fill" style="width:58%"></div></div>
-          <div class="task-sub">1.9 MB/s · 剩余 1 秒</div>
-        </div>
-        <div class="task-row">
-          <div class="task-top"><span class="n">Complementary Shaders</span><span class="p">4.9 / 12 MB</span></div>
-          <div class="track"><div class="fill b" style="width:41%"></div></div>
-          <div class="task-sub">排队中 · 2 个任务</div>
-        </div>
-      </div>
-
-      <div class="card log-card squircle">
-        <div class="card-head"><div class="card-title">最近日志</div><div class="card-link">打开日志 ›</div></div>
-        <div class="log-line"><span class="t">21:38:02</span><span class="lv ok">INFO</span><span class="m">Minecraft 1.21.1 · Fabric 0.16.9 启动中，Java 21.0.5</span></div>
-        <div class="log-line"><span class="t">21:38:09</span><span class="lv ok">INFO</span><span class="m">已加载 25 个模组，Sodium 0.6.9 · Iris 1.8.8</span></div>
-        <div class="log-line"><span class="t">21:38:11</span><span class="lv warn">WARN</span><span class="m">Iris 与 Sodium 版本不匹配，光影可能不可用</span></div>
-      </div>
-
-      <div class="card stat-card squircle">
-        <div class="card-head"><div class="card-title">运行状态</div><div class="card-link">系统 ›</div></div>
-        <div class="stat-grid">
-          <div><div class="stat-k">今日事件</div><div class="stat-v">582</div></div>
-          <div><div class="stat-k">插件</div><div class="stat-v">29<small>个已加载</small></div></div>
-          <div><div class="stat-k">内存</div><div class="stat-v">4.1<small>/ 8 GB</small></div></div>
-          <div><div class="stat-k">Java</div><div class="stat-v">21<small>64 位</small></div></div>
-        </div>
-      </div>
+      <div class="home-hint">回车直接启动</div>
     </div>
+
+    <div class="ai-tab squircle" id="aiTab">
+      <span class="ai-tab-spark">✦</span>
+      <span class="ai-tab-text">AI 助手</span>
+    </div>
+
+    <aside class="ai-drawer" id="aiDrawer">
+      <div class="ai-drawer-head">
+        <span>✦ AI 助手</span>
+        <span class="ai-drawer-close squircle">✕</span>
+      </div>
+      <div class="ai-drawer-list">
+        <div class="ai-msg ai-msg-bot squircle">你好，要装模组、查崩溃还是找光影？</div>
+        <div class="ai-msg ai-msg-me squircle">帮我装个优化模组</div>
+        <div class="ai-msg ai-msg-bot squircle">好的，正在为「的吧」安装 Sodium 0.6.9（Fabric 1.21.1）…</div>
+      </div>
+      <div class="ai-drawer-input squircle">说人话就行，例如「装个 sodium」<span class="ai-send2 squircle">发送</span></div>
+    </aside>
   </section>
 
   <!-- ===== 下载页 ===== -->
@@ -610,10 +606,17 @@
     document.querySelectorAll('.nav-item').forEach((el) => el.classList.toggle('on', el.dataset.go === name))
   }
   document.querySelectorAll('.nav-item').forEach((el) => {
-    el.addEventListener('click', () => go(el.dataset.go))
+    el.addEventListener('click', () => {
+      document.body.classList.remove('ai-open')
+      go(el.dataset.go)
+    })
   })
+  document.getElementById('aiTab')?.addEventListener('click', () => document.body.classList.add('ai-open'))
+  document.querySelector('.ai-drawer-close')?.addEventListener('click', () => document.body.classList.remove('ai-open'))
   const initial = (location.hash || '#home').slice(1)
-  go(initial in pages ? initial : 'home')
+  const page = initial === 'home-ai' ? 'home' : initial
+  go(page in pages ? page : 'home')
+  if (initial === 'home-ai') document.body.classList.add('ai-open')
 </script>
 </body>
 </html>

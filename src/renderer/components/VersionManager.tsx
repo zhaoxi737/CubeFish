@@ -10,6 +10,8 @@ interface Props {
   onNotify: (text: string) => void
   onCreate: () => void
   onOpenMods: (id: string) => void
+  /** dialog = 浮层弹窗（旧）；page = 作为整页渲染（S3） */
+  variant?: 'dialog' | 'page'
 }
 
 const KIND_LABEL: { kind: 'root' | 'game' | 'mods' | 'logs'; label: string }[] = [
@@ -19,7 +21,7 @@ const KIND_LABEL: { kind: 'root' | 'game' | 'mods' | 'logs'; label: string }[] =
   { kind: 'logs', label: '日志' },
 ]
 
-export function VersionManager({ instances, activeId, onClose, onActivate, onRefresh, onNotify, onCreate, onOpenMods }: Props) {
+export function VersionManager({ instances, activeId, onClose, onActivate, onRefresh, onNotify, onCreate, onOpenMods, variant = 'dialog' }: Props) {
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
@@ -100,8 +102,8 @@ export function VersionManager({ instances, activeId, onClose, onActivate, onRef
   )
 
   return (
-    <div className="overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="dialog dialog-wide vm-dialog" role="dialog" aria-modal="true">
+    <div className={`overlay${variant === 'page' ? ' is-page' : ''}`} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <div className={`dialog dialog-wide vm-dialog${variant === 'page' ? ' is-page' : ''}`} role="dialog" aria-modal="true">
         <div className="dialog-head">
           <h2>版本管理</h2>
           <div className="drawer-actions">

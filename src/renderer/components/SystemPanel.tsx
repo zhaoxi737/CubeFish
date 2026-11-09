@@ -4,7 +4,16 @@ import type { RecordingItem, SystemInfo } from '../../shared/types'
 const SPEAK_KEY = 'qdo:speakReplies'
 
 /** P37：系统对接面板——看系统信息、用麦克风录音、让喇叭说话。 */
-export function SystemPanel({ onClose, onNotify }: { onClose: () => void; onNotify: (text: string) => void }) {
+export function SystemPanel({
+  onClose,
+  onNotify,
+  variant = 'dialog',
+}: {
+  onClose: () => void
+  onNotify: (text: string) => void
+  /** dialog = 浮层（旧）；page = 整页（S4） */
+  variant?: 'dialog' | 'page'
+}) {
   const [info, setInfo] = useState<SystemInfo | null>(null)
   const [recordings, setRecordings] = useState<RecordingItem[]>([])
   const [recording, setRecording] = useState(false)
@@ -90,8 +99,8 @@ export function SystemPanel({ onClose, onNotify }: { onClose: () => void; onNoti
   }
 
   return (
-    <div className="overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="dialog" role="dialog" aria-modal="true">
+    <div className={`overlay${variant === 'page' ? ' is-page' : ''}`} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <div className={`dialog${variant === 'page' ? ' is-page' : ''}`} role="dialog" aria-modal="true">
         <div className="dialog-head">
           <h2>系统对接</h2>
           <div className="drawer-actions">

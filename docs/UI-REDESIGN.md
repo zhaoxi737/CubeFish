@@ -5,6 +5,35 @@
 > 目标版本：`0.2.0`
 > 核心约束：**只改外观与信息架构，功能一行不减、一行不加、IPC/后端零改动**
 
+## 实现状态（2026-11-09 更新）
+
+改版已按 S1→S4 落地，分支 `ui/clean-shell`，每个阶段都有 tag，可单独回滚：
+
+| 阶段 | 内容 | 验收 | tag |
+|---|---|---|---|
+| S1 | 设计 token / 基础层 / 组件层 + 方块鱼品牌资源（SVG/PNG/ICO） | typecheck + build | `ui-s1` |
+| S2 | 顶栏三 tab + 极简主页 + AI 右侧抽屉 | smoke ok:true | `ui-s2` |
+| S3 | 版本页 / 下载页整页化（浮层 → 页面） | smoke ok:true | `ui-s3` |
+| S4 | 设置 / 插件 / 系统 / 日志整页化 | smoke + --smoke-settings 均 ok:true | `ui-s4` |
+| S5 | 删死组件（ModsDialog / VersionPicker）、换 README 截图、文档收尾 | smoke ok:true | `ui-s5` |
+| S6 | 面板内层精修：按钮/下载卡/进度条/版本表/设置分组/插件/日志/Toast 统一到新设计语言 | smoke + --smoke-settings 均 ok:true | `ui-s6` |
+
+红线检查（每个 tag 都跑过）：`git diff master -- src/main src/preload src/shared` 为空——后端零改动。
+
+本地怎么跑：
+
+```powershell
+cd D:\QDOQMC
+npm run build
+# 新窗口默认收起 AI 抽屉；真实数据直接 npm run start
+npm run start
+# 自动化验收（会真下载/装版本，约 2.5 分钟）
+npm run smoke
+npx electron . --smoke-settings
+```
+
+> 注意：启动器是单实例的，跑 smoke / 截图前先关掉正在运行的方块鱼，或设 `QDOQMC_USER_DATA` 指向一份数据副本。
+
 参考样张（本方案配套渲染，1400×900，非最终像素）：
 
 - 主页：[home.png](ui-mockup/home.png)
@@ -215,7 +244,7 @@ tab 指示器（只动 transform，保证 120fps）：
 - 实施时导出：`art/logo-fish-block.svg`、`assets/icon.ico`（16/24/32/48/64/128/256）、`assets/icon-256.png`、`assets/favicon.png`
 - 原 `art/mascot-fish.png`（AI 生成插画）保留只做「伙伴」大图，顶栏与图标一律用新的方块版
 
-> 生成脚本 `docs/ui-mockup/make-logo.py` 留档：改颜色/改体型都改脚本重跑，保证像素对齐，不手工描点。
+> 生成脚本 `scripts/make-brand-icons.py` 留档（同时产出 SVG / PNG / ICO）：改颜色、改体型都改脚本重跑，保证像素对齐，不手工描点。
 
 ---
 
@@ -601,7 +630,7 @@ git reset --hard ui-s2
 
 1. 本次方案：`docs/UI-REDESIGN.md`（本文件）
 2. 视觉样张：`docs/ui-mockup/home.png`（极简主页）、`docs/ui-mockup/home-ai.png`（AI 抽屉打开）、`docs/ui-mockup/download.png`、可交互 `mockup.html`
-3. 品牌标识：`docs/ui-mockup/logo-fish.svg`（方块鱼矢量）、`logo-preview.png`（多尺寸/顶栏实景）、生成脚本 `make-logo.py`
+3. 品牌标识：`docs/ui-mockup/logo-fish.svg`（方块鱼矢量）、`logo-preview.png`（多尺寸/顶栏实景）、生成脚本 `scripts/make-brand-icons.py`
 4. 渲染层契约审计：`docs/_ui-audit.md`（A/B 级不可改名 class、死代码、文案契约）
 5. 改版代码：分支 `ui/clean-shell`，5 个 tag（`ui-s1`…`ui-s5`）
 6. 回滚包：`D:\QDOQMC-backup\ui-baseline-20261109-1944.zip` + tag `ui-baseline-v0.1.0`

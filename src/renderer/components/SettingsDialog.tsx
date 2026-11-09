@@ -6,9 +6,11 @@ interface Props {
   onClose: () => void
   onSave: (patch: SettingsPatch) => Promise<void> | void
   onNotify?: (text: string) => void
+  /** dialog = 浮层（旧）；page = 整页（S4） */
+  variant?: 'dialog' | 'page'
 }
 
-export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
+export function SettingsDialog({ settings, onClose, onSave, onNotify, variant = 'dialog' }: Props) {
   const [draft, setDraft] = useState<SettingsShape>({ ...settings })
   const [saving, setSaving] = useState(false)
   const [account, setAccount] = useState<AccountState | null>(null)
@@ -141,8 +143,8 @@ export function SettingsDialog({ settings, onClose, onSave, onNotify }: Props) {
   }
 
   return (
-    <div className="overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="dialog" role="dialog" aria-modal="true">
+    <div className={`overlay${variant === 'page' ? ' is-page' : ''}`} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <div className={`dialog${variant === 'page' ? ' is-page' : ''}`} role="dialog" aria-modal="true">
         <div className="dialog-head">
           <h2>设置</h2>
           <button type="button" className="ghost" onClick={onClose}>

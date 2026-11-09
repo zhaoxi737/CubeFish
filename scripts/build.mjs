@@ -72,6 +72,10 @@ async function main() {
   await cp(path.join(root, 'src/renderer/index.html'), path.join(out, 'renderer/index.html'))
   await cp(path.join(root, 'src/renderer/styles.css'), path.join(out, 'renderer/styles.css'))
 
+  // 设计层（tokens/base/components）与品牌资源：styles.css 里用相对 @import 引入
+  await cp(path.join(root, 'src/renderer/ui'), path.join(out, 'renderer/ui'), { recursive: true })
+  await cp(path.join(root, 'src/renderer/assets'), path.join(out, 'renderer/assets'), { recursive: true })
+
   // 美术资源（ComfyUI 生成，见 art/README.md）：存在才拷贝，缺了也不让构建失败
   const artFiles = ['mascot-fish.png', 'tile-grass.png', 'bg-hero.png', 'icon-pack.png', 'bg-user.jpg']
   const artOut = path.join(out, 'renderer', 'assets')

@@ -1,0 +1,59 @@
+/* ============================================================================
+ * CubeFish 设计 token（S1）
+ *
+ * 用 :root:root 提高特异性，确保无论旧 styles.css 里有多少份 :root 覆盖，
+ * 新 token 永远生效。旧变量（--bg/--panel/--text/...）也在这里重映射，
+ * 让尚未改标记的旧组件立刻换成新配色，降低一次性大改的风险。
+ * ========================================================================== */
+
+:root:root {
+  /* ---- 基础色 ---- */
+  --cf-bg: #0a0e13;
+  --cf-surface: #101216;
+  --cf-surface-2: #16191e;
+  --cf-surface-3: #1c2027;
+  --cf-hairline: rgba(255, 255, 255, 0.07);
+  --cf-hairline-strong: rgba(255, 255, 255, 0.12);
+
+  /* ---- 文字 ---- */
+  --cf-text: #eceef1;
+  --cf-dim: #8b929c;
+  --cf-faint: #5f666f;
+
+  /* ---- 强调色：跟随设置里的个性化主题色（P31）---- */
+  --cf-accent: var(--p31-accent, #4ade80);
+  --cf-accent-soft: rgba(74, 222, 128, 0.12);
+  --cf-accent-ink: #0a1607;
+  --cf-info: #4d6bfe;
+  --cf-warn: #f0a03c;
+  --cf-danger: #ef6f6f;
+
+  /* ---- 连续曲率圆角：≈ 高度 × 0.22 ---- */
+  --cf-r-sm: 10px;
+  --cf-r-md: 14px;
+  --cf-r-lg: 20px;
+  --cf-r-xl: 26px;
+
+  /* ---- 动效 ---- */
+  --cf-ease: cubic-bezier(0.2, 0, 0, 1);
+  --cf-dur: 180ms;
+
+  /* ---- 字体 ---- */
+  --cf-font: 'MiSans VF', 'MiSans', 'Segoe UI Variable Text', 'Segoe UI',
+    'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC',
+    system-ui, sans-serif;
+
+  /* ---- 旧变量重映射（存量组件跟着换肤）---- */
+  --bg: var(--cf-bg);
+  --panel: var(--cf-surface);
+  --panel-2: var(--cf-surface-2);
+  --border: var(--cf-hairline);
+  --text: var(--cf-text);
+  --muted: var(--cf-dim);
+  --accent: var(--cf-accent);
+  --accent-2: #3ec46e;
+  --blue: var(--cf-info);
+  --warn: var(--cf-warn);
+  --danger: var(--cf-danger);
+  --radius: 14px;
+}

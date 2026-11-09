@@ -1,0 +1,371 @@
+/* ============================================================================
+ * S6：面板内层精修
+ *
+ * 只覆盖「颜色 / 边框 / 圆角 / 阴影 / 字体层级」，不动宽高与布局，
+ * 因此 smoke 的 class 与文案契约、以及各面板的尺寸逻辑都不受影响。
+ * ========================================================================== */
+
+/* ---------- 通用按钮 ---------- */
+#root .primary {
+  border: 0;
+  border-radius: var(--cf-r-md);
+  corner-shape: superellipse(1.4);
+  background: linear-gradient(160deg, #8ee76a, #4fb52f);
+  color: var(--cf-accent-ink);
+  font-weight: 700;
+  box-shadow: 0 8px 22px rgba(90, 200, 60, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+#root .primary:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+#root .ghost {
+  border-radius: var(--cf-r-md);
+  corner-shape: superellipse(1.4);
+  border-color: var(--cf-hairline);
+  color: var(--cf-dim);
+  background: transparent;
+}
+
+#root .ghost:hover {
+  color: var(--cf-text);
+  border-color: var(--cf-hairline-strong);
+  background: var(--cf-surface-2);
+}
+
+#root .ghost.tiny {
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+/* ---------- 下载中心 ---------- */
+#root .dc {
+  background: transparent;
+}
+
+#root .dc-nav {
+  background: transparent;
+  border-right: 1px solid var(--cf-hairline);
+}
+
+#root .dc-nav-item {
+  border-radius: 12px;
+  color: var(--cf-dim);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+#root .dc-nav-item.is-active {
+  background: var(--cf-surface-3);
+  color: var(--cf-text);
+  border: 0;
+  box-shadow: none;
+}
+
+#root .dc-nav-icon {
+  opacity: 0.6;
+  filter: grayscale(0.35);
+}
+
+#root .dc-brand-mark {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--cf-text);
+}
+
+#root .dc-brand-sub,
+#root .dc-hint-line {
+  color: var(--cf-faint);
+  font-size: 11.5px;
+}
+
+#root .dc-head {
+  border-bottom: 1px solid var(--cf-hairline);
+  padding: 18px 26px;
+}
+
+#root .dc-head h2 {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+#root .dc-search {
+  background: var(--cf-surface);
+  border: 1px solid var(--cf-hairline);
+  border-radius: 16px;
+  corner-shape: superellipse(1.6);
+}
+
+#root .dc-search input,
+#root .dc-input,
+#root .dc-row select {
+  background: var(--cf-surface-2);
+  border: 1px solid var(--cf-hairline);
+  border-radius: 12px;
+  color: var(--cf-text);
+}
+
+#root .dc-search input:focus,
+#root .dc-input:focus,
+#root .dc-row select:focus {
+  border-color: color-mix(in srgb, var(--cf-accent) 45%, transparent);
+  outline: none;
+}
+
+#root .dc-loader {
+  background: var(--cf-surface);
+  border: 1px solid var(--cf-hairline);
+  border-radius: 16px;
+  corner-shape: superellipse(1.6);
+  box-shadow: none;
+}
+
+#root .dc-loader.is-active {
+  background: color-mix(in srgb, var(--cf-accent) 7%, var(--cf-surface));
+  border-color: color-mix(in srgb, var(--cf-accent) 40%, transparent);
+  box-shadow: none;
+}
+
+#root .dc-item {
+  background: var(--cf-surface);
+  border: 1px solid var(--cf-hairline);
+  border-radius: 18px;
+  corner-shape: superellipse(1.6);
+  box-shadow: none;
+}
+
+#root .dc-item:hover {
+  border-color: var(--cf-hairline-strong);
+}
+
+#root .dc-item-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+#root .dc-installed-row {
+  border-top: 1px solid var(--cf-hairline);
+  color: var(--cf-dim);
+  font-size: 12.5px;
+}
+
+#root .dc-preview-img {
+  border-radius: 16px;
+  corner-shape: superellipse(1.6);
+}
+
+#root .dc-pack,
+#root .dc-report {
+  border-radius: 16px;
+  corner-shape: superellipse(1.6);
+}
+
+/* ---------- 进度卡 ---------- */
+#root .progress-card {
+  background: var(--cf-surface);
+  border: 1px solid var(--cf-hairline);
+  border-radius: 18px;
+  corner-shape: superellipse(1.6);
+  box-shadow: none;
+}
+
+#root .progress-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--cf-text);
+}
+
+#root .progress-pct {
+  color: var(--cf-accent);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+#root .progress-bar {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+#root .progress-fill {
+  background: linear-gradient(90deg, #6fd34c, #9bea72);
+  border-radius: 6px;
+}
+
+#root .progress-stage {
+  border-radius: 10px;
+  color: var(--cf-dim);
+}
+
+#root .task-file {
+  border-color: var(--cf-hairline);
+}
+
+/* ---------- 版本管理 ---------- */
+#root .vm-row {
+  border-radius: 14px;
+  corner-shape: superellipse(1.4);
+  border: 1px solid transparent;
+}
+
+#root .vm-row.is-active {
+  background: color-mix(in srgb, var(--cf-accent) 7%, transparent);
+  border-color: color-mix(in srgb, var(--cf-accent) 28%, transparent);
+}
+
+#root .vm-name {
+  font-weight: 600;
+  color: var(--cf-text);
+}
+
+#root .vm-folders button {
+  border-radius: 9px;
+  color: var(--cf-dim);
+}
+
+/* ---------- 设置 ---------- */
+#root .settings-group-title {
+  color: var(--cf-faint);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  border-left: 3px solid var(--cf-accent);
+  padding-left: 10px;
+}
+
+#root .settings-row {
+  border-color: var(--cf-hairline);
+}
+
+#root .settings-intro {
+  background: color-mix(in srgb, var(--cf-accent) 6%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--cf-accent) 25%, transparent);
+  border-radius: 14px;
+  corner-shape: superellipse(1.4);
+}
+
+#root .field-label {
+  color: var(--cf-dim);
+}
+
+#root .field-hint {
+  color: var(--cf-faint);
+}
+
+#root .dialog-body input:not([type='checkbox']):not([type='color']),
+#root .dialog-body select,
+#root .dialog-body textarea {
+  background: var(--cf-surface-2);
+  border: 1px solid var(--cf-hairline);
+  border-radius: 12px;
+  color: var(--cf-text);
+}
+
+#root .dialog-body input:focus,
+#root .dialog-body select:focus,
+#root .dialog-body textarea:focus {
+  border-color: color-mix(in srgb, var(--cf-accent) 45%, transparent);
+  outline: none;
+}
+
+#root .account-item {
+  border-radius: 12px;
+  border-color: var(--cf-hairline);
+}
+
+/* ---------- 插件 ---------- */
+#root .kind-tab {
+  border-radius: 10px;
+  border-color: var(--cf-hairline);
+  color: var(--cf-dim);
+  background: transparent;
+}
+
+#root .kind-tab.is-active {
+  background: var(--cf-surface-3);
+  border-color: var(--cf-hairline-strong);
+  color: var(--cf-text);
+}
+
+#root .plugin-row {
+  border-radius: 14px;
+  border-color: var(--cf-hairline);
+  background: var(--cf-surface);
+}
+
+#root .plugin-state.is-on {
+  color: var(--cf-accent);
+}
+
+/* ---------- 日志 ---------- */
+#root .log-row {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+#root .log-time {
+  color: var(--cf-faint);
+}
+
+#root .log-gamebar {
+  background: var(--cf-surface);
+  border-color: var(--cf-hairline);
+}
+
+/* ---------- 系统 ---------- */
+#root .system-card,
+#root .system-section {
+  border-radius: 16px;
+}
+
+/* ---------- Toast / 横幅 / 退出卡 ---------- */
+#root .toast {
+  background: rgba(22, 25, 30, 0.96);
+  border: 1px solid var(--cf-hairline-strong);
+  border-radius: var(--cf-r-md);
+  color: var(--cf-text);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+}
+
+#root .update-banner {
+  border-radius: 16px;
+  border-color: var(--cf-hairline);
+  background: color-mix(in srgb, var(--cf-accent) 6%, var(--cf-surface));
+}
+
+#root .exit-card {
+  border-radius: 16px;
+  border-color: var(--cf-hairline);
+  background: var(--cf-surface);
+}
+
+#root .warn-box {
+  border-radius: 14px;
+  border-color: color-mix(in srgb, var(--cf-warn) 30%, transparent);
+  background: color-mix(in srgb, var(--cf-warn) 8%, var(--cf-surface));
+}
+
+/* ---------- 状态栏 ---------- */
+#root .statusbar {
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--cf-faint);
+}
+
+/* 版本行选中：去掉旧版蓝色发光描边 */
+#root .vm-row.is-active,
+#root .vm-dialog .vm-row.is-active {
+  box-shadow: none;
+}
+
+#root .vm-row select,
+#root .vm-rename input {
+  background: var(--cf-surface-2);
+  border: 1px solid var(--cf-hairline);
+  border-radius: 10px;
+  color: var(--cf-text);
+}
+
+#root .vm-row .primary,
+#root .vm-row button {
+  border-radius: 9px;
+}

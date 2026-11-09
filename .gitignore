@@ -10,4 +10,14 @@ uploads/
 
 social/
 
+# 宣传片工程（独立 npm 工程 + 渲染产物，不入主仓）
+video/node_modules/
+video/out/
+video/public/rec/
+out/rec/
+# 生成物 / 第三方资源，不入仓：音频用 node scripts/audio/make-audio.mjs 重新合成，
+# 字体是系统字体（微软雅黑，不可再分发），录屏用 scripts/rec 重录
+video/public/audio/
+video/public/fonts/
+
 client.js

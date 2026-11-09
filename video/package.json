@@ -1,0 +1,37 @@
+{
+  "name": "cubefish-promo-video",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CubeFish / 方块鱼 Minecraft launcher promo video, rendered frame-by-frame with Remotion",
+  "scripts": {
+    "studio": "remotion studio",
+    "render:s0": "remotion render Promo1920x1080 out/s0.mp4 --frames=0-143 --crf=16 --image-format=png",
+    "render:s2": "remotion render Promo1920x1080 out/s2.mp4 --frames=480-575 --crf=16 --image-format=png",
+    "render:s3": "remotion render Promo1920x1080 out/s3.mp4 --frames=576-959 --crf=16 --image-format=png",
+    "render:landscape": "remotion render Promo1920x1080 out/promo.mp4 --crf=16 --image-format=png",
+    "stills:landscape": "node scripts/render-landscape-stills.mjs",
+    "render:hook": "remotion render Promo1080x1920 out/hook.mp4 --frames=0-143 --crf=16 --image-format=png",
+    "render:portrait": "remotion render Promo1080x1920 out/promo.mp4 --crf=16 --image-format=png",
+    "still": "remotion still Promo1920x1080 out/still.png --frame=143 --image-format=png",
+    "stills": "node scripts/render-stills.mjs",
+    "typecheck": "tsc --noEmit",
+    "render:full": "remotion render Promo1920x1080 out/cubefish-promo-1080p.mp4 --crf=16 --image-format=png",
+    "render:s1": "remotion render Promo1920x1080 out/s1.mp4 --frames=144-479 --crf=16 --image-format=png",
+    "render:s4": "remotion render Promo1920x1080 out/s4.mp4 --frames=960-1535 --crf=16 --image-format=png",
+    "render:s5": "remotion render Promo1920x1080 out/s5.mp4 --frames=1536-1823 --crf=16 --image-format=png",
+    "stills:key": "node scripts/render-key-stills.mjs"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.542",
+    "@remotion/fonts": "4.0.542",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "remotion": "4.0.542"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "ffmpeg-static": "5.3.0",
+    "typescript": "5.9.3"
+  }
+}

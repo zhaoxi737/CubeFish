@@ -353,6 +353,23 @@
     display: grid; place-items: center;
     color: var(--text-faint); border: 1px solid var(--hairline); font-size: 12px;
   }
+  /* 会话管理：切换 / 新建 / 删除 / 清空（原有功能，一个不少） */
+  .ai-drawer-tools { display: flex; align-items: center; gap: 8px; }
+  .ai-select {
+    flex: 1; min-width: 0; height: 36px;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 0 12px; border-radius: 12px;
+    background: var(--surface-2); border: 1px solid var(--hairline);
+    font-size: 12.5px; color: #cfd6de;
+  }
+  .ai-select .caret { color: var(--text-faint); font-size: 10px; }
+  .ai-mini {
+    height: 36px; padding: 0 12px; border-radius: 12px;
+    display: grid; place-items: center;
+    border: 1px solid var(--hairline); color: var(--text-dim); font-size: 12.5px;
+    white-space: nowrap;
+  }
+  .ai-mini.plus { color: #a7ee8b; border-color: rgba(126, 217, 87, 0.28); background: var(--accent-soft); font-weight: 600; }
   .ai-drawer-list { flex: 1; display: flex; flex-direction: column; gap: 12px; padding-top: 8px; overflow: hidden; }
   .ai-msg { max-width: 86%; padding: 12px 14px; border-radius: 16px; font-size: 13px; line-height: 1.6; }
   .ai-msg-bot { background: var(--surface-2); border: 1px solid var(--hairline); color: #d3dae2; }
@@ -479,6 +496,12 @@
       <div class="ai-drawer-head">
         <span>✦ AI 助手</span>
         <span class="ai-drawer-close squircle">✕</span>
+      </div>
+      <div class="ai-drawer-tools">
+        <div class="ai-select squircle">之前的对话（6）<span class="caret">▾</span></div>
+        <div class="ai-mini plus squircle">＋ 新建</div>
+        <div class="ai-mini squircle">删除</div>
+        <div class="ai-mini squircle">清空</div>
       </div>
       <div class="ai-drawer-list">
         <div class="ai-msg ai-msg-bot squircle">你好，要装模组、查崩溃还是找光影？</div>

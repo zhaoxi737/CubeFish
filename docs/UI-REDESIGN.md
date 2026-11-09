@@ -215,7 +215,7 @@ tab 指示器（只动 transform，保证 120fps）：
 - 实施时导出：`art/logo-fish-block.svg`、`assets/icon.ico`（16/24/32/48/64/128/256）、`assets/icon-256.png`、`assets/favicon.png`
 - 原 `art/mascot-fish.png`（AI 生成插画）保留只做「伙伴」大图，顶栏与图标一律用新的方块版
 
-> 生成脚本 `docs/ui-mockup/make-logo.py` 留档：改颜色/改体型都改脚本重跑，保证像素对齐，不手工描点。
+> 生成脚本 `scripts/make-brand-icons.py` 留档（同时产出 SVG / PNG / ICO）：改颜色、改体型都改脚本重跑，保证像素对齐，不手工描点。
 
 ---
 
@@ -601,7 +601,7 @@ git reset --hard ui-s2
 
 1. 本次方案：`docs/UI-REDESIGN.md`（本文件）
 2. 视觉样张：`docs/ui-mockup/home.png`（极简主页）、`docs/ui-mockup/home-ai.png`（AI 抽屉打开）、`docs/ui-mockup/download.png`、可交互 `mockup.html`
-3. 品牌标识：`docs/ui-mockup/logo-fish.svg`（方块鱼矢量）、`logo-preview.png`（多尺寸/顶栏实景）、生成脚本 `make-logo.py`
+3. 品牌标识：`docs/ui-mockup/logo-fish.svg`（方块鱼矢量）、`logo-preview.png`（多尺寸/顶栏实景）、生成脚本 `scripts/make-brand-icons.py`
 4. 渲染层契约审计：`docs/_ui-audit.md`（A/B 级不可改名 class、死代码、文案契约）
 5. 改版代码：分支 `ui/clean-shell`，5 个 tag（`ui-s1`…`ui-s5`）
 6. 回滚包：`D:\QDOQMC-backup\ui-baseline-20261109-1944.zip` + tag `ui-baseline-v0.1.0`

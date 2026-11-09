@@ -113,6 +113,14 @@ const main = async () => {
     await sleep(200)
   }
 
+  // S2 起 AI 面板默认收成右侧抽屉：先点开入口，后续的输入/气泡/停止断言才可见
+  await page.evaluate(`(() => {
+    const pill = document.querySelector('.cf-ai-pill')
+    if (pill) { pill.click(); return 'opened' }
+    return 'already-open'
+  })()`)
+  await sleep(600)
+
   // 响应性模式：模型端完全不回数据时，界面是不是还活着（这是「卡住」投诉的核心）
   if (process.argv[3] === 'hang') {
     const pings = []

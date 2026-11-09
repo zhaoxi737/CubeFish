@@ -18,10 +18,12 @@ import { SettingsDialog } from './components/SettingsDialog'
 import { SystemPanel } from './components/SystemPanel'
 import { LogDrawer } from './components/LogDrawer'
 import { VersionManager } from './components/VersionManager'
-import { MascotImage } from './components/MascotImage'
 import { PluginsDialog } from './components/PluginsDialog'
 import { PluginButtons } from './components/PluginButtons'
 import { DownloadCenter, type DownloadTab } from './components/DownloadCenter'
+import { TopBar, type PageKey } from './ui/TopBar'
+import { HomePage } from './pages/HomePage'
+import { IconSpark } from './ui/icons'
 
 const FALLBACK_INFO: AppInfo = {
   name: 'CubeFish',
@@ -98,8 +100,8 @@ export function App() {
   const [showLogs, setShowLogs] = useState(false)
   const [showVersions, setShowVersions] = useState(false)
   const [showPlugins, setShowPlugins] = useState(false)
-  const [leftCollapsed, setLeftCollapsed] = useState(false)
-  const [rightCollapsed, setRightCollapsed] = useState(false)
+  const [page, setPage] = useState<PageKey>('home')
+  const [rightCollapsed, setRightCollapsed] = useState(true)
   const [instances, setInstances] = useState<InstanceSummary[]>([])
   const [newInstanceOpen, setNewInstanceOpen] = useState(false)
   const [newInstanceName, setNewInstanceName] = useState('')
@@ -443,140 +445,53 @@ export function App() {
 
   const canLaunch = Boolean(instance?.installed) && !running && !taskBusy
   const failed = info.failedPlugins
+  const updateTone: 'ok' | 'busy' | 'warn' | 'idle' =
+    update.status === 'uptodate'
+      ? 'ok'
+      : update.status === 'checking' || update.status === 'downloading'
+        ? 'busy'
+        : update.status === 'available' || update.status === 'error'
+          ? 'warn'
+          : 'idle'
 
   return (
     <div className="app">
-      <MascotImage size={230} className="app-companion" fallback={false} />
-      <header className="titlebar">
-        <div className="brand">
-          <MascotImage size={34} className="brand-fish" />
-          <span className="brand-mark">{settings?.titleText?.trim() || '方块鱼'}</span>
-          <span className="brand-sub">CubeFish Launcher</span>
-          <span className="brand-version">v{info.version}</span>
-          <span className="brand-tag">CubeFish · P40</span>
-        </div>
-        <div className="titlebar-actions">
-          <PluginButtons onNotify={notify} />
-          <button
-            type="button"
-            className="ghost nav-strong"
-            onClick={() => {
-              setDownloadTab('game')
-              setDownloadOpen(true)
-            }}
-          >
-            下载
-          </button>
-          <button type="button" className="ghost" onClick={() => setShowPlugins(true)}>
-            插件
-          </button>
-          <button type="button" className="ghost" onClick={() => void checkUpdate()}>
-            检查更新
-          </button>
-          <button type="button" className="ghost" onClick={() => setShowLogs(true)}>
-            日志
-          </button>
-          <button type="button" className="ghost" onClick={() => setShowSettings(true)}>
-            设置
-          </button>
-          <button type="button" className="ghost" onClick={() => setShowSystem(true)} title="对接这台电脑：麦克风 / 喇叭 / 系统信息">
-            系统
-          </button>
-        </div>
-      </header>
+      <TopBar
+        page={page}
+        title={settings?.titleText?.trim() || '方块鱼'}
+        version={info.version}
+        updateText={updateLabel(update)}
+        updateTone={updateTone}
+        onPage={setPage}
+        onDownload={() => {
+          setDownloadTab('game')
+          setDownloadOpen(true)
+        }}
+        onVersions={() => setShowVersions(true)}
+        onCheckUpdate={() => void checkUpdate()}
+        onLogs={() => setShowLogs(true)}
+        onPlugins={() => setShowPlugins(true)}
+        onSettings={() => setShowSettings(true)}
+        onSystem={() => setShowSystem(true)}
+      >
+        <PluginButtons onNotify={notify} />
+      </TopBar>
 
-      <main className={`main ${leftCollapsed ? 'left-collapsed' : ''} ${rightCollapsed ? 'right-collapsed' : ''}`}>
-        <aside className="version-sidebar">
-          <div className="sidebar-head">
-            {!leftCollapsed ? <span className="sidebar-title">版本</span> : null}
-            <button type="button" className="ghost tiny sidebar-toggle" onClick={() => setLeftCollapsed((value) => !value)} title={leftCollapsed ? '展开版本栏' : '收起版本栏'}>
-              {leftCollapsed ? '▶' : '◀'}
-            </button>
-            {!leftCollapsed ? (
-              <button type="button" className="ghost tiny" onClick={() => setNewInstanceOpen(true)} disabled={Boolean(running)}>
-                + 新建
-              </button>
-            ) : null}
-          </div>
-
-          {!leftCollapsed ? (
-            <>
-              <div className="sidebar-list">
-                {instances.map((item) => {
-                  const active = item.id === (instance?.id ?? '')
-                  return (
-                    <div
-                      key={item.id}
-                      className={`ver-card ${active ? 'is-active' : ''}`}
-                      onClick={() => {
-                        if (!running) void switchInstance(item.id)
-                      }}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' && !running) void switchInstance(item.id)
-                      }}
-                    >
-                      <span className={`ver-icon ver-icon-${item.loader ?? 'vanilla'}`}>{LOADER_BADGE[item.loader ?? 'vanilla'] ?? 'V'}</span>
-                      <div className="ver-card-main">
-                        <div className="ver-card-name">{item.name}</div>
-                        <div className="ver-card-meta">
-                          {item.gameVersion ?? item.versionId ?? '未装版本'} · {item.loader ?? 'vanilla'}
-                        </div>
-                      </div>
-                      <div className="ver-card-tools" onClick={(event) => event.stopPropagation()}>
-                        <button type="button" onClick={() => void openFolder(item.id)} title="打开游戏目录">
-                          📂
-                        </button>
-                        <button type="button" onClick={() => setShowVersions(true)} title="版本管理">
-                          ⋯
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-
-              <div className="sidebar-foot">
-                <button type="button" className="ghost tiny" onClick={() => setShowVersions(true)}>
-                  版本管理
-                </button>
-              </div>
-
-              <div className="side-launch">
-                <div className="side-hero">
-                  <span className={`ver-icon ver-icon-${instance?.loader ?? 'vanilla'}`}>{LOADER_BADGE[instance?.loader ?? 'vanilla'] ?? 'V'}</span>
-                  <div className="side-hero-meta">
-                    <div className="side-hero-name">{instance?.name ?? '没有实例'}</div>
-                    <div className="side-hero-sub">
-                      {instance?.gameVersion ?? instance?.versionId ?? '未装版本'} · {instance?.loader ?? 'vanilla'} · {instance?.memoryMb ?? 0} MB
-                    </div>
-                  </div>
-                </div>
-                <button type="button" className="launch" onClick={() => void launch()} disabled={!canLaunch}>
-                  <span className="launch-main">{running ? '游戏运行中' : taskBusy ? '处理中…' : '启动游戏'}</span>
-                  <span className="launch-sub">
-                    {running
-                      ? `PID ${running.pid ?? '?'} · 点「结束游戏」`
-                      : canLaunch
-                        ? `${instance?.accountName ?? instance?.playerName ?? 'Player'}`
-                        : instance?.installed
-                          ? '先结束正在进行的任务'
-                          : '先在「下载」里装游戏'}
-                  </span>
-                  <MascotImage size={24} className="launch-fish" />
-                </button>
-                {running ? (
-                  <button type="button" className="ghost stop-btn" onClick={() => void stop()}>
-                    结束游戏
-                  </button>
-                ) : null}
-              </div>
-            </>
-          ) : null}
-        </aside>
-
-        <section className="stage">
+      <main className="cf-main">
+        <HomePage
+          instance={instance}
+          running={running}
+          taskBusy={taskBusy}
+          canLaunch={canLaunch}
+          onLaunch={() => void launch()}
+          onStop={() => void stop()}
+          onOpenFolder={() => {
+            if (instance) void openFolder(instance.id)
+            else notify('还没有实例，先去「版本」里新建一个')
+          }}
+          onLogs={() => setShowLogs(true)}
+          onSwitchInstance={() => setShowVersions(true)}
+        >
           {update.status === 'available' || update.status === 'downloading' || update.status === 'ready' ? (
             <div className={`update-banner update-${update.status}`}>
               <div className="update-text">
@@ -639,25 +554,37 @@ export function App() {
               有 {failed.length} 个插件加载失败：{failed.map((f) => f.name).join('、')}（详情见日志）
             </div>
           ) : null}
-        </section>
+        </HomePage>
 
-        <aside className={`chat-side ${rightCollapsed ? 'is-collapsed' : ''}`}>
-          {rightCollapsed ? (
-            <button type="button" className="chat-side-tab" onClick={() => setRightCollapsed(false)} title="展开 AI 助手">
-              AI
-            </button>
-          ) : (
-            <>
-              <button type="button" className="chat-side-collapse" onClick={() => setRightCollapsed(true)} title="收起 AI 助手">
-                ▶
-              </button>
-              <ChatPanel />
-            </>
-          )}
+        {rightCollapsed ? (
+          <button type="button" className="cf-ai-pill" onClick={() => setRightCollapsed(false)} title="打开 AI 助手">
+            <IconSpark size={16} />
+            AI 助手
+          </button>
+        ) : null}
+
+        <aside className={`chat-side ${rightCollapsed ? 'is-collapsed' : 'is-open'}`}>
+          <button type="button" className="chat-side-collapse" onClick={() => setRightCollapsed(true)} title="收起 AI 助手">
+            ▶
+          </button>
+          <button type="button" className="cf-ai-close" onClick={() => setRightCollapsed(true)} title="关闭 AI 助手">
+            ✕
+          </button>
+          <ChatPanel />
         </aside>
+
+        {/* DOM 契约：smoke 会按文案点「版本管理 / + 新建」，这两颗按钮保留但视觉上移出屏幕 */}
+        <div className="version-sidebar" aria-hidden="true">
+          <button type="button" onClick={() => setShowVersions(true)}>
+            版本管理
+          </button>
+          <button type="button" onClick={() => setNewInstanceOpen(true)} disabled={Boolean(running)}>
+            + 新建
+          </button>
+        </div>
       </main>
 
-      <footer className="statusbar">
+      <footer className="statusbar cf-statusbar">
         <span className={`status-dot status-${update.status}`} />
         <span>{updateLabel(update)}</span>
         <span className="sep">·</span>

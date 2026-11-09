@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>方块鱼 logo 预览</title>
+<style>
+  :root { --bg:#0a0e13; --surface:#101216; --line:rgba(255,255,255,.08); --text:#eceef1; --dim:#8b929c; --accent:#4ade80; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:'Microsoft YaHei UI','Segoe UI',system-ui,sans-serif; padding:36px 44px; }
+  h1 { font-size:15px; font-weight:600; color:var(--dim); letter-spacing:.08em; margin:0 0 22px; }
+  .row { display:flex; align-items:flex-end; gap:40px; padding:26px 30px; background:var(--surface); border:1px solid var(--line); border-radius:22px; margin-bottom:22px; corner-shape: squircle; }
+  .item { display:flex; flex-direction:column; align-items:center; gap:12px; }
+  .cap { font-size:11px; color:var(--dim); }
+  .tile { display:grid; place-items:center; background:linear-gradient(160deg,#1c2c21,#0e1611); border:1px solid rgba(126,217,87,.26); box-shadow:inset 0 1px 0 rgba(255,255,255,.10), 0 8px 22px rgba(0,0,0,.4); corner-shape: squircle; }
+  .darktile { display:grid; place-items:center; background:#0e141a; border:1px solid var(--line); corner-shape: squircle; }
+  .topbar { display:flex; align-items:center; gap:22px; padding:0 26px; height:64px; background:var(--bg); border-bottom:1px solid var(--line); }
+  .brand { display:flex; align-items:center; gap:12px; }
+  .brand-name { font-size:16px; font-weight:700; }
+  .brand-sub { font-size:11px; color:#5f666f; }
+</style>
+</head>
+<body>
+  <h1>方块鱼 logo · 体素方块版（等距投影，三面明暗）</h1>
+
+  <div class="row">
+    <div class="item"><img src="logo-fish.svg" width="180" height="167" alt="logo 180" /><span class="cap">180px 主图标</span></div>
+    <div class="item"><div class="tile" style="width:96px;height:96px;border-radius:26px"><img src="logo-fish.svg" width="76" height="70" alt="tile 96" /></div><span class="cap">金色底 96</span></div>
+    <div class="item"><div class="darktile" style="width:64px;height:64px;border-radius:18px"><img src="logo-fish.svg" width="50" height="46" alt="tile 64" /></div><span class="cap">深底 64</span></div>
+    <div class="item"><div class="darktile" style="width:40px;height:40px;border-radius:12px"><img src="logo-fish.svg" width="32" height="30" alt="tile 40" /></div><span class="cap">深底 40</span></div>
+    <div class="item"><img src="logo-fish.svg" width="24" height="22" alt="24" /><span class="cap">24px 最小</span></div>
+  </div>
+
+  <h1>放进顶栏的样子</h1>
+  <div class="row" style="padding:0">
+    <div class="topbar" style="width:100%; border-bottom:none; border-radius:22px">
+      <div class="brand">
+        <div class="tile" style="width:36px;height:36px;border-radius:11px"><img src="logo-fish.svg" width="29" height="27" alt="36" /></div>
+        <div>
+          <div class="brand-name">方块鱼</div>
+          <div class="brand-sub">CubeFish Launcher · v0.1.0</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h1>跟旧版（绿色圆角块 + 「鱼」字）对比</h1>
+  <div class="row">
+    <div class="item"><div class="tile" style="width:36px;height:36px;border-radius:11px;color:#0a1607;font-weight:800;font-size:15px">鱼</div><span class="cap">旧：字标</span></div>
+    <div class="item"><div class="tile" style="width:36px;height:36px;border-radius:11px"><img src="logo-fish.svg" width="29" height="27" alt="new" /></div><span class="cap">新：方块鱼</span></div>
+  </div>
+</body>
+</html>

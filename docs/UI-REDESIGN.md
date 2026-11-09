@@ -192,6 +192,31 @@ tab 指示器（只动 transform，保证 120fps）：
 - 页面切换：新页 `opacity 0→1` + `translateY(6px)`，180ms；卡片按压 `scale(.995)` 90ms。
 - 尊重系统「减少动态效果」。
 
+### 4.6 品牌标识：方块鱼（Minecraft 方块感，这是「我们自己的特色」）
+
+现在的 logo 是一个绿色圆角块里写「鱼」字——没有任何记忆点。新版改成**像素方块鱼**：18×13 像素网格手绘，阶梯状轮廓 + 三档绿色受光（顶亮/身中/底暗）+ 右下 1 格挤出影子，输出 `crispEdges` 的矢量 SVG，任何尺寸都是硬边方块，不糊。
+
+规则（写死，以后所有物料都照这个来）：
+
+| 项 | 规范 |
+|---|---|
+| 构图 | 朝右方块鱼：扇形尾鳍 + 椭圆鱼身 + 背鳍/臀鳍 + 2×2 方块眼 + 嘴 |
+| 像素网格 | 18×13，全部边缘落在整数格线上，禁止抗锯齿模糊 |
+| 配色 | 主 `#5CB045`、亮 `#9CDD6E`、暗 `#3A7F2B`、眼 `#141F0D`、挤出影 `#26561B` |
+| 底色 | 深绿石墨底 `#1c2c21 → #0e1611` + 1px `rgba(126,217,87,.26)` 描边（绿鱼放在绿底上会糊） |
+| 最小尺寸 | 24px（低于 24 用纯色块占位，不再缩图标） |
+| 用途 | 顶栏 26px、窗口/任务栏图标 256、安装包图标、favicon、AI 助手头像、关于页 |
+| 禁止 | 不要描边描成圆润插画、不要加渐变高光、不要用 AI 生成图替换（AI 图会失去像素网格） |
+
+交付物：
+
+- `docs/ui-mockup/logo-fish.svg`（矢量，已产出）
+- `docs/ui-mockup/logo-preview.png`（多尺寸 + 顶栏实景，已产出）
+- 实施时导出：`art/logo-fish-block.svg`、`assets/icon.ico`（16/24/32/48/64/128/256）、`assets/icon-256.png`、`assets/favicon.png`
+- 原 `art/mascot-fish.png`（AI 生成插画）保留只做「伙伴」大图，顶栏与图标一律用新的方块版
+
+> 生成脚本 `docs/ui-mockup/make-logo.py` 留档：改颜色/改体型都改脚本重跑，保证像素对齐，不手工描点。
+
 ---
 
 ## 5. 信息架构：三个页面 + 一条 AI 侧边栏
@@ -371,17 +396,18 @@ git checkout -b ui/clean-shell      # 从 8613153 拉分支，master 保持干�
 ### S1 · 设计层落地（0.5 天）
 
 - 新增 `ui/tokens.css`、`ui/base.css`、`ui/components.css`、`ui/Icon.tsx`
+- 品牌图标落地：`logo-fish.svg` 拷进 `src/renderer/assets/`，导出 `icon.ico`（7 个尺寸）+ `icon-256.png` + `favicon.png`，替换顶栏字标与窗口图标
 - `styles.css` 顶部 `@import` 三个新文件（新层优先级最高，旧规则暂留）
-- 不改任何 JSX → 页面结构还是旧的，只是颜色/圆角/按钮/滚动条全部换成新语言
+- 不改任何 JSX → 页面结构还是旧的，只是颜色/圆角/按钮/滚动条/logo 全部换成新语言
 - 验收：`npm run typecheck` + 启动截图，确认没有布局塌陷
-- commit：`feat(ui): 设计 token 与基础组件样式（S1）` → tag `ui-s1`
+- commit：`feat(ui): 设计 token、方块鱼图标与基础组件样式（S1）` → tag `ui-s1`
 
 ### S2 · 外壳与主页（1 天）
 
-- 新增 `ui/AppShell.tsx`、`ui/NavTabs.tsx`、`pages/HomePage.tsx`
-- `App.tsx` 换成新外壳：顶栏导航 + 主页卡片；原来的 5 个弹窗入口先挂到右侧图标区，**弹窗仍是弹窗，功能立刻可用**
-- 验收：主页 12 项功能逐条点（启动/结束/打开目录/切版本/更新/诊断修复/日志/设置/插件/系统/下载入口/AI 入口）
-- commit：`feat(ui): 顶部导航外壳 + 主页卡片（S2）` → tag `ui-s2`
+- 新增 `ui/AppShell.tsx`、`ui/NavTabs.tsx`、`ui/AiSidebar.tsx`、`pages/HomePage.tsx`
+- `App.tsx` 换成新外壳：顶栏 3 个 tab + 极简主页 + 右侧 AI 抽屉；原来的弹窗入口先挂到右侧图标区，**弹窗仍是弹窗，功能立刻可用**
+- 验收：主页 9 项功能逐条点（见 §9.1），`npm run smoke` + `cdp-check.mjs` 全绿
+- commit：`feat(ui): 顶部导航外壳 + 极简主页 + AI 抽屉（S2）` → tag `ui-s2`
 
 ### S3 · 版本页 + 下载页（1.5 天）
 
@@ -575,10 +601,11 @@ git reset --hard ui-s2
 
 1. 本次方案：`docs/UI-REDESIGN.md`（本文件）
 2. 视觉样张：`docs/ui-mockup/home.png`（极简主页）、`docs/ui-mockup/home-ai.png`（AI 抽屉打开）、`docs/ui-mockup/download.png`、可交互 `mockup.html`
-3. 渲染层契约审计：`docs/_ui-audit.md`（A/B 级不可改名 class、死代码、文案契约）
-4. 改版代码：分支 `ui/clean-shell`，5 个 tag（`ui-s1`…`ui-s5`）
-5. 回滚包：`D:\QDOQMC-backup\ui-baseline-20261109-1944.zip` + tag `ui-baseline-v0.1.0`
-6. 新截图与 README 更新（S5 产出）
+3. 品牌标识：`docs/ui-mockup/logo-fish.svg`（方块鱼矢量）、`logo-preview.png`（多尺寸/顶栏实景）、生成脚本 `make-logo.py`
+4. 渲染层契约审计：`docs/_ui-audit.md`（A/B 级不可改名 class、死代码、文案契约）
+5. 改版代码：分支 `ui/clean-shell`，5 个 tag（`ui-s1`…`ui-s5`）
+6. 回滚包：`D:\QDOQMC-backup\ui-baseline-20261109-1944.zip` + tag `ui-baseline-v0.1.0`
+7. 新截图与 README 更新（S5 产出）
 
 ---
 

@@ -2,6 +2,7 @@
 @import url('./ui/base.css');
 @import url('./ui/components.css');
 @import url('./ui/layout.css');
+@import url('./ui/panel-restyle.css');
 
 :root {
   --bg: #0a0d12;

@@ -473,10 +473,22 @@ export function App() {
         }}
         onVersions={() => setPage('versions')}
         onCheckUpdate={() => void checkUpdate()}
-        onLogs={() => setShowLogs(true)}
-        onPlugins={() => setShowPlugins(true)}
-        onSettings={() => setShowSettings(true)}
-        onSystem={() => setShowSystem(true)}
+        onLogs={() => {
+          setPage('home')
+          setShowLogs(true)
+        }}
+        onPlugins={() => {
+          setPage('home')
+          setShowPlugins(true)
+        }}
+        onSettings={() => {
+          setPage('home')
+          setShowSettings(true)
+        }}
+        onSystem={() => {
+          setPage('home')
+          setShowSystem(true)
+        }}
       >
         <PluginButtons onNotify={notify} />
       </TopBar>

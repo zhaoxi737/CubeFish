@@ -16,6 +16,7 @@
 | S3 | 版本页 / 下载页整页化（浮层 → 页面） | smoke ok:true | `ui-s3` |
 | S4 | 设置 / 插件 / 系统 / 日志整页化 | smoke + --smoke-settings 均 ok:true | `ui-s4` |
 | S5 | 删死组件（ModsDialog / VersionPicker）、换 README 截图、文档收尾 | smoke ok:true | `ui-s5` |
+| S6 | 面板内层精修：按钮/下载卡/进度条/版本表/设置分组/插件/日志/Toast 统一到新设计语言 | smoke + --smoke-settings 均 ok:true | `ui-s6` |
 
 红线检查（每个 tag 都跑过）：`git diff master -- src/main src/preload src/shared` 为空——后端零改动。
 

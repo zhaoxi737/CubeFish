@@ -462,3 +462,17 @@
   background: transparent;
   box-shadow: none;
 }
+
+/* 整页设置：内容收成单列，别横着拉满 */
+#root .dialog.is-page .dialog-head,
+#root .dialog.is-page .dialog-body,
+#root .dialog.is-page .dialog-foot {
+  width: 100%;
+  max-width: 920px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+#root .dialog.is-page .dialog-body {
+  padding-top: 18px;
+}

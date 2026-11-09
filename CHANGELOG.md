@@ -9,6 +9,7 @@
 - **极简主页**：只保留当前实例名、一行版本信息、`打开游戏目录` / `查看日志` / `启动游戏`，其余留白；点实例名直达版本页
 - **AI 助手变成右侧抽屉**：默认收起，点「✦ AI 助手」滑出；会话切换 / 新建 / 删除 / 清空原样保留
 - **下载中心、版本管理、设置、插件、系统、日志从弹窗改成整页**
+- **面板内层统一**：下载中心的版本/加载器卡片、模组行、进度条、版本管理表格、设置分组、插件行、日志行、Toast 全部换成新配色与连续曲率圆角（只改样式，不动结构与文案）
 - 统一设计 token + 连续曲率圆角（`corner-shape: superellipse`）+ 1.5px 线性图标；新增方块鱼像素 logo（SVG/PNG/ICO，生成脚本 `scripts/make-brand-icons.py`）
 - 功能零改动：`src/main` / `src/preload` / `src/shared` 无 diff；`npm run smoke` 与 `--smoke-settings` 全绿
 - 方案与回滚点见 [docs/UI-REDESIGN.md](docs/UI-REDESIGN.md)

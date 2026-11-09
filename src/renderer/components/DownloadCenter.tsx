@@ -67,6 +67,8 @@ interface Props {
   onClose: () => void
   onNotify: (text: string) => void
   onRefresh: () => void
+  /** dialog = 浮层弹窗（旧）；page = 作为整页渲染（S3） */
+  variant?: 'dialog' | 'page'
 }
 
 export function DownloadCenter({
@@ -82,6 +84,7 @@ export function DownloadCenter({
   onClose,
   onNotify,
   onRefresh,
+  variant = 'dialog',
 }: Props) {
   // ---------- 游戏 ----------
   const [gameVersion, setGameVersion] = useState(instance.gameVersion ?? instance.versionId ?? '')
@@ -469,8 +472,8 @@ export function DownloadCenter({
   const installedForKind = contentKind ? installed.filter((item) => item.kind === contentKind) : []
 
   return (
-    <div className="overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="dc" role="dialog" aria-modal="true">
+    <div className={`overlay${variant === 'page' ? ' is-page' : ''}`} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <div className={`dc${variant === 'page' ? ' is-page' : ''}`} role="dialog" aria-modal="true">
         <div className="dc-nav">
           <div className="dc-brand">
             <span className="dc-brand-mark">下载</span>

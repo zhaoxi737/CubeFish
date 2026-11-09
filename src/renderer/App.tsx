@@ -85,7 +85,6 @@ export function App() {
   const [versions, setVersions] = useState<VersionList | null>(null)
   const [installed, setInstalled] = useState<string[]>([])
   const [progress, setProgress] = useState<TaskProgress | null>(null)
-  const [downloadOpen, setDownloadOpen] = useState(false)
   const [downloadTab, setDownloadTab] = useState<DownloadTab>('game')
   const [running, setRunning] = useState<{ pid?: number } | null>(null)
   const [exited, setExited] = useState<GameStateEvent | null>(null)
@@ -98,7 +97,6 @@ export function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [showSystem, setShowSystem] = useState(false)
   const [showLogs, setShowLogs] = useState(false)
-  const [showVersions, setShowVersions] = useState(false)
   const [showPlugins, setShowPlugins] = useState(false)
   const [page, setPage] = useState<PageKey>('home')
   const [rightCollapsed, setRightCollapsed] = useState(true)
@@ -465,9 +463,9 @@ export function App() {
         onPage={setPage}
         onDownload={() => {
           setDownloadTab('game')
-          setDownloadOpen(true)
+          setPage('download')
         }}
-        onVersions={() => setShowVersions(true)}
+        onVersions={() => setPage('versions')}
         onCheckUpdate={() => void checkUpdate()}
         onLogs={() => setShowLogs(true)}
         onPlugins={() => setShowPlugins(true)}
@@ -478,6 +476,7 @@ export function App() {
       </TopBar>
 
       <main className="cf-main">
+        {page === 'home' ? (
         <HomePage
           instance={instance}
           running={running}
@@ -490,7 +489,7 @@ export function App() {
             else notify('还没有实例，先去「版本」里新建一个')
           }}
           onLogs={() => setShowLogs(true)}
-          onSwitchInstance={() => setShowVersions(true)}
+          onSwitchInstance={() => setPage('versions')}
         >
           {update.status === 'available' || update.status === 'downloading' || update.status === 'ready' ? (
             <div className={`update-banner update-${update.status}`}>
@@ -555,6 +554,54 @@ export function App() {
             </div>
           ) : null}
         </HomePage>
+        ) : null}
+
+        {page === 'versions' ? (
+          <VersionManager
+            variant="page"
+            instances={instances}
+            activeId={instance?.id ?? 'default'}
+            onClose={() => setPage('home')}
+            onActivate={(id) => {
+              void switchInstance(id)
+              setPage('home')
+            }}
+            onRefresh={refreshInstalled}
+            onNotify={notify}
+            onCreate={() => {
+              setPage('home')
+              setNewInstanceOpen(true)
+            }}
+            onOpenMods={(id) => {
+              void (async () => {
+                await switchInstance(id)
+                setDownloadTab('mod')
+                setPage('download')
+              })()
+            }}
+          />
+        ) : null}
+
+        {page === 'download' && instance ? (
+          <DownloadCenter
+            variant="page"
+            instance={instance}
+            tab={downloadTab}
+            onTab={setDownloadTab}
+            versions={versions}
+            installedVersions={installed}
+            settings={settings}
+            progress={progress}
+            taskBusy={taskBusy}
+            onCancelTask={() => void cancelInstall()}
+            onClose={() => setPage('home')}
+            onNotify={notify}
+            onRefresh={() => {
+              void refreshInstalled()
+              void window.qdo.versions.installed().then(setInstalled).catch(() => undefined)
+            }}
+          />
+        ) : null}
 
         {rightCollapsed ? (
           <button type="button" className="cf-ai-pill" onClick={() => setRightCollapsed(false)} title="打开 AI 助手">
@@ -575,7 +622,7 @@ export function App() {
 
         {/* DOM 契约：smoke 会按文案点「版本管理 / + 新建」，这两颗按钮保留但视觉上移出屏幕 */}
         <div className="version-sidebar" aria-hidden="true">
-          <button type="button" onClick={() => setShowVersions(true)}>
+          <button type="button" onClick={() => setPage('versions')}>
             版本管理
           </button>
           <button type="button" onClick={() => setNewInstanceOpen(true)} disabled={Boolean(running)}>
@@ -660,50 +707,6 @@ export function App() {
             </div>
           </div>
         </div>
-      ) : null}
-      {showVersions ? (
-        <VersionManager
-          instances={instances}
-          activeId={instance?.id ?? 'default'}
-          onClose={() => setShowVersions(false)}
-          onActivate={(id) => {
-            void switchInstance(id)
-            setShowVersions(false)
-          }}
-          onRefresh={refreshInstalled}
-          onNotify={notify}
-          onCreate={() => {
-            setShowVersions(false)
-            setNewInstanceOpen(true)
-          }}
-          onOpenMods={(id) => {
-            void (async () => {
-              await switchInstance(id)
-              setShowVersions(false)
-              setDownloadTab('mod')
-              setDownloadOpen(true)
-            })()
-          }}
-        />
-      ) : null}
-      {downloadOpen && instance ? (
-        <DownloadCenter
-          instance={instance}
-          tab={downloadTab}
-          onTab={setDownloadTab}
-          versions={versions}
-          installedVersions={installed}
-          settings={settings}
-          progress={progress}
-          taskBusy={taskBusy}
-          onCancelTask={() => void cancelInstall()}
-          onClose={() => setDownloadOpen(false)}
-          onNotify={notify}
-          onRefresh={() => {
-            void refreshInstalled()
-            void window.qdo.versions.installed().then(setInstalled).catch(() => undefined)
-          }}
-        />
       ) : null}
       {showPlugins ? <PluginsDialog onClose={() => setShowPlugins(false)} onNotify={notify} /> : null}
       {showSystem ? <SystemPanel onClose={() => setShowSystem(false)} onNotify={notify} /> : null}

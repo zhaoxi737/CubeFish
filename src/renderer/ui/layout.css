@@ -372,3 +372,81 @@
 #root .app-companion {
   display: none;
 }
+
+/* ============================================================================
+ * S3：下载中心 / 版本管理从浮层改成整页
+ * 只改外壳定位，组件内部结构与文案一律不动（smoke 仍按原 class 断言）。
+ * ========================================================================== */
+
+#root .overlay.is-page {
+  position: absolute;
+  inset: 0;
+  display: block;
+  padding: 0;
+  background: transparent;
+  backdrop-filter: none;
+  animation: none;
+  z-index: 1;
+}
+
+#root .dc.is-page {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+#root .dialog.is-page {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+}
+
+#root .dialog.is-page .dialog-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+#root .dialog.is-page .dialog-head {
+  padding: 22px 32px 16px;
+  border-bottom: 1px solid var(--cf-hairline);
+}
+
+#root .dialog.is-page .dialog-head h2 {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+#root .dialog.is-page .dialog-foot {
+  padding: 14px 32px;
+  border-top: 1px solid var(--cf-hairline);
+}
+
+/* 下载页：左侧导航条改成页内导航，主区留白更松 */
+#root .dc.is-page {
+  grid-template-columns: 168px minmax(0, 1fr);
+}
+
+#root .dc.is-page .dc-nav {
+  border-right: 1px solid var(--cf-hairline);
+  padding: 18px 12px;
+}
+
+/* 整页模式下用实底，别让背景图和主页文字透出来 */
+#root .overlay.is-page {
+  background: linear-gradient(180deg, rgba(10, 14, 19, 0.985), rgba(8, 10, 14, 1));
+}

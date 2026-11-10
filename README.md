@@ -54,6 +54,15 @@
 **AI 助手：实时读日志、诊断冲突、给方案（右侧面板）**
 ![AI 助手](docs/screenshots/ai.png)
 
+## 宣传片
+
+60 秒横屏宣传片，**全部由代码逐帧渲染**（Remotion）：像素鱼从 112 个方块飞入拼合，界面部分是真实录屏，配乐与音效也是代码合成的 —— 没有一帧是照片轮播，也没有用任何第三方素材。
+
+- 成片（60.8s / 1080p）：见 [Releases](https://github.com/zhaoxi737/CubeFish/releases/latest)
+- 制作方案与逐帧分镜：[docs/PROMO-VIDEO.md](docs/PROMO-VIDEO.md)
+- 字幕表与逐段讲解稿：[docs/PROMO-SUBTITLES.md](docs/PROMO-SUBTITLES.md)
+- 工程源码：[`video/`](video/) · [`scripts/audio/`](scripts/audio/) · [`scripts/rec/`](scripts/rec/)
+
 ## 快速开始
 
 1. 到 [Releases](https://github.com/zhaoxi737/CubeFish/releases) 下载 `CubeFish-<版本>-win32-x64.zip`
@@ -110,6 +119,20 @@ export function apply(api) {
 
 **误删了 / 改坏了？**
 顶栏「系统」→「源码回滚」可恢复启动器源码；游戏文件删除前会确认。
+
+## 文档
+
+| 文档 | 内容 |
+|---|---|
+| [CHANGELOG.md](CHANGELOG.md) | 更新日志（当前 0.2.0） |
+| [docs/DEV.md](docs/DEV.md) | 开发环境与调试 |
+| [docs/PLAN.md](docs/PLAN.md) | 路线与设计取舍 |
+| [docs/MAINTAIN.md](docs/MAINTAIN.md) | 维护与发布流程 |
+| [docs/UI-REDESIGN.md](docs/UI-REDESIGN.md) | UI 改版方案（设计令牌、信息架构、分阶段落地） |
+| [docs/PROMO-VIDEO.md](docs/PROMO-VIDEO.md) | 宣传片制作方案与逐帧脚本 |
+| [docs/PROMO-SUBTITLES.md](docs/PROMO-SUBTITLES.md) | 宣传片字幕表与讲解稿 |
+| [docs/PLUGINS.md](docs/PLUGINS.md) | 插件开发 |
+| [docs/MOBILE.md](docs/MOBILE.md) | 手机版进度与支持范围 |
 
 ## 许可
 
